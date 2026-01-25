@@ -1,0 +1,413 @@
+import asyncio
+
+import app.keyboards as kb
+
+from aiogram import Router, F
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
+from aiogram.filters import CommandStart, Command, Filter
+from aiogram.fsm.context import FSMContext
+from aiogram.enums import ChatAction
+
+from app.database.requests import DatabaseManager
+from app.database.models import async_session
+from app.utils.logging_config import get_user_actions_logger
+
+router = Router(name="user")
+logger = get_user_actions_logger()
+
+_excursion_names_cache = None
+_cache_time = 0
+CACHE_TIMEOUT = 300  # 5 минут в секундах
+
+
+class ExcursionNameFilter(Filter):
+    """
+    Фильтр для определения, является ли текст сообщения
+    названием активной экскурсии
+    """
+    async def __call__(self, message: Message) -> bool:
+        global _excursion_names_cache, _cache_time
+        current_time = asyncio.get_event_loop().time()
+        # Обновляем кэш если нужно
+        if (_excursion_names_cache is None or
+            (current_time - _cache_time) >= CACHE_TIMEOUT):
+            async with async_session() as session:
+                db = DatabaseManager(session)
+                excursions = await db.get_all_excursions(active_only=True)
+                _excursion_names_cache = {exc.name for exc in excursions}
+                _cache_time = current_time
+        return message.text in _excursion_names_cache
+
+
+@router.message(CommandStart())
+async def start_command(message: Message):
+    """Обработка команды /start"""
+    logger.info(f"Новый пользователь запустил бота: {message.from_user.id} "
+                f"({message.from_user.username or 'без username'})")
+    try:
+        await message.bot.send_chat_action(
+            chat_id=message.from_user.id,
+            action=ChatAction.TYPING
+        )
+        await message.answer(
+            text='Приветствуем! Добро пожаловать в наш бот! Выберите необходимый пункт меню',
+            reply_markup=kb.main
+        )
+        logger.info(f"Приветственное сообщение отправлено пользователю {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка при обработке команды /start для пользователя {message.from_user.id}: {e}", exc_info=True)
+        try:
+            await message.answer("Произошла ошибка при запуске бота. Попробуйте еще раз.")
+        except:
+            pass
+
+
+@router.message(Command("help"))
+async def help_command(message: Message):
+    """Обработка команды /help"""
+    logger.info(f"Пользователь {message.from_user.id} запросил помощь")
+    try:
+        await message.reply(
+            'Привет! Это команда /help.\n'
+            '/admin - админ-панель\n'
+            '/adminhelp - список команд админа',
+            reply_markup=kb.main
+        )
+        logger.debug(f"Справочное сообщение отправлено пользователю {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка при отправке справки пользователю {message.from_user.id}: {e}", exc_info=True)
+
+
+@router.callback_query(F.data == 'back_to_main')
+async def back_to_main(callback: CallbackQuery, state: FSMContext):
+    """Возврат в главное меню"""
+    logger.info(f"Пользователь {callback.from_user.id} вернулся в главное меню")
+    try:
+        current_state = await state.get_state()
+        if current_state:
+            logger.debug(f"Пользователь {callback.from_user.id} вышел из состояния: {current_state}")
+        await state.clear()
+        await callback.answer('Главное меню')
+        await callback.message.answer(
+            'Выберите необходимый пункт меню',
+            reply_markup=kb.main
+        )
+        logger.debug(f"Главное меню показано пользователю {callback.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка возврата в главное меню для пользователя {callback.from_user.id}: {e}", exc_info=True)
+
+
+@router.message(F.text == 'Наши экскурсии')
+async def excursions(message: Message):
+    """Показать список экскурсий из базы данных"""
+    logger.info(f"Пользователь {message.from_user.id} запросил список экскурсий")
+    try:
+        async with async_session() as session:
+            db = DatabaseManager(session)
+            excursions_list = await db.get_all_excursions(active_only=True)
+            if not excursions_list:
+                logger.warning(f"Нет доступных экскурсий для пользователя {message.from_user.id}")
+                await message.answer(
+                    "В настоящее время нет доступных экскурсий. Пожалуйста, проверьте позже.",
+                    reply_markup=kb.main
+                )
+                return
+
+            excursions_text = "Наши экскурсии:\n\n"
+            for i, excursion in enumerate(excursions_list, 1):
+                excursions_text += (
+                    f"{i}. {excursion.name}\n"
+                    f"   Стоимость: {excursion.base_price} руб.\n"
+                )
+                if excursion.child_discount > 0:
+                    excursions_text += f"   Детский билет: {excursion.child_price} руб. (скидка {excursion.child_discount}%)\n"
+                excursions_text += f"   Продолжительность: {excursion.base_duration_minutes} мин.\n"
+                if excursion.description and len(excursion.description) < 100:
+                    excursions_text += f"   {excursion.description}\n"
+                excursions_text += "\n"
+            excursions_text += "Выберите экскурсию для подробной информации:"
+
+            await message.answer(
+                excursions_text,
+                reply_markup=await kb.get_excursions_keyboard(message.from_user.id)
+            )
+            logger.debug(f"Список экскурсий отправлен пользователю {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка показа экскурсий для пользователя {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при загрузке списка экскурсий. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+
+
+@router.message(ExcursionNameFilter())
+async def handle_excursion_selection(message: Message):
+    """Обработчик выбора конкретной экскурсии"""
+    logger.info(f"Пользователь {message.from_user.id} выбрал экскурсию: {message.text}")
+    try:
+        async with async_session() as session:
+            db = DatabaseManager(session)
+            excursions = await db.get_all_excursions(active_only=True)
+            selected_excursion = None
+            for excursion in excursions:
+                if excursion.name == message.text:
+                    selected_excursion = excursion
+                    break
+            if not selected_excursion:
+                await message.answer("Экскурсия не найдена", reply_markup=kb.main)
+                return
+
+            # Формируем детальную информацию об экскурсии
+            details = (
+                f"{selected_excursion.name}\n\n"
+                f"Стоимость:\n"
+                f"   • Взрослый: {selected_excursion.base_price} руб.\n"
+            )
+            if selected_excursion.child_discount > 0:
+                details += f"   • Детский: {selected_excursion.child_price} руб. (скидка {selected_excursion.child_discount}%)\n"
+            else:
+                details += f"   • Детский: {selected_excursion.base_price} руб.\n"
+            details += (
+                f"\nПродолжительность: {selected_excursion.base_duration_minutes} минут\n\n"
+            )
+            if selected_excursion.description:
+                details += f"Описание:\n{selected_excursion.description}\n\n"
+            details += "Выберите действие:"
+            await message.answer(
+                details,
+                reply_markup=await kb.get_excursion_details_inline(selected_excursion.id)
+            )
+    except Exception as e:
+        logger.error(f"Ошибка обработки выбора экскурсии: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при загрузке информации об экскурсии",
+            reply_markup=kb.main
+        )
+
+#TODO реакция на "Посмотреть расписание", "Забронировать"
+
+
+@router.callback_query(F.data.startswith('excursion_details_'))
+async def show_excursion_details(callback: CallbackQuery):
+    """Показать полное описание экскурсии"""
+    excursion_id = int(callback.data.split('_')[2])
+    try:
+        async with async_session() as session:
+            db = DatabaseManager(session)
+            excursion = await db.get_excursion_by_id(excursion_id)
+            if not excursion:
+                await callback.answer("Экскурсия не найдена", show_alert=True)
+                return
+            details = (
+                f"{excursion.name}\n\n"
+                f"Полное описание:\n"
+                f"{excursion.description if excursion.description else 'Описание отсутствует'}\n\n"
+                f"Цены:\n"
+                f" • Взрослый: {excursion.base_price} руб.\n"
+                f" • Детский: {excursion.child_price} руб.\n"
+                f"Продолжительность: {excursion.base_duration_minutes} мин."
+            )
+            await callback.message.edit_text(
+                details,
+                reply_markup=await kb.get_excursion_details_inline(excursion_id)
+            )
+            await callback.answer()
+
+    except Exception as e:
+        logger.error(f"Ошибка показа деталей экскурсии: {e}", exc_info=True)
+        await callback.answer("Ошибка загрузки информации", show_alert=True)
+
+
+@router.callback_query(F.data == 'back_to_excursions_list')
+async def back_to_excursions_list(callback: CallbackQuery):
+    """Вернуться к списку экскурсий"""
+    await callback.answer()
+    await excursions(callback.message)
+
+
+@router.message(F.text == 'Назад в меню')
+async def back_to_main_menu(message: Message):
+    """Возврат в главное меню"""
+    logger.info(f"Пользователь {message.from_user.id} вернулся в главное меню")
+    await message.answer("Вы вернулись в главное меню", reply_markup=kb.main)
+
+
+@router.message(F.text == 'Отзывы')
+async def reviews(message: Message):
+    """Показать отзывы"""
+    logger.info(f"Пользователь {message.from_user.id} запросил отзывы")
+    try:
+        await message.answer(
+            'Отзывы о наших экскурсиях вы можете посмотреть в нашей группе.\n'
+            'Там же есть много фотографий с экскурсий.\n'
+            'Если вы уже бывали у нас, обязательно оставьте свое мнение!',
+            reply_markup=kb.inline_feedback
+        )
+        logger.debug(f"Ссылки на отзывы отправлены пользователю {message.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Ошибка показа отзывов для пользователя {message.from_user.id}: {e}", exc_info=True)
+
+
+@router.message(F.text == 'О нас')
+async def about_us(message: Message):
+    """Информация о компании"""
+    logger.info(f"Пользователь {message.from_user.id} запросил информацию о компании")
+    try:
+        await message.answer(
+            'Экскурсии по Ангаре из г. Братск до местных природных достопримечательностей\n\n'
+            'Обязательно посетите наши ресурсы:\n'
+            ' - Беседа с живыми отзывами и фотографиями\n'
+            ' - Группа ВКонтакте\n'
+            ' - Наш уютный и познавательный Телеграм-канал',
+            reply_markup=kb.inline_about_us
+        )
+        logger.debug(f"Информация о компании отправлена пользователю {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка показа информации о компании для пользователя {message.from_user.id}: {e}", exc_info=True)
+
+
+@router.message(F.text == 'Основные вопросы')
+async def questions(message: Message):
+    """Показать FAQ"""
+    logger.info(f"Пользователь {message.from_user.id} открыл раздел вопросов")
+    try:
+        await message.answer(
+            'Ответы на основные вопросы.\n\n'
+            'Если у вас есть другой вопрос, можете задать его нашему администратору\n'
+            '@EkaterinkaMinyaylova',
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await message.answer(
+            'Выберите вопрос:',
+            reply_markup=kb.inline_questions
+        )
+        logger.debug(f"FAQ показан пользователю {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка показа FAQ для пользователя {message.from_user.id}: {e}", exc_info=True)
+
+
+@router.callback_query(F.data == 'qu_startplace')
+async def qu_startplace(callback: CallbackQuery):
+    """Ответ на вопрос о месте старта"""
+    logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о месте старта")
+    try:
+        await callback.answer('')
+        await callback.message.answer(
+            'Осенние экскурсии:\n'
+            'Стартуем от адреса Пирогова 10.\n'
+            'Одеваемся теплее, важна многослойность. '
+            'Теплая, удобная обувь. Перчатки или варежки.\n'
+            'Экскурсия будет на автомобиле с прогулками по значимым местам района.\n\n'
+            'Летние экскурсии:\n'
+            'Доезжаете до кафе "Ладушки" по адресу Пирогова 13,'
+            ' и оттуда мы вместе отправляемся на пирс.'
+            'Сам пирс находится в конце острова Тенга.\n'
+            'Точные координаты пирса: 56.390966, 101.839879'
+            'Далее на нашем судне отправляемся на экскурсию.',
+            reply_markup=kb.inline_questions
+        )
+        logger.debug(f"Ответ о месте старта отправлен пользователю {callback.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки ответа о месте старта: {e}", exc_info=True)
+
+
+@router.callback_query(F.data == 'qu_things_witn')
+async def qu_things_witn(callback: CallbackQuery):
+    """Ответ на вопрос о вещах с собой"""
+    logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о вещах с собой")
+    try:
+        await callback.answer('')
+        await callback.message.answer(
+            'На Ангаре холодно.\n'
+            'По одежде штаны, кофта, головной убор, кроссовки на удобной подошве.\n'
+            'Куртка (желательно, непромокаемая).\n'
+            'Носки высокие, чтобы можно было в них заправить штаны.\n'
+            'Можно взять внешний аккумулятор (Power Bank).\n'
+            'Можете взять свой маленький термос с чаем, '
+            'но у нас будут свои, поэтому без чая не останетесь =)\n',
+            reply_markup=kb.inline_questions
+        )
+        logger.debug(f"Ответ о вещах с собой отправлен пользователю {callback.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки ответа о вещах с собой: {e}", exc_info=True)
+
+
+@router.callback_query(F.data == 'qu_discount')
+async def qu_discount(callback: CallbackQuery):
+    """Ответ на вопрос о скидках"""
+    logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о скидках")
+    try:
+        await callback.answer('')
+        await callback.message.answer(
+            'У нас есть скидки детям:\n'
+            'Дети до 3 лет бесплатно.\n'
+            '4-7 лет - скидка 60%;\n'
+            '8-12 лет - скидка 40%;\n'
+            '13 лет и старше - полная стоимость билета.\n\n'
+            'А в нашей группе иногда бывают скидочные промокоды :)',
+            reply_markup=kb.inline_questions
+        )
+        logger.debug(f"Ответ о скидках отправлен пользователю {callback.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки ответа о скидках: {e}", exc_info=True)
+
+
+@router.callback_query(F.data == 'qu_self_co')
+async def qu_self_co(callback: CallbackQuery):
+    """Ответ на вопрос об индивидуальных экскурсиях"""
+    logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос об индивидуальных экскурсиях")
+    try:
+        await callback.answer('')
+        await callback.message.answer(
+            'Хотите отдохнуть только своей компанией?\n'
+            'Мы готовы предоставить вам экскурсию.\n'
+            'Если вы хотите пойти на экскурсию исключительно своей компанией,'
+            ' то напишите администратору:\n'
+            '@EkaterinkaMinyaylova\n'
+            'Мы выберем подходящий маршрут, день и время.\n'
+            'Доступны и будние дни, и выходные.\n\n'
+            'Индивидуальные экскурсии проводятся компаниям от 4 человек.',
+            reply_markup=kb.inline_questions
+        )
+        logger.debug(f"Ответ об индивидуальных экскурсиях отправлен пользователю {callback.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка отправки ответа об индивидуальных экскурсиях: {e}", exc_info=True)
+
+
+@router.message(F.text.contains('админ') | F.text.contains('администратор'))
+async def mention_admin(message: Message):
+    """Автоматический ответ при упоминании администратора"""
+    logger.info(f"Пользователь {message.from_user.id} упомянул администратора в сообщении")
+
+    try:
+        await message.answer(
+            'Для связи с администратором используйте контакт:\n'
+            '@EkaterinkaMinyaylova\n\n'
+            'Или выберите нужный пункт в меню.',
+            reply_markup=kb.main
+        )
+
+        logger.debug(f"Ответ об администраторе отправлен пользователю {message.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Ошибка отправки ответа об администраторе: {e}", exc_info=True)
+
+
+@router.message(F.text.contains('цена') | F.text.contains('стоимость'))
+async def mention_price(message: Message):
+    """Автоматический ответ при упоминании цены"""
+    logger.info(f"Пользователь {message.from_user.id} спросил о цене")
+
+    try:
+        await message.answer(
+            'Стоимость экскурсий зависит от выбранного маршрута и количества человек.\n'
+            'Выберите "Наши экскурсии" в меню, чтобы увидеть доступные варианты.\n\n'
+            'Для индивидуального расчета стоимости свяжитесь с администратором: @EkaterinkaMinyaylova',
+            reply_markup=kb.main
+        )
+
+        logger.debug(f"Ответ о стоимости отправлен пользователю {message.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Ошибка отправки ответа о стоимости: {e}", exc_info=True)
