@@ -67,16 +67,9 @@ coverage.xml
 .pytest_cache/
 cover/
 
-# Translations
-*.mo
-*.pot
-
 # PyBuilder
 .pybuilder/
 target/
-
-# Jupyter Notebook
-.ipynb_checkpoints
 
 # IPython
 profile_default/
@@ -137,7 +130,6 @@ enhanced_project_report_*.txt
 *token*
 *secret*
 *private*
-*key*
 *cert*
 
 # ОПЕРАЦИОННАЯ СИСТЕМА
