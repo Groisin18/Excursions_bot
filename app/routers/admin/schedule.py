@@ -370,7 +370,7 @@ async def handle_max_weight(message: Message, state: FSMContext):
                     "Выберите действие:\n"
                 )
 
-                await message.answer(response, reply_markup=no_captains_options_menu())
+                await message.answer(response, reply_markup=no_captains_options_menu(context="create"))
 
 
     except Exception as e:
@@ -404,9 +404,9 @@ class ExcursionSlotCreate(BaseModel):
         if 'max_people' in values:
             max_people = values['max_people']
 
-            # Минимальный средний вес - 30кг (дети), максимальный - 120кг
-            min_avg_weight = 30
-            max_avg_weight = 120
+            # Минимальный средний вес - 10кг (дети), максимальный - 160кг
+            min_avg_weight = 10
+            max_avg_weight = 160
 
             min_recommended = max_people * min_avg_weight
             max_recommended = max_people * max_avg_weight
@@ -444,7 +444,7 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
             )
         except ValidationError as e:
             logger.error(f"Ошибка валидации: {e}")
-            await callback.message.answer("Ошибка валидации данных")
+            await callback.message.answer(f"Ошибка валидации данных: {e}")
             await state.clear()
             return
 
@@ -493,6 +493,7 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
 @router.callback_query(F.data == "create_without_captain")
 async def create_without_captain(callback: CallbackQuery, state: FSMContext):
     """Создание слота без капитана"""
+    logger.info(f"Админ {callback.from_user.id} создает слот без капитана")
     try:
         await callback.answer()
 
@@ -697,23 +698,19 @@ async def view_schedule_by_date(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка начала просмотра расписания по дате: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка")
 
-async def format_schedule_for_date(target_date: date, slots: list, db_manager: DatabaseManager) -> str:
+async def format_schedule_for_date_with_preloaded(target_date: date, slots: list, db_manager: DatabaseManager) -> str:
     """
-    Форматировать расписание на конкретную дату в текстовый вид
+    Форматировать расписание с предзагруженными данными
 
     Args:
         target_date: Дата расписания
-        slots: Список слотов
-        db_manager: Менеджер базы данных для получения дополнительной информации
-
-    Returns:
-        Отформатированная строка с расписанием
+        slots: Список слотов с предзагруженной экскурсией
+        db_manager: Менеджер базы данных
     """
     response = f"Расписание на {target_date.strftime('%d.%m.%Y (%A)')}:\n\n"
 
     for slot in slots:
-        excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
-        excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
+        excursion_name = slot.excursion.name if slot.excursion else "Неизвестная экскурсия"
 
         # Статус слота
         status_text = {
@@ -766,13 +763,11 @@ async def handle_schedule_date_view(message: Message, state: FSMContext):
             await message.answer(str(e))
             return
 
-        # Получаем слоты на эту дату
         date_from = datetime.combine(target_date, datetime.min.time())
         date_to = datetime.combine(target_date, datetime.max.time())
-
         async with async_session() as session:
             db_manager = DatabaseManager(session)
-            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+            slots = await db_manager.get_slots_for_period_with_excursion(date_from, date_to)
 
             if not slots:
                 await message.answer(
@@ -789,13 +784,18 @@ async def handle_schedule_date_view(message: Message, state: FSMContext):
                 )
                 return
 
-            response = await format_schedule_for_date(target_date, slots, db_manager)
+            response = await format_schedule_for_date_with_preloaded(target_date, slots, db_manager)
             await message.answer(response)
             await message.answer(
                 "Выберите действие:",
                 reply_markup=schedule_slots_management_menu(slots, target_date)
             )
 
+        await state.clear()
+
+    except Exception as e:
+        logger.error(f"Ошибка показа расписания по дате: {e}", exc_info=True)
+        await message.answer("Произошла ошибка при получении расписания")
         await state.clear()
 
     except Exception as e:
@@ -817,7 +817,7 @@ async def schedule_today_callback(callback: CallbackQuery):
 
         async with async_session() as session:
             db_manager = DatabaseManager(session)
-            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+            slots = await db_manager.get_slots_for_period_with_excursion(date_from, date_to)
 
             if not slots:
                 await callback.message.answer(
@@ -828,8 +828,8 @@ async def schedule_today_callback(callback: CallbackQuery):
             response = f"Расписание на сегодня ({today.strftime('%d.%m.%Y')}):\n\n"
 
             for slot in slots:
-                excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
-                excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
+                # Теперь excursion уже загружен
+                excursion_name = slot.excursion.name if slot.excursion else "Неизвестная экскурсия"
 
                 status_text = {
                     SlotStatus.scheduled: "Запланирована",
@@ -874,7 +874,7 @@ async def schedule_tomorrow_callback(callback: CallbackQuery):
 
         async with async_session() as session:
             db_manager = DatabaseManager(session)
-            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+            slots = await db_manager.get_slots_for_period_with_excursion(date_from, date_to)
 
             if not slots:
                 await callback.message.answer(
@@ -885,7 +885,7 @@ async def schedule_tomorrow_callback(callback: CallbackQuery):
             response = f"Расписание на завтра ({tomorrow.strftime('%d.%m.%Y')}):\n\n"
 
             for slot in slots:
-                excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+                excursion = slot.excursion
                 excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
 
                 status_text = {
@@ -929,7 +929,7 @@ async def schedule_week_callback(callback: CallbackQuery):
 
         async with async_session() as session:
             db_manager = DatabaseManager(session)
-            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+            slots = await db_manager.get_slots_for_period_with_excursion(date_from, date_to)
 
             if not slots:
                 await callback.message.answer(
@@ -951,7 +951,7 @@ async def schedule_week_callback(callback: CallbackQuery):
                 response += f"{slot_date.strftime('%d.%m.%Y (%A)')}:\n"
 
                 for slot in date_slots:
-                    excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+                    excursion = slot.excursion
                     excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
 
                     status_text = {
@@ -994,7 +994,7 @@ async def schedule_month_callback(callback: CallbackQuery):
 
         async with async_session() as session:
             db_manager = DatabaseManager(session)
-            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+            slots = await db_manager.get_slots_for_period_with_excursion(date_from, date_to)
 
             if not slots:
                 await callback.message.answer(
@@ -1016,7 +1016,7 @@ async def schedule_month_callback(callback: CallbackQuery):
                 response += f"{slot_date.strftime('%d.%m.%Y (%A)')}:\n"
 
                 for slot in date_slots:
-                    excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+                    excursion = slot.excursion
                     excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
 
                     status_text = {
@@ -1066,21 +1066,17 @@ async def view_schedule_callback(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("manage_date_slots:"))
 async def manage_date_slots_callback(callback: CallbackQuery):
-    """Управление слотами на конкретную дату"""
     try:
         await callback.answer()
 
-        # Извлекаем дату из callback_data
         date_str = callback.data.split(":")[1]
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
-        # Получаем слоты на эту дату
-        date_from = datetime.combine(target_date, datetime.min.time())
-        date_to = datetime.combine(target_date, datetime.max.time())
-
         async with async_session() as session:
             db_manager = DatabaseManager(session)
-            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+
+            # Используем метод с предзагрузкой
+            slots = await db_manager.get_slots_for_date_with_excursion(target_date)
 
             if not slots:
                 await callback.message.answer(
@@ -1088,88 +1084,24 @@ async def manage_date_slots_callback(callback: CallbackQuery):
                 )
                 return
 
-            # Показываем информацию о слотах
             response = f"Слоты на {target_date.strftime('%d.%m.%Y')}:\n\n"
 
             for slot in slots:
-                excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
-                excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
-
-                response += (
-                    f"• {slot.start_datetime.strftime('%H:%M')} - {excursion_name} "
-                    f"(ID: {slot.id}, статус: {slot.status.value})\n"
-                )
+                excursion_name = slot.excursion.name if slot.excursion else "Неизвестная"
+                response += f"• {slot.start_datetime.strftime('%H:%M')} - {excursion_name} (ID: {slot.id})\n"
 
             await callback.message.answer(response)
-
-            # Показываем меню управления
             await callback.message.answer(
                 "Выберите слот для управления:",
                 reply_markup=manage_date_slots_menu(target_date, slots)
             )
 
     except Exception as e:
-        logger.error(f"Ошибка управления слотами на дату: {e}")
+        logger.error(f"Ошибка управления слотами на дату: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка")
 
 
 # ===== УПРАВЛЕНИЕ СЛОТОМ =====
-
-@router.callback_query(F.data.startswith("manage_slot:"))
-async def manage_slot_callback(callback: CallbackQuery):
-    """Управление конкретным слотом"""
-    slot_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} управляет слотом {slot_id}")
-
-    try:
-        await callback.answer()
-
-        async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            slot = await db_manager.get_slot_with_bookings(slot_id)
-
-            if not slot:
-                await callback.message.answer(f"Слот {slot_id} не найден.")
-                return
-
-            excursion = slot.excursion
-            response = (
-                f"Управление слотом #{slot.id}\n\n"
-                f"Экскурсия: {excursion.name}\n"
-                f"Дата и время: {slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
-                f"Продолжительность: {excursion.base_duration_minutes} мин.\n"
-                f"Количество свободных мест: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}/{slot.max_people}\n"
-                f"Занятость по максимально допустимому весу: {await db_manager.get_current_weight_for_slot(slot.id)}/{slot.max_weight}\n"
-                f"Статус: {slot.status.value}\n"
-            )
-
-            # Информация о капитане
-            if slot.captain:
-                response += f"Капитан: {slot.captain.full_name}\n"
-            else:
-                response += "Капитан: не назначен\n"
-
-            # Информация о бронированиях
-            if slot.bookings:
-                response += f"\nБронирования ({len(slot.bookings)}):\n"
-                for booking in slot.bookings:
-                    client = booking.client
-                    response += (
-                        f"• {client.full_name} "
-                        f"({booking.adults_count}+{booking.children_count})\n"
-                    )
-
-            await callback.message.answer(response)
-
-            # Используем клавиатуру из keyboards_adm.py
-            await callback.message.answer(
-                "Выберите действие:",
-                reply_markup=slot_actions_menu(slot_id)
-            )
-
-    except Exception as e:
-        logger.error(f"Ошибка управления слотом {slot_id}: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при управлении слотом")
 
 @router.callback_query(F.data.startswith("cancel_slot:"))
 async def cancel_slot_callback(callback: CallbackQuery):
@@ -1370,6 +1302,75 @@ async def manage_slots_callback(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка открытия управления слотами: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка")
+
+@router.callback_query(F.data.startswith("manage_slot:"))
+async def manage_slot_callback(callback: CallbackQuery):
+    """Управление конкретным слотом"""
+    slot_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} управляет слотом {slot_id}")
+
+    try:
+        await callback.answer()
+
+        async with async_session() as session:
+            db_manager = DatabaseManager(session)
+
+            # Используем существующий метод с предзагрузкой
+            slot = await db_manager.get_slot_with_bookings(slot_id)
+
+            if not slot:
+                await callback.message.answer(f"Слот {slot_id} не найден.")
+                return
+
+            # Проверяем, что excursion загружен
+            if not slot.excursion:
+                # На всякий случай загружаем
+                slot.excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+
+            excursion = slot.excursion
+            response = (
+                f"Управление слотом #{slot.id}\n\n"
+                f"Экскурсия: {excursion.name if excursion else 'Неизвестно'}\n"
+                f"Дата и время: {slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Продолжительность: {excursion.base_duration_minutes if excursion else '?'} мин.\n"
+                f"Количество свободных мест: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}/{slot.max_people}\n"
+                f"Занятость по максимально допустимому весу: {await db_manager.get_current_weight_for_slot(slot.id)}/{slot.max_weight}\n"
+                f"Статус: {slot.status.value}\n"
+            )
+
+            # Информация о капитане (уже предзагружен)
+            if slot.captain:
+                response += f"Капитан: {slot.captain.full_name}\n"
+            else:
+                response += "Капитан: не назначен\n"
+
+            # Информация о бронированиях (уже предзагружены)
+            if slot.bookings:
+                active_bookings = [b for b in slot.bookings if b.booking_status == BookingStatus.active]
+                response += f"\nАктивных бронирований: {len(active_bookings)}\n"
+                if active_bookings:
+                    response += f"Бронирования:\n"
+                    for booking in active_bookings[:5]:  # Показываем первые 5
+                        client = booking.client
+                        if client:
+                            response += (
+                                f"• {client.full_name} "
+                                f"({booking.adults_count}+{booking.children_count})\n"
+                            )
+                    if len(active_bookings) > 5:
+                        response += f"... и еще {len(active_bookings) - 5}\n"
+
+            await callback.message.answer(response)
+
+            # Используем клавиатуру из keyboards_adm.py
+            await callback.message.answer(
+                "Выберите действие:",
+                reply_markup=slot_actions_menu(slot_id)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка управления слотом {slot_id}: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка при управлении слотом")
 
 @router.callback_query(F.data.startswith("slot_details:"))
 async def show_slot_details(callback: CallbackQuery):
@@ -1763,7 +1764,9 @@ async def handle_change_captain(callback: CallbackQuery, state: FSMContext):
                 "1. Выбрать другое время\n"
                 "2. Создать слот без капитана\n"
                 "3. Отменить перенос",
-                reply_markup=no_captains_options_menu()
+                reply_markup=no_captains_options_menu(
+                            slot_id=slot_id,
+                            context="reschedule")
             )
 
 @router.callback_query(F.data.startswith("select_captain_for_reschedule:"))
@@ -1880,7 +1883,7 @@ async def back_to_conflict_resolution(callback: CallbackQuery, state: FSMContext
 
 @router.callback_query(F.data.startswith("show_available_captains:"))
 async def show_available_captains(callback: CallbackQuery, state: FSMContext):
-    """Показать свободных капитанов (упрощенная версия)"""
+    """Показать свободных капитанов"""
     await callback.answer()
 
     slot_id = int(callback.data.split(":")[1])
@@ -1936,24 +1939,22 @@ async def show_available_captains(callback: CallbackQuery, state: FSMContext):
                 reply_markup=captain_conflict_keyboard(slot_id)
             )
         else:
-            await callback.message.answer("Нет свободных капитанов на это время.")
+            await callback.message.answer("Нет свободных капитанов на это время.",
+                                            reply_markup=no_captains_options_menu(
+                                                slot_id=slot_id,
+                                                context="reschedule"
+                                            )
+)
 
-            # Предлагаем альтернативы
-            await callback.message.answer(
-                "Вы можете:\n"
-                "1. Выбрать другое время\n"
-                "2. Отменить перенос",
-                reply_markup=no_captains_options_menu()
-            )
-
-@router.callback_query(F.data == "create_without_captain")
-async def create_without_captain(callback: CallbackQuery, state: FSMContext):
-    """Создание перенесенного слота без капитана"""
+@router.callback_query(F.data.startswith("reschedule_without_captain:"))
+async def reschedule_without_captain(callback: CallbackQuery, state: FSMContext):
+    """Перенос слота без капитана"""
     await callback.answer()
 
+    slot_id = int(callback.data.split(":")[1])
+    logger.info(f"Админ {callback.from_user.id} переносит слот {slot_id} без капитана")
     data = await state.get_data()
-    slot_id = data.get('slot_id')
-    new_datetime = data.get('new_datetime')
+    new_datetime = data.get('retry_datetime')
 
     if not new_datetime:
         await callback.message.answer("Ошибка: время не указано.")
@@ -1963,34 +1964,48 @@ async def create_without_captain(callback: CallbackQuery, state: FSMContext):
     async with async_session() as session:
         db_manager = DatabaseManager(session)
 
-        # Переносим слот без капитана (капитана оставляем как есть или снимаем)
+        # Снимаем капитана перед переносом
+        slot = await db_manager.get_slot_by_id(slot_id)
+        captain_was_assigned = False
+        captain_name = ""
+
+        if slot and slot.captain_id:
+            captain_was_assigned = True
+            captain = await db_manager.get_user_by_id(slot.captain_id)
+            captain_name = captain.full_name if captain else f"ID {slot.captain_id}"
+
+            # Снимаем капитана
+            await db_manager.assign_captain_to_slot(slot_id, None)
+
+        # Теперь переносим слот (капитана нет - проверки не будет)
         success, error_message = await db_manager.reschedule_slot(slot_id, new_datetime)
 
         if success:
-            # Можно снять капитана, если он был
-            slot = await db_manager.get_slot_by_id(slot_id)
-            if slot and slot.captain_id:
-                # Оставляем капитана, просто переносим слот
-                captain = await db_manager.get_user_by_id(slot.captain_id)
-                captain_name = captain.full_name if captain else f"ID {slot.captain_id}"
-
+            if captain_was_assigned:
                 await callback.message.answer(
                     f"Слот #{slot_id} перенесен на "
-                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')}\n"
-                    f"Капитан остался прежним: {captain_name}\n\n"
-                    f"Внимание: капитан может быть занят в новое время!"
+                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')}\n\n"
+                    f"Капитан {captain_name} был снят со слота.\n"
+                    f"Назначьте нового капитана, если нужно.",
+                    reply_markup=schedule_exc_management_menu()
                 )
             else:
                 await callback.message.answer(
                     f"Слот #{slot_id} перенесен на "
-                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')} без капитана."
+                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')} без капитана.",
+                    reply_markup=schedule_exc_management_menu()
                 )
 
             await state.clear()
         else:
+            # Если не удалось перенести, возвращаем капитана (если был)
+            if captain_was_assigned and slot:
+                await db_manager.assign_captain_to_slot(slot_id, slot.captain_id)
+
             await callback.message.answer(
                 f"Не удалось перенести слот.\n"
-                f"Причина: {error_message}"
+                f"Причина: {error_message}",
+                reply_markup=schedule_exc_management_menu()
             )
 
 @router.callback_query(F.data.startswith("cancel_reschedule:"))

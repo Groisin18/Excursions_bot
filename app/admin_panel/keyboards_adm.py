@@ -927,13 +927,42 @@ def captains_selection_menu(
     builder.adjust(1)
     return builder.as_markup()
 
-def no_captains_options_menu() -> InlineKeyboardMarkup:
+def no_captains_options_menu(slot_id: int = None, context: str = "create") -> InlineKeyboardMarkup:
     """Меню при отсутствии капитанов"""
     builder = InlineKeyboardBuilder()
 
-    builder.button(text="Создать без капитана", callback_data="create_without_captain")
-    builder.button(text="Выбрать другое время", callback_data="change_time")
-    builder.button(text="Отменить создание", callback_data="cancel_slot_creation")
+    if context == "reschedule" and slot_id:
+        # Для переноса слота
+        builder.add(
+            InlineKeyboardButton(
+                text="Перенести без капитана",
+                callback_data=f"reschedule_without_captain:{slot_id}"
+            ),
+            InlineKeyboardButton(
+                text="Выбрать другое время",
+                callback_data=f"reschedule_new_time:{slot_id}"
+            ),
+            InlineKeyboardButton(
+                text="Отменить перенос",
+                callback_data=f"cancel_reschedule:{slot_id}"
+            )
+        )
+    else:
+        # Для создания нового слота
+        builder.add(
+            InlineKeyboardButton(
+                text="Создать без капитана",
+                callback_data="create_without_captain"
+            ),
+            InlineKeyboardButton(
+                text="Выбрать другое время",
+                callback_data="change_time"
+            ),
+            InlineKeyboardButton(
+                text="Отменить создание",
+                callback_data="cancel_slot_creation"
+            )
+        )
 
     builder.adjust(1)
     return builder.as_markup()
@@ -970,7 +999,7 @@ def captain_conflict_keyboard(slot_id: int) -> InlineKeyboardMarkup:
             callback_data=f"reschedule_new_time:{slot_id}"
         ),
         InlineKeyboardButton(
-            text="👨Назначить другого капитана",
+            text="Назначить другого капитана",
             callback_data=f"change_captain:{slot_id}"
         ),
         InlineKeyboardButton(

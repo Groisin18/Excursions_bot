@@ -1083,6 +1083,97 @@ class DatabaseManager:
             )
         }
 
+    async def get_slots_for_date_with_excursion(self, target_date: date) -> List[ExcursionSlot]:
+        """Получить слоты на дату с предзагруженной экскурсией"""
+        from sqlalchemy.orm import selectinload
+
+        logger.debug(f"Получение слотов на дату {target_date} с предзагрузкой excursion")
+
+        date_from = datetime.combine(target_date, datetime.min.time())
+        date_to = datetime.combine(target_date, datetime.max.time())
+
+        try:
+            stmt = select(ExcursionSlot).options(
+                selectinload(ExcursionSlot.excursion)
+            ).where(
+                (ExcursionSlot.start_datetime >= date_from) &
+                (ExcursionSlot.start_datetime <= date_to)
+            ).order_by(ExcursionSlot.start_datetime)
+
+            result = await self.session.execute(stmt)
+            slots = result.scalars().all()
+
+            # Логирование для отладки
+            logger.debug(f"Найдено слотов: {len(slots)}")
+
+            if slots:
+                first_slot = slots[0]
+                logger.debug(f"Первый слот ID: {first_slot.id}")
+                logger.debug(f"Тип excursion: {type(first_slot.excursion)}")
+                logger.debug(f"Excursion ID из слота: {first_slot.excursion_id}")
+
+                if hasattr(first_slot.excursion, '__class__'):
+                    logger.debug(f"Класс excursion: {first_slot.excursion.__class__.__name__}")
+                    logger.debug(f"Есть ли name? {hasattr(first_slot.excursion, 'name')}")
+                    if hasattr(first_slot.excursion, 'name'):
+                        logger.debug(f"Название экскурсии: {first_slot.excursion.name}")
+                    else:
+                        logger.debug("У excursion нет атрибута 'name'")
+                else:
+                    logger.debug(f"Excursion значение: {first_slot.excursion}")
+
+            return slots
+
+        except Exception as e:
+            logger.error(f"Ошибка получения слотов с предзагрузкой: {e}", exc_info=True)
+            return []
+
+    async def get_slots_for_period_with_excursion(self, date_from: datetime, date_to: datetime) -> List[ExcursionSlot]:
+        """Получить слоты за период с предзагруженной экскурсией"""
+        from sqlalchemy.orm import selectinload
+
+        logger.debug(f"Получение слотов за период {date_from} - {date_to} с предзагрузкой excursion")
+
+        try:
+            stmt = select(ExcursionSlot).options(
+                selectinload(ExcursionSlot.excursion)
+            ).where(
+                (ExcursionSlot.start_datetime >= date_from) &
+                (ExcursionSlot.start_datetime <= date_to)
+            ).order_by(ExcursionSlot.start_datetime)
+
+            result = await self.session.execute(stmt)
+            slots = result.scalars().all()
+
+            # Логирование для отладки
+            logger.debug(f"Найдено слотов: {len(slots)}")
+
+            if slots:
+                for i, slot in enumerate(slots[:3]):  # Проверяем первые 3
+                    logger.debug(f"Слот #{i+1} ID: {slot.id}")
+                    logger.debug(f"  Тип excursion: {type(slot.excursion)}")
+                    logger.debug(f"  Excursion ID из слота: {slot.excursion_id}")
+
+                    if isinstance(slot.excursion, int):
+                        logger.debug(f"  WARNING: excursion это int: {slot.excursion}")
+                    elif hasattr(slot.excursion, '__class__'):
+                        logger.debug(f"  Класс excursion: {slot.excursion.__class__.__name__}")
+                        if hasattr(slot.excursion, 'name'):
+                            logger.debug(f"  Название экскурсии: {slot.excursion.name}")
+                        else:
+                            logger.debug("  У excursion нет атрибута 'name'")
+                    else:
+                        logger.debug(f"  Excursion значение: {slot.excursion}")
+
+                    # Проверим также через dir
+                    logger.debug(f"  Атрибуты slot: {[a for a in dir(slot) if not a.startswith('_')][:10]}")
+
+            return slots
+
+        except Exception as e:
+            logger.error(f"Ошибка получения слотов с предзагрузкой: {e}", exc_info=True)
+            return []
+
     # ===== BOOKING OPERATIONS =====
     async def create_booking(self, slot_id: int, client_id: int, people_count: int,
                            children_count: int, total_price: int,
