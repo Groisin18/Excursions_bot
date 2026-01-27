@@ -695,8 +695,8 @@ def schedule_exc_management_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.add(
-        InlineKeyboardButton(text="Смотреть на неделю", callback_data="view_schedule"),
-        InlineKeyboardButton(text="Смотреть конкретную дату", callback_data="view_schedule_by_date"),
+        InlineKeyboardButton(text="Расписание на неделю", callback_data="schedule_week"),
+        InlineKeyboardButton(text="Расписание конкретной даты", callback_data="view_schedule_by_date"),
         InlineKeyboardButton(text="Добавить в расписание", callback_data="add_to_schedule"),
         InlineKeyboardButton(text="Назад в меню экскурсий", callback_data="back_to_exc_menu")
     )
@@ -938,7 +938,53 @@ def no_captains_options_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+def conflict_resolution_keyboard(slot_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для решения конфликта слотов"""
+    builder = InlineKeyboardBuilder()
 
+    builder.add(
+        InlineKeyboardButton(
+            text="Ввести другое время",
+            callback_data=f"reschedule_new_time:{slot_id}"
+        ),
+        InlineKeyboardButton(
+            text="Показать конфликтный слот",
+            callback_data=f"show_conflict_slot:{slot_id}"
+        ),
+        InlineKeyboardButton(
+            text="Отменить перенос",
+            callback_data=f"cancel_reschedule:{slot_id}"
+        )
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def captain_conflict_keyboard(slot_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура при занятости капитана"""
+    builder = InlineKeyboardBuilder()
+
+    builder.add(
+        InlineKeyboardButton(
+            text="Ввести другое время",
+            callback_data=f"reschedule_new_time:{slot_id}"
+        ),
+        InlineKeyboardButton(
+            text="👨Назначить другого капитана",
+            callback_data=f"change_captain:{slot_id}"
+        ),
+        InlineKeyboardButton(
+            text="Показать свободных капитанов",
+            callback_data=f"show_available_captains:{slot_id}"
+        ),
+        InlineKeyboardButton(
+            text="Отменить перенос",
+            callback_data=f"cancel_reschedule:{slot_id}"
+        )
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
 
 # ===== ПРОМОКОДЫ =====
 

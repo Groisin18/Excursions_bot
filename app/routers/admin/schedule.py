@@ -1,5 +1,5 @@
 from aiogram import F, Router
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta, date
 from pydantic import BaseModel, Field, field_validator, ValidationError
@@ -11,10 +11,11 @@ from app.database.models import async_session, SlotStatus, BookingStatus
 from app.utils.validation import Validators
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_view_options,
-    slot_actions_menu, yes_no_keyboard, schedule_back_menu,
+    slot_actions_menu, schedule_back_menu, conflict_resolution_keyboard,
     captains_selection_menu, time_slot_menu, schedule_management_menu,
     slot_action_confirmation_menu, excursions_selection_menu_for_schedule,
-    schedule_slots_management_menu, no_captains_options_menu
+    schedule_slots_management_menu, no_captains_options_menu,
+    captain_conflict_keyboard
 )
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_admin_logger
@@ -26,8 +27,6 @@ router.callback_query.middleware(AdminMiddleware())
 
 logger = get_admin_logger()
 
-
-# TODO в дипсике Помощь с schedule.py  - там порядок дальнейших действий
 
 # ===== ОБЩИЕ КНОПКИ МЕНЮ =====
 
@@ -731,8 +730,8 @@ async def format_schedule_for_date(target_date: date, slots: list, db_manager: D
             f"• {start_time}-{end_time} "
             f"({excursion_name})\n"
             f"  ID слота: {slot.id}\n"
-            f"Количество свободных мест: {slot.available_places}/{slot.max_people}\n"
-            f"Занятость по максимально допустимому весу: {slot.current_weight}/{slot.max_weight}\n"
+            f"Количество свободных мест: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}/{slot.max_people}\n"
+            f"Занятость по максимально допустимому весу: {await db_manager.get_current_weight_for_slot(slot.id)}/{slot.max_weight}\n"
             f"({status_text})\n"
         )
 
@@ -843,7 +842,7 @@ async def schedule_today_callback(callback: CallbackQuery):
                 response += (
                     f"• {start_time}-{end_time} "
                     f"({excursion_name})\n"
-                    f"  ID: {slot.id}, Свободные места: {slot.available_places}/{slot.max_people}\n"
+                    f"  ID: {slot.id}, Свободные места: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}/{slot.max_people}\n"
                     f"  Статус: {status_text}\n\n"
                 )
 
@@ -894,7 +893,7 @@ async def schedule_tomorrow_callback(callback: CallbackQuery):
                 response += (
                     f"• {start_time}-{end_time} "
                     f"({excursion_name})\n"
-                    f"  ID: {slot.id}, Свободные места: {slot.available_places}/{slot.max_people}\n"
+                    f"  ID: {slot.id}, Свободные места: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}/{slot.max_people}\n"
                     f"  Статус: {status_text}\n\n"
                 )
 
@@ -911,11 +910,53 @@ async def schedule_week_callback(callback: CallbackQuery):
 
     try:
         await callback.answer()
-        await show_excursion_schedule(callback.message)
+        date_from = datetime.now()
+        date_to = date_from + timedelta(days=7)
 
+        async with async_session() as session:
+            db_manager = DatabaseManager(session)
+            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+
+            if not slots:
+                await callback.message.answer(
+                    "На ближайшие 7 дней нет запланированных экскурсий."
+                )
+                return
+
+            # Группируем по датам
+            slots_by_date = {}
+            for slot in slots:
+                date_key = slot.start_datetime.date()
+                if date_key not in slots_by_date:
+                    slots_by_date[date_key] = []
+                slots_by_date[date_key].append(slot)
+
+            response = "Расписание на ближайшие 7 дней:\n\n"
+
+            for slot_date, date_slots in sorted(slots_by_date.items()):
+                response += f"{slot_date.strftime('%d.%m.%Y (%A)')}:\n"
+
+                for slot in date_slots:
+                    excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+                    excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
+
+                    status_text = {
+                        SlotStatus.scheduled: "Запланирована",
+                        SlotStatus.in_progress: "В процессе",
+                        SlotStatus.completed: "Завершена",
+                        SlotStatus.cancelled: "Отменена"
+                    }.get(slot.status, "Неизвестно")
+
+                    start_time = slot.start_datetime.strftime("%H:%M")
+                    end_time = slot.end_datetime.strftime("%H:%M")
+
+                    response += f"  • {start_time}-{end_time} ({excursion_name}) - {status_text}\n"
+
+                response += "\n"
+            await callback.message.answer(response)
     except Exception as e:
         logger.error(f"Ошибка показа расписания на неделю: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=schedule_exc_management_menu())
 
 @router.callback_query(F.data == "schedule_month")
 async def schedule_month_callback(callback: CallbackQuery):
@@ -1021,8 +1062,8 @@ async def manage_slot_callback(callback: CallbackQuery):
                 f"Экскурсия: {excursion.name}\n"
                 f"Дата и время: {slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
                 f"Продолжительность: {excursion.base_duration_minutes} мин.\n"
-                f"Количество свободных мест: {slot.available_places}/{slot.max_people}\n"
-                f"Занятость по максимально допустимому весу: {slot.current_weight}/{slot.max_weight}\n"
+                f"Количество свободных мест: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}/{slot.max_people}\n"
+                f"Занятость по максимально допустимому весу: {await db_manager.get_current_weight_for_slot(slot.id)}/{slot.max_weight}\n"
                 f"Статус: {slot.status.value}\n"
             )
 
@@ -1182,8 +1223,8 @@ async def select_captain_for_slot(callback: CallbackQuery):
                     await callback.message.answer(
                         f"Капитан успешно назначен!\n\n"
                         f"Слот: #{slot_id}\n"
-                        f"Капитан: {captain.name} {captain.surname}\n"
-                        f"Телефон: {captain.phone}\n\n"
+                        f"Капитан: {captain.full_name}\n"
+                        f"Телефон: {captain.phone_number}\n\n"
                         f"Капитан будет уведомлен о назначении."
                     )
 
@@ -1279,16 +1320,16 @@ async def show_slot_details(callback: CallbackQuery):
                 f"Продолжительность: {excursion.base_duration_minutes} минут\n"
                 f"Макс. людей: {slot.max_people} человек\n"
                 f"Макс. вес: {slot.max_weight} кг\n"
-                f"Текущий вес: {slot.current_weight} кг\n"
-                f"Доступный вес: {slot.available_weight} кг\n"
-                f"Свободные места: {slot.available_places}\n"
+                f"Текущий вес: {await db_manager.get_current_weight_for_slot(slot.id)} кг\n"
+                f"Доступный вес: {max(0, slot.max_weight - await db_manager.get_current_weight_for_slot(slot.id))} кг\n"
+                f"Свободные места: {slot.max_people - await db_manager.get_booked_places_for_slot(slot.id)}\n"
                 f"Статус: {slot.status.value}\n"
             )
 
             # Информация о капитане
             if slot.captain:
                 response += f"\nКапитан: {slot.captain.full_name}\n"
-                response += f"Телефон: {slot.captain.phone}\n"
+                response += f"Телефон: {slot.captain.phone_number}\n"
                 if slot.captain.email:
                     response += f"Email: {slot.captain.email}\n"
             else:
@@ -1365,44 +1406,89 @@ async def handle_reschedule_datetime(message: Message, state: FSMContext):
             await message.answer("Перенос отменен.")
             return
 
-        # Парсим дату и время
         try:
-            new_datetime = datetime.strptime(message.text, "%d.%m.%Y %H:%M")
-        except ValueError:
-            await message.answer("Неверный формат. Введите ДД.ММ.ГГГГ ЧЧ:ММ")
+            parts = message.text.strip().split()
+            if len(parts) != 2:
+                await message.answer(
+                    "Неверный формат. Введите дату и время через пробел:\n"
+                    "ДД.ММ.ГГГГ ЧЧ:ММ\n"
+                    "Например: 15.01.2024 14:30"
+                )
+                return
+            date_str, time_str = parts
+
+            from app.utils.validation import Validators
+
+            try:
+                date_obj = Validators.validate_slot_date(date_str)
+                time_obj = Validators.validate_slot_time(time_str)
+            except ValueError as e:
+                await message.answer(str(e))
+                return
+
+            new_datetime = datetime.combine(date_obj, time_obj)
+
+        except Exception as e:
+            logger.error(f"Ошибка парсинга даты/времени: {e}")
+            await message.answer(
+                "Неверный формат. Введите:\n"
+                "ДД.ММ.ГГГГ ЧЧ:ММ\n"
+                "Например: 15.01.2024 14:30"
+            )
             return
 
-        # Проверяем, что время не в прошлом
         if new_datetime < datetime.now():
             await message.answer("Нельзя перенести слот на прошедшее время.")
             return
-
-        # Сохраняем новое время
         await state.update_data(new_datetime=new_datetime)
         await state.set_state(RescheduleSlot.waiting_for_confirmation)
 
         data = await state.get_data()
         slot_id = data['slot_id']
 
-        # Показываем подтверждение
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text="Да",
+                        callback_data=f"confirm_reschedule_yes:{slot_id}"
+                    ),
+                    InlineKeyboardButton(
+                        text="Нет",
+                        callback_data=f"confirm_reschedule_no:{slot_id}"
+                    )
+                ]
+            ]
+        )
+
         await message.answer(
             f"Перенести слот #{slot_id} на {new_datetime.strftime('%d.%m.%Y %H:%M')}?\n\n"
             f"Все бронирования сохранятся.\n"
             f"Капитан останется прежним.",
-            reply_markup=yes_no_keyboard(prefix=f"confirm_reschedule:{slot_id}")
+            reply_markup=keyboard
         )
 
     except Exception as e:
-        logger.error(f"Ошибка обработки даты переноса: {e}")
-        await message.answer("Произошла ошибка")
+        logger.error(f"Ошибка обработки даты переноса: {e}", exc_info=True)
+        await message.answer("Произошла ошибка при обработке даты")
 
-@router.callback_query(F.data.startswith("confirm_reschedule:"))
+@router.callback_query(F.data.startswith("confirm_reschedule_"))
 async def confirm_reschedule(callback: CallbackQuery, state: FSMContext):
     """Подтверждение переноса слота"""
     try:
         await callback.answer()
 
-        slot_id = int(callback.data.split(":")[1])
+        parts = callback.data.split(":")
+        action = parts[0]  # "confirm_reschedule_yes" или "confirm_reschedule_no"
+        slot_id = int(parts[1])
+
+        # Если "нет" - отмена
+        if action == "confirm_reschedule_no":
+            await callback.message.answer("Перенос отменен.")
+            await state.clear()
+            return
+
+        # Если "да" - продолжаем
         data = await state.get_data()
         new_datetime = data.get('new_datetime')
 
@@ -1414,17 +1500,426 @@ async def confirm_reschedule(callback: CallbackQuery, state: FSMContext):
         async with async_session() as session:
             db_manager = DatabaseManager(session)
 
-            success = await db_manager.reschedule_slot(slot_id, new_datetime)
+            success, error_message = await db_manager.reschedule_slot(slot_id, new_datetime)
 
             if success:
-                await callback.message.answer(f"Слот #{slot_id} успешно перенесен.")
+                await callback.message.answer(
+                    f"Слот #{slot_id} успешно перенесен на "
+                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')}.",
+                    reply_markup=schedule_exc_management_menu()
+                )
                 # TODO: Отправить уведомления клиентам
+                await state.clear()
             else:
-                await callback.message.answer("Не удалось перенести слот. Возможно конфликт времени.")
+                if "Конфликт" in error_message:
+                    # Сохраняем данные для выбора решения
+                    await state.update_data(
+                        error_type="slot_conflict",
+                        error_message=error_message,
+                        retry_slot_id=slot_id,
+                        retry_datetime=new_datetime
+                    )
 
-        await state.clear()
+                    # Извлекаем ID конфликтного слота из сообщения
+                    import re
+                    match = re.search(r'слотом #(\d+)', error_message)
+                    if match:
+                        conflict_slot_id = int(match.group(1))
+                        await state.update_data(conflict_slot_id=conflict_slot_id)
+
+                    await callback.message.answer(
+                        f"{error_message}\n\n"
+                        "Выберите действие:\n"
+                        "1. Ввести другое время\n"
+                        "2. Просмотреть информацию о конфликтном слоте\n"
+                        "3. Отменить перенос",
+                        reply_markup=conflict_resolution_keyboard(slot_id)
+                    )
+
+                elif "Капитан" in error_message and "занят" in error_message:
+                    await state.update_data(
+                        error_type="captain_busy",
+                        error_message=error_message,
+                        retry_slot_id=slot_id,
+                        retry_datetime=new_datetime
+                    )
+
+                    await callback.message.answer(
+                        f"{error_message}\n\n"
+                        "Выберите действие:\n"
+                        "1. Ввести другое время\n"
+                        "2. Назначить другого капитана\n"
+                        "3. Просмотреть свободных капитанов\n"
+                        "4. Отменить перенос",
+                        reply_markup=captain_conflict_keyboard(slot_id)
+                    )
+                else:
+                    await callback.message.answer(
+                        f"Не удалось перенести слот.\n"
+                        f"Причина: {error_message}\n\n"
+                        "Попробуйте ввести другое время."
+                    )
+                    # Возвращаем в состояние ввода времени
+                    await state.set_state(RescheduleSlot.waiting_for_new_datetime)
+                    await callback.message.answer(
+                        "Введите новую дату и время (ДД.ММ.ГГГГ ЧЧ:ММ):"
+                    )
 
     except Exception as e:
         logger.error(f"Ошибка подтверждения переноса: {e}")
+        await callback.message.answer("Произошла ошибка при переносе слота")
+        await state.clear()
+
+@router.callback_query(F.data.startswith("reschedule_new_time:"))
+async def handle_new_time_request(callback: CallbackQuery, state: FSMContext):
+    """Запрос нового времени при конфликте"""
+    await callback.answer()
+
+    slot_id = int(callback.data.split(":")[1])
+    await state.update_data(slot_id=slot_id)
+
+    await callback.message.answer(
+        "Введите новую дату и время (ДД.ММ.ГГГГ ЧЧ:ММ):\n"
+        "Например: 15.01.2024 14:30"
+    )
+    await state.set_state(RescheduleSlot.waiting_for_new_datetime)
+
+@router.callback_query(F.data.startswith("show_conflict_slot:"))
+async def show_conflict_slot(callback: CallbackQuery, state: FSMContext):
+    """Показать информацию о конфликтном слоте"""
+    await callback.answer()
+
+    data = await state.get_data()
+    conflict_slot_id = data.get('conflict_slot_id')
+    slot_id = int(callback.data.split(":")[1])
+
+    if not conflict_slot_id:
+        await callback.message.answer("Информация о конфликте не найдена.")
+        return
+
+    async with async_session() as session:
+        db_manager = DatabaseManager(session)
+        conflict_slot = await db_manager.get_slot_by_id(conflict_slot_id)
+
+        if conflict_slot:
+            excursion = await db_manager.get_excursion_by_id(conflict_slot.excursion_id)
+            captain = await db_manager.get_user_by_id(conflict_slot.captain_id) if conflict_slot.captain_id else None
+
+            message = (
+                f"Конфликтный слот #{conflict_slot.id}:\n"
+                f"Экскурсия: {excursion.name if excursion else 'Неизвестно'}\n"
+                f"Время: {conflict_slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Статус: {conflict_slot.status.value}\n"
+            )
+
+            if captain:
+                message += f"Капитан: {captain.full_name}\n"
+
+            booked_places = await db_manager.get_booked_places_for_slot(conflict_slot_id)
+            message += f"Забронировано мест: {booked_places}/{conflict_slot.max_people}\n"
+
+            await callback.message.answer(message)
+        else:
+            await callback.message.answer("Конфликтный слот не найден.")
+
+    # Показываем клавиатуру снова
+    await callback.message.answer(
+        "Выберите действие:",
+        reply_markup=conflict_resolution_keyboard(slot_id)
+    )
+
+@router.callback_query(F.data.startswith("change_captain:"))
+async def handle_change_captain(callback: CallbackQuery, state: FSMContext):
+    """Начать процесс смены капитана при переносе"""
+    await callback.answer()
+
+    slot_id = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    new_datetime = data.get('retry_datetime')
+
+    if not new_datetime:
+        await callback.message.answer("Ошибка: время не указано.")
+        return
+
+    async with async_session() as session:
+        db_manager = DatabaseManager(session)
+
+        slot = await db_manager.get_slot_by_id(slot_id)
+        if not slot:
+            await callback.message.answer("Слот не найден.")
+            return
+
+        excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+        if not excursion:
+            await callback.message.answer("Экскурсия не найдена.")
+            return
+
+        new_end_datetime = new_datetime + timedelta(
+            minutes=excursion.base_duration_minutes
+        )
+        available_captains = await db_manager.get_available_captains(
+            new_datetime, new_end_datetime
+        )
+
+        await state.update_data(
+            slot_id=slot_id,
+            new_datetime=new_datetime,
+            new_end_datetime=new_end_datetime,
+            available_captains=[c.id for c in available_captains]
+        )
+
+        if available_captains:
+            await callback.message.answer(
+                f"Доступные капитаны на {new_datetime.strftime('%d.%m.%Y %H:%M')}:",
+                reply_markup=captains_selection_menu(
+                    item_id=slot_id,
+                    captains=available_captains,
+                    callback_prefix="select_captain_for_reschedule",  # Новый префикс
+                    include_back=True,
+                    back_callback=f"back_to_conflict_resolution:{slot_id}",
+                    include_remove=False
+                )
+            )
+        else:
+            await callback.message.answer(
+                "Нет свободных капитанов на указанное время.\n"
+                "Вы можете:\n"
+                "1. Выбрать другое время\n"
+                "2. Создать слот без капитана\n"
+                "3. Отменить перенос",
+                reply_markup=no_captains_options_menu()
+            )
+
+@router.callback_query(F.data.startswith("select_captain_for_reschedule:"))
+async def select_captain_for_reschedule(callback: CallbackQuery, state: FSMContext):
+    """Обработка выбора капитана при переносе слота"""
+    data_parts = callback.data.split(":")
+    slot_id = int(data_parts[1])
+    captain_id = int(data_parts[2])
+
+    logger.info(f"Выбран капитан {captain_id} для переноса слота {slot_id}")
+
+    try:
+        await callback.answer()
+
+        data = await state.get_data()
+        new_datetime = data.get('new_datetime')
+
+        if not new_datetime:
+            await callback.message.answer("Ошибка: время не указано.")
+            await state.clear()
+            return
+
+        async with async_session() as session:
+            db_manager = DatabaseManager(session)
+
+            # Проверяем, что капитан все еще доступен
+            available_captains = data.get('available_captains', [])
+            if captain_id not in available_captains:
+                await callback.message.answer(
+                    "Капитан больше не доступен на это время. Выберите другого капитана."
+                )
+                return
+
+            # Переносим слот с новым капитаном
+            success, error_message = await db_manager.reschedule_slot(slot_id, new_datetime)
+
+            if success:
+                # Назначаем капитана
+                captain_assigned = await db_manager.assign_captain_to_slot(slot_id, captain_id)
+
+                if captain_assigned:
+                    captain = await db_manager.get_user_by_id(captain_id)
+                    captain_name = captain.full_name if captain else f"ID {captain_id}"
+
+                    await callback.message.answer(
+                        f"Слот #{slot_id} успешно перенесен на "
+                        f"{new_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+                        f"Капитан: {captain_name}",
+                        reply_markup=schedule_exc_management_menu()
+                    )
+
+                    # TODO: Отправить уведомления клиентам и капитану
+
+                else:
+                    await callback.message.answer(
+                        f"Слот перенесен, но не удалось назначить капитана.",
+                        reply_markup=schedule_exc_management_menu()
+                    )
+
+                await state.clear()
+
+            else:
+                # Если не удалось перенести, показываем ошибку
+                await callback.message.answer(
+                    f"Не удалось перенести слот.\n"
+                    f"Причина: {error_message}"
+                )
+
+                # Предлагаем решения в зависимости от ошибки
+                if "Конфликт" in error_message:
+                    await state.update_data(
+                        error_type="slot_conflict",
+                        error_message=error_message
+                    )
+                    await callback.message.answer(
+                        "Выберите действие:",
+                        reply_markup=conflict_resolution_keyboard(slot_id)
+                    )
+                else:
+                    await callback.message.answer(
+                        "Попробуйте ввести другое время:"
+                    )
+                    await state.set_state(RescheduleSlot.waiting_for_new_datetime)
+
+    except Exception as e:
+        logger.error(f"Ошибка при выборе капитана для переноса: {e}")
         await callback.message.answer("Произошла ошибка")
         await state.clear()
+
+@router.callback_query(F.data.startswith("back_to_conflict_resolution:"))
+async def back_to_conflict_resolution(callback: CallbackQuery, state: FSMContext):
+    """Возврат к меню разрешения конфликта"""
+    await callback.answer()
+
+    slot_id = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    error_type = data.get('error_type')
+
+    if error_type == "slot_conflict":
+        await callback.message.answer(
+            "Выберите действие:",
+            reply_markup=conflict_resolution_keyboard(slot_id)
+        )
+    elif error_type == "captain_busy":
+        await callback.message.answer(
+            "Выберите действие:",
+            reply_markup=captain_conflict_keyboard(slot_id)
+        )
+    else:
+        await callback.message.answer(
+            "Возникла ошибка. Попробуйте ввести другое время:"
+        )
+        await state.set_state(RescheduleSlot.waiting_for_new_datetime)
+
+@router.callback_query(F.data.startswith("show_available_captains:"))
+async def show_available_captains(callback: CallbackQuery, state: FSMContext):
+    """Показать свободных капитанов (упрощенная версия)"""
+    await callback.answer()
+
+    slot_id = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    new_datetime = data.get('retry_datetime')
+
+    if not new_datetime:
+        await callback.message.answer("Ошибка: время не указано.")
+        return
+
+    async with async_session() as session:
+        db_manager = DatabaseManager(session)
+
+        slot = await db_manager.get_slot_by_id(slot_id)
+        if not slot:
+            await callback.message.answer("Слот не найден.")
+            return
+
+        excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+        if not excursion:
+            await callback.message.answer("Экскурсия не найдена.")
+            return
+
+        new_end_datetime = new_datetime + timedelta(
+            minutes=excursion.base_duration_minutes
+        )
+
+        available_captains = await db_manager.get_available_captains(
+            new_datetime, new_end_datetime
+        )
+
+        if available_captains:
+            captains_list = "\n".join(
+                f"• {captain.full_name} (ID: {captain.id}) - {captain.phone_number}"
+                for captain in available_captains[:10]
+            )
+
+            message = (
+                f"Свободные капитаны на {new_datetime.strftime('%d.%m.%Y %H:%M')}:\n\n"
+                f"{captains_list}\n\n"
+            )
+
+            if len(available_captains) > 10:
+                message += f"И еще {len(available_captains) - 10} капитанов...\n\n"
+
+            message += "Для назначения используйте меню 'Назначить другого капитана'"
+
+            await callback.message.answer(message)
+
+            # Показываем меню снова
+            await callback.message.answer(
+                "Выберите действие:",
+                reply_markup=captain_conflict_keyboard(slot_id)
+            )
+        else:
+            await callback.message.answer("Нет свободных капитанов на это время.")
+
+            # Предлагаем альтернативы
+            await callback.message.answer(
+                "Вы можете:\n"
+                "1. Выбрать другое время\n"
+                "2. Отменить перенос",
+                reply_markup=no_captains_options_menu()
+            )
+
+@router.callback_query(F.data == "create_without_captain")
+async def create_without_captain(callback: CallbackQuery, state: FSMContext):
+    """Создание перенесенного слота без капитана"""
+    await callback.answer()
+
+    data = await state.get_data()
+    slot_id = data.get('slot_id')
+    new_datetime = data.get('new_datetime')
+
+    if not new_datetime:
+        await callback.message.answer("Ошибка: время не указано.")
+        await state.clear()
+        return
+
+    async with async_session() as session:
+        db_manager = DatabaseManager(session)
+
+        # Переносим слот без капитана (капитана оставляем как есть или снимаем)
+        success, error_message = await db_manager.reschedule_slot(slot_id, new_datetime)
+
+        if success:
+            # Можно снять капитана, если он был
+            slot = await db_manager.get_slot_by_id(slot_id)
+            if slot and slot.captain_id:
+                # Оставляем капитана, просто переносим слот
+                captain = await db_manager.get_user_by_id(slot.captain_id)
+                captain_name = captain.full_name if captain else f"ID {slot.captain_id}"
+
+                await callback.message.answer(
+                    f"Слот #{slot_id} перенесен на "
+                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+                    f"Капитан остался прежним: {captain_name}\n\n"
+                    f"Внимание: капитан может быть занят в новое время!"
+                )
+            else:
+                await callback.message.answer(
+                    f"Слот #{slot_id} перенесен на "
+                    f"{new_datetime.strftime('%d.%m.%Y %H:%M')} без капитана."
+                )
+
+            await state.clear()
+        else:
+            await callback.message.answer(
+                f"Не удалось перенести слот.\n"
+                f"Причина: {error_message}"
+            )
+
+@router.callback_query(F.data.startswith("cancel_reschedule:"))
+async def cancel_reschedule_process(callback: CallbackQuery, state: FSMContext):
+    """Отмена процесса переноса"""
+    await callback.answer()
+    await state.clear()
+    await callback.message.answer("Перенос отменен.")

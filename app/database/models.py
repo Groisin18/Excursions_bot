@@ -334,41 +334,6 @@ class ExcursionSlot(Base):
         """Доступен ли слот для бронирования"""
         return self.status == SlotStatus.scheduled and self.start_datetime > datetime.now()
 
-    @property
-    def available_places(self) -> int:
-        """Количество доступных мест"""
-        if not self.bookings:
-            return self.max_people
-
-        booked_places = sum(
-            booking.people_count
-            for booking in self.bookings
-            if booking.booking_status == BookingStatus.active
-        )
-        return max(0, self.max_people - booked_places)
-
-    @property
-    def current_weight(self) -> int:
-        """Текущий суммарный вес всех забронировавшихся клиентов и капитана"""
-        if not self.bookings:
-            return 0
-        total_weight = 0
-        for booking in self.bookings:
-            if booking.booking_status == BookingStatus.active:
-                if booking.client and booking.client.weight:
-                    total_weight += booking.client.weight
-
-        if self.captain and self.captain.weight:
-            total_weight += self.captain.weight
-
-        return total_weight
-
-
-    @property
-    def available_weight(self) -> int:
-        """Доступный остаток по весу (учитывая капитана)"""
-        return max(0, self.max_weight - self.current_weight)
-
     def to_dict(self) -> dict:
         """Преобразование слота в словарь (для логирования)"""
         return {
@@ -377,7 +342,6 @@ class ExcursionSlot(Base):
             'start_datetime': self.start_datetime.isoformat() if self.start_datetime else None,
             'end_datetime': self.end_datetime.isoformat() if self.end_datetime else None,
             'max_people': self.max_people,
-            'available_places': self.available_places,
             'status': self.status.value
         }
 
@@ -427,17 +391,6 @@ class Booking(Base):
     def is_paid(self) -> bool:
         """Оплачено ли бронирование"""
         return self.payment_status == PaymentStatus.paid
-
-    @property
-    def calculated_total_price(self) -> int:
-        """Расчетная общая стоимость (для проверки)"""
-        base_price = self.slot.excursion.base_price
-        child_price = self.slot.excursion.child_price
-
-        adults_total = self.adults_count * base_price
-        children_total = self.children_count * child_price
-
-        return adults_total + children_total
 
     def to_dict(self) -> dict:
         """Преобразование бронирования в словарь (для логирования)"""

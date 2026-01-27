@@ -406,6 +406,39 @@ class DatabaseManager:
             logger.error(f"Ошибка при получении доступных капитанов: {e}")
             return []
 
+    async def check_captain_availability(
+        self,
+        captain_id: int,
+        start_datetime: datetime,
+        end_datetime: datetime,
+        exclude_slot_id: int = None
+    ) -> bool:
+        """Проверить, занят ли капитан в указанное время
+
+        Returns:
+            bool: True если капитан занят, False если свободен
+        """
+        try:
+            query = select(ExcursionSlot).where(
+                and_(
+                    ExcursionSlot.captain_id == captain_id,
+                    ExcursionSlot.status.in_([SlotStatus.scheduled, SlotStatus.in_progress]),
+                    ExcursionSlot.start_datetime < end_datetime,
+                    ExcursionSlot.end_datetime > start_datetime
+                )
+            )
+
+            if exclude_slot_id:
+                query = query.where(ExcursionSlot.id != exclude_slot_id)
+
+            result = await self.session.execute(query)
+            conflicting_slots = result.scalars().all()
+
+            return len(conflicting_slots) > 0
+
+        except Exception as e:
+            logger.error(f"Ошибка проверки доступности капитана: {e}")
+            return True  # В случае ошибки считаем, что капитан занят
 
     # ===== EXCURSION OPERATIONS =====
     async def get_all_excursions(self, active_only: bool = True) -> List[Excursion]:
@@ -884,18 +917,22 @@ class DatabaseManager:
         self,
         slot_id: int,
         new_start_datetime: datetime
-    ) -> bool:
-        """Перенести слот на новое время"""
+    ) -> tuple[bool, str]:
+        """Перенести слот на новое время
+
+        Returns:
+            tuple[bool, str]: (успех, сообщение об ошибке)
+        """
         try:
             # Получаем текущий слот
             slot = await self.get_slot_by_id(slot_id)
             if not slot:
-                return False
+                return False, "Слот не найден"
 
             # Рассчитываем новое время окончания
             excursion = await self.get_excursion_by_id(slot.excursion_id)
             if not excursion:
-                return False
+                return False, "Экскурсия не найдена"
 
             new_end_datetime = new_start_datetime + timedelta(
                 minutes=excursion.base_duration_minutes
@@ -911,7 +948,22 @@ class DatabaseManager:
 
             if conflicting_slot:
                 logger.warning(f"Конфликт с слотом ID={conflicting_slot.id}")
-                return False
+                return False, f"Конфликт с слотом #{conflicting_slot.id}"
+
+            # Проверяем доступность капитана, если он назначен
+            if slot.captain_id:
+                # Проверяем, свободен ли капитан в новое время
+                captain_busy = await self.check_captain_availability(
+                    slot.captain_id,
+                    new_start_datetime,
+                    new_end_datetime,
+                    exclude_slot_id=slot_id
+                )
+
+                if captain_busy:
+                    captain = await self.get_user_by_id(slot.captain_id)
+                    captain_name = captain.full_name if captain else f"ID {slot.captain_id}"
+                    return False, f"Капитан {captain_name} занят в это время"
 
             # Обновляем слот
             result = await self.session.execute(
@@ -924,12 +976,112 @@ class DatabaseManager:
             )
 
             await self.session.commit()
-            return result.rowcount > 0
+
+            if result.rowcount > 0:
+                return True, ""
+            else:
+                return False, "Не удалось обновить слот"
 
         except Exception as e:
             logger.error(f"Ошибка переноса слота: {e}")
             await self.session.rollback()
-            return False
+            return False, f"Ошибка: {str(e)}"
+
+    async def get_booked_places_for_slot(self, slot_id: int) -> int:
+        """Получить количество забронированных мест для слота"""
+        stmt = select(func.coalesce(func.sum(Booking.people_count), 0)).where(
+            (Booking.slot_id == slot_id) &
+            (Booking.booking_status == BookingStatus.active)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() or 0
+
+    async def get_current_weight_for_slot(self, slot_id: int) -> int:
+        """Получить текущий вес для слота"""
+        # Получаем вес активных клиентов
+        stmt = select(func.coalesce(func.sum(User.weight), 0)).select_from(Booking).join(
+            User, Booking.client_id == User.id
+        ).where(
+            (Booking.slot_id == slot_id) &
+            (Booking.booking_status == BookingStatus.active) &
+            (User.weight.is_not(None))
+        )
+        client_weight = (await self.session.execute(stmt)).scalar() or 0
+
+        # Получаем вес капитана
+        slot_stmt = select(ExcursionSlot.captain_id).where(ExcursionSlot.id == slot_id)
+        slot_result = await self.session.execute(slot_stmt)
+        captain_id = slot_result.scalar_one_or_none()
+
+        captain_weight = 0
+        if captain_id:
+            captain_stmt = select(User.weight).where(User.id == captain_id)
+            captain_result = await self.session.execute(captain_stmt)
+            captain_weight = captain_result.scalar_one_or_none() or 0
+
+        return client_weight + captain_weight
+
+    async def get_booking_calculated_price(self, booking_id: int) -> int:
+        """Получить расчетную стоимость бронирования"""
+        from sqlalchemy.orm import selectinload
+
+        stmt = select(Booking).options(
+            selectinload(Booking.slot).selectinload(ExcursionSlot.excursion)
+        ).where(Booking.id == booking_id)
+
+        result = await self.session.execute(stmt)
+        booking = result.scalar_one_or_none()
+
+        if not booking or not booking.slot or not booking.slot.excursion:
+            return 0
+
+        base_price = booking.slot.excursion.base_price
+        child_price = booking.slot.excursion.child_price
+        adults = booking.people_count - booking.children_count
+
+        return (adults * base_price) + (booking.children_count * child_price)
+
+    async def get_slot_full_info(self, slot_id: int) -> dict:
+        """Получить полную информацию о слоте"""
+        from sqlalchemy.orm import selectinload
+
+        stmt = select(ExcursionSlot).options(
+            selectinload(ExcursionSlot.excursion),
+            selectinload(ExcursionSlot.captain),
+            selectinload(ExcursionSlot.bookings).selectinload(Booking.client)
+        ).where(ExcursionSlot.id == slot_id)
+
+        result = await self.session.execute(stmt)
+        slot = result.scalar_one_or_none()
+
+        if not slot:
+            return None
+
+        # Рассчитываем показатели
+        booked_places = sum(
+            b.people_count for b in slot.bookings
+            if b.booking_status == BookingStatus.active
+        )
+
+        current_weight = sum(
+            b.client.weight for b in slot.bookings
+            if b.client and b.client.weight and b.booking_status == BookingStatus.active
+        )
+
+        if slot.captain and slot.captain.weight:
+            current_weight += slot.captain.weight
+
+        return {
+            'slot': slot,
+            'available_places': max(0, slot.max_people - booked_places),
+            'booked_places': booked_places,
+            'current_weight': current_weight,
+            'available_weight': max(0, slot.max_weight - current_weight),
+            'is_available': (
+                slot.status == SlotStatus.scheduled and
+                slot.start_datetime > datetime.now()
+            )
+        }
 
     # ===== BOOKING OPERATIONS =====
     async def create_booking(self, slot_id: int, client_id: int, people_count: int,
