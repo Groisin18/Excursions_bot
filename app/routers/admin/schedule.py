@@ -15,7 +15,8 @@ from app.admin_panel.keyboards_adm import (
     captains_selection_menu, time_slot_menu, schedule_management_menu,
     slot_action_confirmation_menu, excursions_selection_menu_for_schedule,
     schedule_slots_management_menu, no_captains_options_menu,
-    captain_conflict_keyboard
+    captain_conflict_keyboard, schedule_month_management_menu,
+    schedule_week_management_menu, manage_date_slots_menu
 )
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_admin_logger
@@ -758,11 +759,12 @@ async def handle_schedule_date_view(message: Message, state: FSMContext):
                 reply_markup=schedule_exc_management_menu()
             )
             return
+
         try:
             target_date = Validators.validate_slot_date(message.text)
-        except Exception as e:
-            logger.error(f"Ошибка валидации даты: {str(e)}", exc_info=True)
+        except ValueError as e:
             await message.answer(str(e))
+            return
 
         # Получаем слоты на эту дату
         date_from = datetime.combine(target_date, datetime.min.time())
@@ -848,6 +850,12 @@ async def schedule_today_callback(callback: CallbackQuery):
 
             await callback.message.answer(response)
 
+            # Показываем клавиатуру управления слотами
+            await callback.message.answer(
+                "Выберите действие:",
+                reply_markup=schedule_slots_management_menu(slots, today)
+            )
+
     except Exception as e:
         logger.error(f"Ошибка показа расписания на сегодня: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка")
@@ -898,6 +906,12 @@ async def schedule_tomorrow_callback(callback: CallbackQuery):
                 )
 
             await callback.message.answer(response)
+
+            # Показываем клавиатуру управления слотами
+            await callback.message.answer(
+                "Выберите действие:",
+                reply_markup=schedule_slots_management_menu(slots, tomorrow)
+            )
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на завтра: {e}", exc_info=True)
@@ -953,7 +967,15 @@ async def schedule_week_callback(callback: CallbackQuery):
                     response += f"  • {start_time}-{end_time} ({excursion_name}) - {status_text}\n"
 
                 response += "\n"
+
             await callback.message.answer(response)
+
+            # Показываем меню с вариантами управления
+            await callback.message.answer(
+                "Выберите действие:",
+                reply_markup=schedule_week_management_menu(slots_by_date)
+            )
+
     except Exception as e:
         logger.error(f"Ошибка показа расписания на неделю: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка", reply_markup=schedule_exc_management_menu())
@@ -1016,6 +1038,12 @@ async def schedule_month_callback(callback: CallbackQuery):
 
             await callback.message.answer(response)
 
+            # Показываем меню с вариантами управления
+            await callback.message.answer(
+                "Выберите действие:",
+                reply_markup=schedule_month_management_menu(slots_by_date)
+            )
+
     except Exception as e:
         logger.error(f"Ошибка показа расписания на месяц: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка")
@@ -1034,6 +1062,54 @@ async def view_schedule_callback(callback: CallbackQuery):
         )
     except Exception as e:
         logger.error(f"Ошибка в view_schedule: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка")
+
+@router.callback_query(F.data.startswith("manage_date_slots:"))
+async def manage_date_slots_callback(callback: CallbackQuery):
+    """Управление слотами на конкретную дату"""
+    try:
+        await callback.answer()
+
+        # Извлекаем дату из callback_data
+        date_str = callback.data.split(":")[1]
+        target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
+
+        # Получаем слоты на эту дату
+        date_from = datetime.combine(target_date, datetime.min.time())
+        date_to = datetime.combine(target_date, datetime.max.time())
+
+        async with async_session() as session:
+            db_manager = DatabaseManager(session)
+            slots = await db_manager.get_excursion_schedule(date_from, date_to)
+
+            if not slots:
+                await callback.message.answer(
+                    f"На {target_date.strftime('%d.%m.%Y')} больше нет слотов."
+                )
+                return
+
+            # Показываем информацию о слотах
+            response = f"Слоты на {target_date.strftime('%d.%m.%Y')}:\n\n"
+
+            for slot in slots:
+                excursion = await db_manager.get_excursion_by_id(slot.excursion_id)
+                excursion_name = excursion.name if excursion else "Неизвестная экскурсия"
+
+                response += (
+                    f"• {slot.start_datetime.strftime('%H:%M')} - {excursion_name} "
+                    f"(ID: {slot.id}, статус: {slot.status.value})\n"
+                )
+
+            await callback.message.answer(response)
+
+            # Показываем меню управления
+            await callback.message.answer(
+                "Выберите слот для управления:",
+                reply_markup=manage_date_slots_menu(target_date, slots)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка управления слотами на дату: {e}")
         await callback.message.answer("Произошла ошибка")
 
 

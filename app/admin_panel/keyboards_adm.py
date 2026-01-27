@@ -986,6 +986,124 @@ def captain_conflict_keyboard(slot_id: int) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+def schedule_week_management_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для управления расписанием на неделю
+
+    Args:
+        slots_by_date: Словарь {дата: [слоты]}
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Кнопки для выбора конкретной даты для управления
+    for slot_date in sorted(slots_by_date.keys()):
+        date_str = slot_date.strftime('%d.%m.%Y')
+        slots_count = len(slots_by_date[slot_date])
+
+        builder.button(
+            text=f"Управлять {date_str} ({slots_count} слотов)",
+            callback_data=f"manage_date_slots:{slot_date.strftime('%Y-%m-%d')}"
+        )
+
+    # Кнопка добавления экскурсии
+    builder.button(
+        text="Добавить экскурсию в расписание",
+        callback_data="add_to_schedule"
+    )
+
+    # Кнопка возврата
+    builder.button(
+        text="Назад в меню расписания",
+        callback_data="back_to_schedule_menu"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def schedule_month_management_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для управления расписанием на месяц
+
+    Args:
+        slots_by_date: Словарь {дата: [слоты]}
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Показываем первые 5 дат для управления
+    sorted_dates = sorted(slots_by_date.keys())[:5]
+
+    for slot_date in sorted_dates:
+        date_str = slot_date.strftime('%d.%m.%Y')
+        weekday = slot_date.strftime('%a')
+        slots_count = len(slots_by_date[slot_date])
+
+        builder.button(
+            text=f"{date_str} ({weekday}) - {slots_count} сл.",
+            callback_data=f"manage_date_slots:{slot_date.strftime('%Y-%m-%d')}"
+        )
+
+    # Если есть еще даты
+    if len(slots_by_date) > 5:
+        builder.button(
+            text=f"Показать еще {len(slots_by_date) - 5} дней...",
+            callback_data="show_more_month_dates"
+        )
+
+    # Общие кнопки
+    builder.button(
+        text="Добавить экскурсию в расписание",
+        callback_data="add_to_schedule"
+    )
+
+    builder.button(
+        text="Выбрать конкретную дату",
+        callback_data="view_schedule_by_date"
+    )
+
+    builder.button(
+        text="Назад в меню расписания",
+        callback_data="back_to_schedule_menu"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def manage_date_slots_menu(target_date: date, slots: list) -> InlineKeyboardMarkup:
+    """
+    Меню для управления слотами на конкретную дату
+
+    Args:
+        target_date: Дата для управления
+        slots: Список слотов на эту дату
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Кнопки для управления каждым слотом
+    for slot in slots:
+        if slot.status == SlotStatus.scheduled:
+            excursion = slot.excursion if hasattr(slot, 'excursion') else None
+            excursion_name = excursion.name if excursion else f"ID:{slot.excursion_id}"
+
+            builder.button(
+                text=f"Слот {slot.id}: {excursion_name} ({slot.start_datetime.strftime('%H:%M')})",
+                callback_data=f"manage_slot:{slot.id}"
+            )
+
+    # Кнопка добавления экскурсии на эту дату
+    builder.button(
+        text=f"Добавить экскурсию на {target_date.strftime('%d.%m.%Y')}",
+        callback_data=f"add_to_date:{target_date.strftime('%Y-%m-%d')}"
+    )
+
+    # Кнопка возврата
+    builder.button(
+        text="Назад к просмотру расписания",
+        callback_data="schedule_week"  # Или другой подходящий callback
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
 # ===== ПРОМОКОДЫ =====
 
 
