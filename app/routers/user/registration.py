@@ -76,6 +76,7 @@ async def handle_registration(message, final_user):
         logger.error(f"Ошибка создания пользователя: {e}", exc_info=True)
         raise
 
+
 @router.message(F.text == 'Личный кабинет')
 async def registration_data(message: Message, state: FSMContext):
     """Обработчик личного кабинета - объединенная логика"""
@@ -189,7 +190,6 @@ async def child_choice(callback: CallbackQuery):
         logger.error(f"Ошибка показа данных детей: {e}", exc_info=True)
         await callback.answer("Произошла ошибка", show_alert=True)
 
-
 @router.callback_query(F.data == 'back_to_cabinet')
 async def back_to_cabinet(callback: CallbackQuery):
     """Вернуться в личный кабинет"""
@@ -228,9 +228,7 @@ async def back_to_cabinet(callback: CallbackQuery):
         await callback.answer("Ошибка", show_alert=True)
 
 
-
 # ===== РЕГИСТРАЦИЯ ПО ТОКЕНУ =====
-
 
 
 @router.callback_query(F.data == 'user_has_token')
@@ -246,7 +244,6 @@ async def reg_has_token(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала регистрации по токену: {e}", exc_info=True)
-
 
 @router.message(Reg_token.token)
 async def reg_is_token_right(message: Message, state: FSMContext):
@@ -301,7 +298,6 @@ async def reg_is_token_right(message: Message, state: FSMContext):
             reply_markup=kb.inline_in_menu
         )
 
-
 @router.callback_query(F.data == 'user_has_wrong_token')
 async def reg_token_wrong(callback: CallbackQuery, state: FSMContext):
     """Повторный ввод токена"""
@@ -314,7 +310,6 @@ async def reg_token_wrong(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка повторного ввода токена: {e}", exc_info=True)
-
 
 @router.callback_query(F.data == 'user_has_right_token')
 async def reg_token_right(callback: CallbackQuery, state: FSMContext):
@@ -382,7 +377,6 @@ async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка перехода к вводу email: {e}", exc_info=True)
 
-
 @router.message(Reg_token.email)
 async def reg_token_email(message: Message, state: FSMContext):
     """Ввод email при регистрации по токену"""
@@ -401,7 +395,6 @@ async def reg_token_email(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Ошибка обработки email: {e}", exc_info=True)
-
 
 @router.message(Reg_token.phone)
 async def reg_token_end(message: Message, state: FSMContext):
@@ -519,7 +512,6 @@ async def reg_child(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка начала регистрации ребенка: {e}", exc_info=True)
 
-
 @router.message(Reg_child.name)
 async def reg_surname(message: Message, state: FSMContext):
     """Ввод имени ребенка"""
@@ -537,7 +529,6 @@ async def reg_surname(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидное имя ребенка от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
-
 
 @router.message(Reg_child.surname)
 async def reg_token_right(message: Message, state: FSMContext):
@@ -614,7 +605,6 @@ async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
             reply_markup=kb.inline_pd_consent_child)
 
-
 @router.callback_query(F.data == 'pd_consent_child_true')
 async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
     """Согласие дано, переход к вводу даты рождения ребенка"""
@@ -644,7 +634,6 @@ def get_age(birth_date: str) -> int:
         age -= 1
     return age
 
-
 @router.message(Reg_child.date_of_birth)
 async def reg_age(message: Message, state: FSMContext):
     """Ввод даты рождения ребенка"""
@@ -668,7 +657,6 @@ async def reg_age(message: Message, state: FSMContext):
         logger.warning(f"Невалидная дата рождения от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
 
-
 @router.message(Reg_child.weight)
 async def reg_weight(message: Message, state: FSMContext):
     """Ввод веса ребенка"""
@@ -685,7 +673,6 @@ async def reg_weight(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный вес ребенка от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
-
 
 @router.message(Reg_child.address)
 async def reg_address(message: Message, state: FSMContext):
@@ -818,7 +805,6 @@ async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
             reply_markup=kb.inline_pd_consent)
 
-
 @router.callback_query(F.data == 'pd_consent_true')
 async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
     """Согласие дано, переход к вводу email"""
@@ -832,7 +818,6 @@ async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала регистрации без токена: {e}", exc_info=True)
-
 
 @router.message(Reg_user.name)
 async def reg_surname(message: Message, state: FSMContext):
@@ -850,7 +835,6 @@ async def reg_surname(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидное имя от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
-
 
 @router.message(Reg_user.surname)
 async def reg_birth_date(message: Message, state: FSMContext):
@@ -871,7 +855,6 @@ async def reg_birth_date(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидная фамилия от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
-
 
 @router.message(Reg_user.date_of_birth)
 async def reg_age(message: Message, state: FSMContext):
@@ -896,7 +879,6 @@ async def reg_age(message: Message, state: FSMContext):
         logger.warning(f"Невалидная дата рождения от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
 
-
 @router.message(Reg_user.weight)
 async def reg_weight(message: Message, state: FSMContext):
     """Ввод веса"""
@@ -913,7 +895,6 @@ async def reg_weight(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный вес от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
-
 
 @router.message(Reg_user.address)
 async def reg_address(message: Message, state: FSMContext):
@@ -932,7 +913,6 @@ async def reg_address(message: Message, state: FSMContext):
         logger.warning(f"Невалидный адрес от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
 
-
 @router.message(Reg_user.email)
 async def reg_email(message: Message, state: FSMContext):
     """Ввод email"""
@@ -949,7 +929,6 @@ async def reg_email(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный email от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
-
 
 @router.message(Reg_user.phone)
 async def reg_phone(message: Message, state: FSMContext):

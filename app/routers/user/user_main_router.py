@@ -61,7 +61,6 @@ async def start_command(message: Message):
         except:
             pass
 
-
 @router.message(Command("help"))
 async def help_command(message: Message):
     """Обработка команды /help"""
@@ -76,7 +75,6 @@ async def help_command(message: Message):
         logger.debug(f"Справочное сообщение отправлено пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка при отправке справки пользователю {message.from_user.id}: {e}", exc_info=True)
-
 
 @router.callback_query(F.data == 'back_to_main')
 async def back_to_main(callback: CallbackQuery, state: FSMContext):
@@ -95,7 +93,6 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
         logger.debug(f"Главное меню показано пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка возврата в главное меню для пользователя {callback.from_user.id}: {e}", exc_info=True)
-
 
 @router.message(F.text == 'Наши экскурсии')
 async def excursions(message: Message):
@@ -138,7 +135,6 @@ async def excursions(message: Message):
             "Произошла ошибка при загрузке списка экскурсий. Попробуйте позже.",
             reply_markup=kb.main
         )
-
 
 @router.message(ExcursionNameFilter())
 async def handle_excursion_selection(message: Message):
@@ -217,20 +213,17 @@ async def show_excursion_details(callback: CallbackQuery):
         logger.error(f"Ошибка показа деталей экскурсии: {e}", exc_info=True)
         await callback.answer("Ошибка загрузки информации", show_alert=True)
 
-
 @router.callback_query(F.data == 'back_to_excursions_list')
 async def back_to_excursions_list(callback: CallbackQuery):
     """Вернуться к списку экскурсий"""
     await callback.answer()
     await excursions(callback.message)
 
-
 @router.message(F.text == 'Назад в меню')
 async def back_to_main_menu(message: Message):
     """Возврат в главное меню"""
     logger.info(f"Пользователь {message.from_user.id} вернулся в главное меню")
     await message.answer("Вы вернулись в главное меню", reply_markup=kb.main)
-
 
 @router.message(F.text == 'Отзывы')
 async def reviews(message: Message):
@@ -248,7 +241,6 @@ async def reviews(message: Message):
     except Exception as e:
         logger.error(f"Ошибка показа отзывов для пользователя {message.from_user.id}: {e}", exc_info=True)
 
-
 @router.message(F.text == 'О нас')
 async def about_us(message: Message):
     """Информация о компании"""
@@ -265,7 +257,6 @@ async def about_us(message: Message):
         logger.debug(f"Информация о компании отправлена пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка показа информации о компании для пользователя {message.from_user.id}: {e}", exc_info=True)
-
 
 @router.message(F.text == 'Основные вопросы')
 async def questions(message: Message):
@@ -285,7 +276,6 @@ async def questions(message: Message):
         logger.debug(f"FAQ показан пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка показа FAQ для пользователя {message.from_user.id}: {e}", exc_info=True)
-
 
 @router.callback_query(F.data == 'qu_startplace')
 async def qu_startplace(callback: CallbackQuery):
@@ -311,7 +301,6 @@ async def qu_startplace(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о месте старта: {e}", exc_info=True)
 
-
 @router.callback_query(F.data == 'qu_things_witn')
 async def qu_things_witn(callback: CallbackQuery):
     """Ответ на вопрос о вещах с собой"""
@@ -332,7 +321,6 @@ async def qu_things_witn(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о вещах с собой: {e}", exc_info=True)
 
-
 @router.callback_query(F.data == 'qu_discount')
 async def qu_discount(callback: CallbackQuery):
     """Ответ на вопрос о скидках"""
@@ -351,7 +339,6 @@ async def qu_discount(callback: CallbackQuery):
         logger.debug(f"Ответ о скидках отправлен пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о скидках: {e}", exc_info=True)
-
 
 @router.callback_query(F.data == 'qu_self_co')
 async def qu_self_co(callback: CallbackQuery):
@@ -374,7 +361,6 @@ async def qu_self_co(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка отправки ответа об индивидуальных экскурсиях: {e}", exc_info=True)
 
-
 @router.message(F.text.contains('админ') | F.text.contains('администратор'))
 async def mention_admin(message: Message):
     """Автоматический ответ при упоминании администратора"""
@@ -392,7 +378,6 @@ async def mention_admin(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка отправки ответа об администраторе: {e}", exc_info=True)
-
 
 @router.message(F.text.contains('цена') | F.text.contains('стоимость'))
 async def mention_price(message: Message):

@@ -51,7 +51,6 @@ async def redact_users_data(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка показа данных для редактирования: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка при загрузке ваших данных")
 
-
 @router.callback_query(F.data == 'redact_name')
 async def redact_name_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования имени"""
@@ -65,7 +64,6 @@ async def redact_name_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования имени: {e}", exc_info=True)
-
 
 @router.message(Red_user.name)
 async def redact_name_two(message: Message, state: FSMContext):
@@ -126,7 +124,6 @@ async def redact_name_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_surname')
 async def redact_surname_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования фамилии"""
@@ -140,7 +137,6 @@ async def redact_surname_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования фамилии: {e}", exc_info=True)
-
 
 @router.message(Red_user.surname)
 async def redact_surname_two(message: Message, state: FSMContext):
@@ -204,7 +200,6 @@ async def redact_surname_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_phone')
 async def redact_phone_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования телефона"""
@@ -218,7 +213,6 @@ async def redact_phone_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования телефона: {e}", exc_info=True)
-
 
 @router.message(Red_user.phone)
 async def redact_phone_two(message: Message, state: FSMContext):
@@ -268,7 +262,6 @@ async def redact_phone_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_birth_date')
 async def redact_birth_date_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования даты рождения"""
@@ -285,7 +278,6 @@ async def redact_birth_date_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования даты рождения: {e}", exc_info=True)
-
 
 @router.message(Red_user.date_of_birth)
 async def redact_birth_date_two(message: Message, state: FSMContext):
@@ -339,7 +331,6 @@ async def redact_birth_date_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_weight')
 async def redact_weight_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования веса"""
@@ -353,7 +344,6 @@ async def redact_weight_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования веса: {e}", exc_info=True)
-
 
 @router.message(Red_user.weight)
 async def redact_weight_two(message: Message, state: FSMContext):
@@ -403,7 +393,6 @@ async def redact_weight_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_address')
 async def redact_address_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования адреса"""
@@ -417,7 +406,6 @@ async def redact_address_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования адреса: {e}", exc_info=True)
-
 
 @router.message(Red_user.address)
 async def redact_address_two(message: Message, state: FSMContext):
@@ -467,7 +455,6 @@ async def redact_address_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_email')
 async def redact_email_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования email"""
@@ -481,7 +468,6 @@ async def redact_email_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования email: {e}", exc_info=True)
-
 
 @router.message(Red_user.email)
 async def redact_email_two(message: Message, state: FSMContext):
@@ -532,13 +518,11 @@ async def redact_email_two(message: Message, state: FSMContext):
         await state.clear()
 
 
-
 # ===== РЕДАКТИРОВАНИЕ РЕБЕНКА =====
 
 
-
 @router.callback_query(F.data.startswith('edit_child:'))
-async def edit_child_start(callback: CallbackQuery, state: FSMContext):
+async def redact_child_start(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования конкретного ребенка"""
     user_telegram_id = callback.from_user.id
     child_id = int(callback.data.split(':')[1])
@@ -587,7 +571,6 @@ async def edit_child_start(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка начала редактирования ребенка: {e}", exc_info=True)
         await callback.answer("Произошла ошибка", show_alert=True)
 
-
 @router.callback_query(F.data == 'redact_child_name')
 async def redact_child_name_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования имени ребенка"""
@@ -609,7 +592,6 @@ async def redact_child_name_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования имени ребенка: {e}", exc_info=True)
-
 
 @router.message(Red_child.name)
 async def redact_child_name_two(message: Message, state: FSMContext):
@@ -680,7 +662,6 @@ async def redact_child_name_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_child_surname')
 async def redact_child_surname_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования фамилии ребенка"""
@@ -702,7 +683,6 @@ async def redact_child_surname_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования фамилии ребенка: {e}", exc_info=True)
-
 
 @router.message(Red_child.surname)
 async def redact_child_surname_two(message: Message, state: FSMContext):
@@ -769,7 +749,6 @@ async def redact_child_surname_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_child_birth_date')
 async def redact_child_birth_date_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования даты рождения ребенка"""
@@ -794,7 +773,6 @@ async def redact_child_birth_date_one(callback: CallbackQuery, state: FSMContext
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования даты рождения ребенка: {e}", exc_info=True)
-
 
 @router.message(Red_child.date_of_birth)
 async def redact_child_birth_date_two(message: Message, state: FSMContext):
@@ -852,7 +830,6 @@ async def redact_child_birth_date_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_child_weight')
 async def redact_child_weight_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования веса ребенка"""
@@ -874,7 +851,6 @@ async def redact_child_weight_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования веса ребенка: {e}", exc_info=True)
-
 
 @router.message(Red_child.weight)
 async def redact_child_weight_two(message: Message, state: FSMContext):
@@ -931,7 +907,6 @@ async def redact_child_weight_two(message: Message, state: FSMContext):
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == 'redact_child_address')
 async def redact_child_address_one(callback: CallbackQuery, state: FSMContext):
     """Начало редактирования адреса ребенка"""
@@ -953,7 +928,6 @@ async def redact_child_address_one(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала редактирования адреса ребенка: {e}", exc_info=True)
-
 
 @router.message(Red_child.address)
 async def redact_child_address_two(message: Message, state: FSMContext):
