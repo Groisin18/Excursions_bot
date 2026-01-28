@@ -8,6 +8,8 @@ from .admin.statistic import router as admin_statistic_router
 from .admin.excursions import router as admin_excursions_router
 from .admin.promocodes import router as admin_promocodes_router
 from .admin.schedule import router as admin_schedule_router
+from .admin.slots import router as admin_slots_router
+from .admin.slots import router as admin_new_slot_router
 from .admin.bookings import router as admin_bookings_router
 from .admin.clients import router as admin_clients_routher
 from .admin.captains import router as admin_captains_router
@@ -27,6 +29,8 @@ __all__ = [
     'admin_excursions_router',
     'admin_promocodes_router',
     'admin_schedule_router',
+    'admin_slots_router',
+    'admin_new_slot_router',
     'admin_bookings_router',
     'admin_clients_routher',
     'admin_captains_router',
@@ -50,6 +54,8 @@ def setup_routers(dp):
     dp.include_router(admin_excursions_router)
     dp.include_router(admin_promocodes_router)
     dp.include_router(admin_schedule_router)
+    dp.include_router(admin_slots_router)
+    dp.include_router(admin_new_slot_router)
     dp.include_router(admin_bookings_router)
     dp.include_router(admin_clients_routher)
     dp.include_router(admin_captains_router)
