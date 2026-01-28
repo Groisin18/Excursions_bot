@@ -2,8 +2,8 @@
 Инициализация всех роутеров приложения
 """
 
-from .user.user_main_router import router as user_main_router
-from .admin.admin_main_router import router as admin_main_router
+from .user.user_main import router as user_main_router
+from .admin.admin_main import router as admin_main_router
 from .admin.statistic import router as admin_statistic_router
 from .admin.excursions import router as admin_excursions_router
 from .admin.promocodes import router as admin_promocodes_router
