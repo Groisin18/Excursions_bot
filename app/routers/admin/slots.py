@@ -44,7 +44,6 @@ async def cancel_slot_callback(callback: CallbackQuery):
             reply_markup=slot_action_confirmation_menu(
                 slot_id=slot_id,
                 action="cancel",
-                action_text="Да, отменить слот",
                 back_callback=f"manage_slot:{slot_id}"
             )
         )

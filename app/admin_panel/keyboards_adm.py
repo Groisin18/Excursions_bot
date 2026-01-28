@@ -923,9 +923,9 @@ def promo_creation_confirmation_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.add(
-        InlineKeyboardButton(text="✅ Да, создать промокод", callback_data="confirm_create_promo"),
-        InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_promo_data"),
-        InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_promo_creation")
+        InlineKeyboardButton(text="Да, создать промокод", callback_data="confirm_create_promo"),
+        InlineKeyboardButton(text="Редактировать", callback_data="edit_promo_data"),
+        InlineKeyboardButton(text="Отмена", callback_data="cancel_promo_creation")
     )
 
     builder.adjust(1)
