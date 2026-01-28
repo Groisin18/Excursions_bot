@@ -5,8 +5,9 @@ from aiogram.types import (
     InlineKeyboardButton
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from datetime import date, datetime
+from datetime import date
 from app.database.models import SlotStatus
+
 
 # ===== ГЛАВНОЕ МЕНЮ =====
 
@@ -35,6 +36,7 @@ def admin_main_menu():
         resize_keyboard=True,
         input_field_placeholder="Выберите категорию..."
     )
+
 
 # ===== ПОДМЕНЮ ДЛЯ КАЖДОЙ КАТЕГОРИИ =====
 
@@ -200,169 +202,10 @@ def cancel_button():
         resize_keyboard=True
     )
 
-def yes_no_keyboard():
-    """Клавиатура Да/Нет"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Да", callback_data="yes"),
-        InlineKeyboardButton(text="Нет", callback_data="no")
-    )
-
-    return builder.as_markup()
-
-
-# ===== СТАТИСТИКА =====
-
-
-def statistics_period_menu():
-    """Выбор периода для статистики"""
-    builder = ReplyKeyboardBuilder()
-
-    buttons = [
-        "Сегодня", "Вчера", "Неделя",
-        "Месяц", "Квартал", "Произвольный период",
-        "Назад"
-    ]
-
-    for button in buttons:
-        builder.add(KeyboardButton(text=button))
-
-    builder.adjust(2, 2, 2, 1)
-    return builder.as_markup(resize_keyboard=True)
-
-
-# ===== УПРАВЛЕНИЕ ЗАПИСЯМИ =====
-
-
-def booking_actions_menu(booking_id: int):
-    """Действия с конкретной записью"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Прибыл", callback_data=f"arrived:{booking_id}"),
-        InlineKeyboardButton(text="Оплачено", callback_data=f"paid:{booking_id}"),
-        InlineKeyboardButton(text="Изменить", callback_data=f"edit_booking:{booking_id}"),
-        InlineKeyboardButton(text="Отменить", callback_data=f"cancel_booking:{booking_id}"),
-        InlineKeyboardButton(text="Перенести", callback_data=f"reschedule:{booking_id}"),
-        InlineKeyboardButton(text="Информация", callback_data=f"booking_info:{booking_id}")
-    )
-
-    builder.adjust(2, 2, 1, 1)
-    return builder.as_markup()
-
-def client_search_options():
-    """Клавиатура для выбора способа поиска клиента"""
-    builder = InlineKeyboardBuilder()
-
-    builder.button(
-        text="Поиск по телефону",
-        callback_data="client_search:phone"
-    )
-    builder.button(
-        text="Поиск по имени",
-        callback_data="client_search:name"
-    )
-    builder.button(
-        text="Последние клиенты",
-        callback_data="client_search:recent"
-    )
-    builder.button(
-        text="Создать нового",
-        callback_data="client_search:new"
-    )
-    builder.button(
-        text="Отмена",
-        callback_data="client_search:cancel"
-    )
-
-    builder.adjust(2, 2, 1)
-    return builder.as_markup()
-
-def recent_clients_keyboard(clients: list):
-    """Клавиатура с последними клиентами"""
-    builder = InlineKeyboardBuilder()
-
-    for client in clients:
-        builder.button(
-            text=f"{client.full_name} ({client.phone_number})",
-            callback_data=f"select_client:{client.id}"
-        )
-
-    builder.button(
-        text="Назад к поиску",
-        callback_data="client_search:back"
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-def client_search_results_keyboard(clients: list):
-    """Клавиатура с результатами поиска клиентов"""
-    builder = InlineKeyboardBuilder()
-
-    for client in clients:
-        builder.button(
-            text=f"{client.full_name} - {client.phone_number}",
-            callback_data=f"select_client:{client.id}"
-        )
-
-    if not clients:
-        builder.button(
-            text="Ничего не найдено",
-            callback_data="no_action"
-        )
-
-    builder.button(
-        text="Создать нового клиента",
-        callback_data="client_search:new"
-    )
-    builder.button(
-        text="Назад к поиску",
-        callback_data="client_search:back"
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-# ===== УПРАВЛЕНИЕ КЛИЕНТАМИ =====
-
-
-def client_actions_menu(client_id: int):
-    """Действия с клиентом"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="История", callback_data=f"client_history:{client_id}"),
-        InlineKeyboardButton(text="Редактировать", callback_data=f"edit_client:{client_id}"),
-        InlineKeyboardButton(text="Сделать админом", callback_data=f"make_admin:{client_id}"),
-        InlineKeyboardButton(text="Позвонить", callback_data=f"call_client:{client_id}"),
-        InlineKeyboardButton(text="Написать", callback_data=f"message_client:{client_id}")
-    )
-
-    builder.adjust(2, 2, 1)
-    return builder.as_markup()
-
 
 # ===== УПРАВЛЕНИЕ КАПИТАНАМИ =====
 
-
-def captain_actions_menu(captain_id: int):
-    """Действия с капитаном"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="График", callback_data=f"captain_schedule:{captain_id}"),
-        InlineKeyboardButton(text="Зарплата", callback_data=f"captain_salary:{captain_id}"),
-        InlineKeyboardButton(text="Редактировать", callback_data=f"edit_captain:{captain_id}"),
-        InlineKeyboardButton(text="Статистика", callback_data=f"captain_stats:{captain_id}"),
-        InlineKeyboardButton(text="Уволить", callback_data=f"remove_captain:{captain_id}")
-    )
-
-    builder.adjust(2, 2, 1)
-    return builder.as_markup()
-
-def schedule_management_menu():
+def schedule_captains_management_menu():
     """Меню управления графиком"""
     builder = ReplyKeyboardBuilder()
 
@@ -378,97 +221,8 @@ def schedule_management_menu():
     builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
-# ===== ФИНАНСЫ =====
 
-
-def payments_filter_menu():
-    """Фильтры для платежей"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Все", callback_data="payments:all"),
-        InlineKeyboardButton(text="Оплаченные", callback_data="payments:paid"),
-        InlineKeyboardButton(text="Ожидание", callback_data="payments:pending"),
-        InlineKeyboardButton(text="Отмененные", callback_data="payments:cancelled"),
-        InlineKeyboardButton(text="Сегодня", callback_data="payments:today"),
-        InlineKeyboardButton(text="Неделя", callback_data="payments:week")
-    )
-
-    builder.adjust(2, 2, 2)
-    return builder.as_markup()
-
-
-# ===== УВЕДОМЛЕНИЯ =====
-
-
-def notification_target_menu():
-    """Выбор цели для уведомления"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Все клиенты", callback_data="notify:all"),
-        InlineKeyboardButton(text="Завтрашние", callback_data="notify:tomorrow"),
-        InlineKeyboardButton(text="Неоплаченные", callback_data="notify:unpaid"),
-        InlineKeyboardButton(text="Конкретный клиент", callback_data="notify:specific"),
-        InlineKeyboardButton(text="Капитаны", callback_data="notify:captains")
-    )
-
-    builder.adjust(2, 2, 1)
-    return builder.as_markup()
-
-
-# ===== НАСТРОЙКИ =====
-
-
-def admin_management_menu():
-    """Управление администраторами"""
-    builder = ReplyKeyboardBuilder()
-
-    buttons = [
-        "Назначить администратора", "Список администраторов",
-        "Изменить права", "Назад"
-    ]
-
-    for button in buttons:
-        builder.add(KeyboardButton(text=button))
-
-    builder.adjust(2, 1, 1)
-    return builder.as_markup(resize_keyboard=True)
-
-
-# ===== ПАГИНАЦИЯ =====
-
-def pagination_keyboard(page: int, total_pages: int, prefix: str):
-    """Клавиатура пагинации"""
-    builder = InlineKeyboardBuilder()
-
-    if page > 1:
-        builder.add(InlineKeyboardButton(text="Назад", callback_data=f"{prefix}:{page-1}"))
-
-    builder.add(InlineKeyboardButton(text=f"{page}/{total_pages}", callback_data="current_page"))
-
-    if page < total_pages:
-        builder.add(InlineKeyboardButton(text="Вперед", callback_data=f"{prefix}:{page+1}"))
-
-    return builder.as_markup()
-
-def list_navigation_keyboard(items: list, current_index: int, prefix: str):
-    """Навигация по списку элементов"""
-    builder = InlineKeyboardBuilder()
-
-    if current_index > 0:
-        builder.add(InlineKeyboardButton(text="Предыдущий", callback_data=f"{prefix}:{current_index-1}"))
-
-    builder.add(InlineKeyboardButton(text=f"{current_index+1}/{len(items)}", callback_data="current_item"))
-
-    if current_index < len(items) - 1:
-        builder.add(InlineKeyboardButton(text="Следующий", callback_data=f"{prefix}:{current_index+1}"))
-
-    return builder.as_markup()
-
-
-# ===== УПРАВЛЕНИЕ ЭКСКУРСИЯМИ =====
-
+# ===== УПРАВЛЕНИЕ ВИДАМИ ЭКСКУРСИЙ =====
 
 def excursions_list_keyboard(all_excursions: list, active_only: bool) -> InlineKeyboardMarkup:
     """
@@ -658,9 +412,6 @@ def slot_confirmation_menu(slot_id: int, action: str) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-# ===== МЕНЮ РАСПИСАНИЯ =====
-
-
 def excursions_selection_menu_for_schedule(
     excursions: list,
     back_callback: str = "back_to_schedule_menu",
@@ -704,22 +455,6 @@ def schedule_exc_management_menu() -> InlineKeyboardMarkup:
     builder.adjust(2, 2)
     return builder.as_markup()
 
-def schedule_view_options() -> InlineKeyboardMarkup:
-    """Опции просмотра расписания"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="На сегодня", callback_data="schedule_today"),
-        InlineKeyboardButton(text="На завтра", callback_data="schedule_tomorrow"),
-        InlineKeyboardButton(text="На неделю вперед", callback_data="schedule_week"),
-        InlineKeyboardButton(text="На месяц вперед", callback_data="schedule_month"),
-        InlineKeyboardButton(text="Выбрать дату", callback_data="view_schedule_by_date"),
-        InlineKeyboardButton(text="Назад", callback_data="back_to_schedule_menu")
-    )
-
-    builder.adjust(2, 2, 1, 1)
-    return builder.as_markup()
-
 def time_slot_menu(slot_date: str, excursion_id: int) -> InlineKeyboardMarkup:
     """Меню выбора времени для слота"""
     builder = InlineKeyboardBuilder()
@@ -745,74 +480,6 @@ def time_slot_menu(slot_date: str, excursion_id: int) -> InlineKeyboardMarkup:
     )
 
     builder.adjust(3, 3, 3, 3, 1, 1)
-    return builder.as_markup()
-
-def schedule_back_menu() -> InlineKeyboardMarkup:
-    """Кнопка возврата в меню расписания"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Назад в меню расписания", callback_data="back_to_schedule_menu"),
-        InlineKeyboardButton(text="В меню экскурсий", callback_data="back_to_exc_menu")
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-def schedule_slots_management_menu(slots: list, target_date: date) -> InlineKeyboardMarkup:
-    """
-    Клавиатура для управления слотами на конкретную дату
-
-    Args:
-        slots: Список объектов ExcursionSlot
-        target_date: Дата для которой показывается расписание
-    """
-    builder = InlineKeyboardBuilder()
-
-    # Добавляем кнопки для управления слотами
-    for slot in slots:
-        if slot.status == SlotStatus.scheduled:
-            builder.button(
-                text=f"Управлять слотом {slot.id}",
-                callback_data=f"manage_slot:{slot.id}"
-            )
-
-    # Кнопка для добавления экскурсии на эту дату
-    builder.button(
-        text="Добавить экскурсию на эту дату",
-        callback_data=f"add_to_date:{target_date.strftime('%Y-%m-%d')}"
-    )
-
-    # Кнопка возврата
-    builder.button(
-        text="Назад в меню расписания",
-        callback_data="back_to_schedule_menu"
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-def slot_completion_confirmation_menu(slot_id: int) -> InlineKeyboardMarkup:
-    """
-    Меню подтверждения завершения экскурсии (слота)
-
-    Args:
-        slot_id: ID слота для завершения
-    """
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(
-            text="Да, завершить экскурсию",
-            callback_data=f"confirm_complete_slot:{slot_id}"
-        ),
-        InlineKeyboardButton(
-            text="Нет, вернуться",
-            callback_data=f"manage_slot:{slot_id}"
-        )
-    )
-
-    builder.adjust(1)
     return builder.as_markup()
 
 def slot_action_confirmation_menu(
@@ -967,7 +634,7 @@ def no_captains_options_menu(slot_id: int = None, context: str = "create") -> In
     builder.adjust(1)
     return builder.as_markup()
 
-def conflict_resolution_keyboard(slot_id: int) -> InlineKeyboardMarkup:
+def slots_conflict_keyboard(slot_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для решения конфликта слотов"""
     builder = InlineKeyboardBuilder()
 
@@ -1010,6 +677,70 @@ def captain_conflict_keyboard(slot_id: int) -> InlineKeyboardMarkup:
             text="Отменить перенос",
             callback_data=f"cancel_reschedule:{slot_id}"
         )
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ===== МЕНЮ РАСПИСАНИЯ =====
+
+def schedule_view_options() -> InlineKeyboardMarkup:
+    """Опции просмотра расписания"""
+    builder = InlineKeyboardBuilder()
+
+    builder.add(
+        InlineKeyboardButton(text="На сегодня", callback_data="schedule_today"),
+        InlineKeyboardButton(text="На завтра", callback_data="schedule_tomorrow"),
+        InlineKeyboardButton(text="На неделю вперед", callback_data="schedule_week"),
+        InlineKeyboardButton(text="На месяц вперед", callback_data="schedule_month"),
+        InlineKeyboardButton(text="Выбрать дату", callback_data="view_schedule_by_date"),
+        InlineKeyboardButton(text="Назад", callback_data="back_to_schedule_menu")
+    )
+
+    builder.adjust(2, 2, 1, 1)
+    return builder.as_markup()
+
+def schedule_back_menu() -> InlineKeyboardMarkup:
+    """Кнопка возврата в меню расписания"""
+    builder = InlineKeyboardBuilder()
+
+    builder.add(
+        InlineKeyboardButton(text="Назад в меню расписания", callback_data="back_to_schedule_menu"),
+        InlineKeyboardButton(text="В меню экскурсий", callback_data="back_to_exc_menu")
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def schedule_date_management_menu(slots: list, target_date: date) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для управления слотами на конкретную дату
+
+    Args:
+        slots: Список объектов ExcursionSlot
+        target_date: Дата для которой показывается расписание
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Добавляем кнопки для управления слотами
+    for slot in slots:
+        if slot.status == SlotStatus.scheduled:
+            builder.button(
+                text=f"Управлять слотом {slot.id}",
+                callback_data=f"manage_slot:{slot.id}"
+            )
+
+    # Кнопка для добавления экскурсии на эту дату
+    builder.button(
+        text="Добавить экскурсию на эту дату",
+        callback_data=f"add_to_date:{target_date.strftime('%Y-%m-%d')}"
+    )
+
+    # Кнопка возврата
+    builder.button(
+        text="Назад в меню расписания",
+        callback_data="back_to_schedule_menu"
     )
 
     builder.adjust(1)
@@ -1097,44 +828,8 @@ def schedule_month_management_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def manage_date_slots_menu(target_date: date, slots: list) -> InlineKeyboardMarkup:
-    """
-    Меню для управления слотами на конкретную дату
-
-    Args:
-        target_date: Дата для управления
-        slots: Список слотов на эту дату
-    """
-    builder = InlineKeyboardBuilder()
-
-    # Кнопки для управления каждым слотом
-    for slot in slots:
-        if slot.status == SlotStatus.scheduled:
-            excursion = slot.excursion if hasattr(slot, 'excursion') else None
-            excursion_name = excursion.name if excursion else f"ID:{slot.excursion_id}"
-
-            builder.button(
-                text=f"Слот {slot.id}: {excursion_name} ({slot.start_datetime.strftime('%H:%M')})",
-                callback_data=f"manage_slot:{slot.id}"
-            )
-
-    # Кнопка добавления экскурсии на эту дату
-    builder.button(
-        text=f"Добавить экскурсию на {target_date.strftime('%d.%m.%Y')}",
-        callback_data=f"add_to_date:{target_date.strftime('%Y-%m-%d')}"
-    )
-
-    # Кнопка возврата
-    builder.button(
-        text="Назад к просмотру расписания",
-        callback_data="schedule_week"  # Или другой подходящий callback
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
 
 # ===== ПРОМОКОДЫ =====
-
 
 def promocodes_menu() -> InlineKeyboardMarkup:
     """Меню управления промокодами"""
@@ -1149,52 +844,6 @@ def promocodes_menu() -> InlineKeyboardMarkup:
     )
 
     builder.adjust(2, 2, 1)
-    return builder.as_markup()
-
-def promocode_actions_menu(promocode_id: int) -> InlineKeyboardMarkup:
-    """Действия с конкретным промокодом"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Просмотреть детали", callback_data=f"promocode_details:{promocode_id}"),
-        InlineKeyboardButton(text="Редактировать", callback_data=f"edit_promocode:{promocode_id}"),
-        InlineKeyboardButton(text="Деактивировать", callback_data=f"deactivate_promocode:{promocode_id}"),
-        InlineKeyboardButton(text="Активировать", callback_data=f"activate_promocode:{promocode_id}"),
-        InlineKeyboardButton(text="Статистика использования", callback_data=f"promocode_stats:{promocode_id}"),
-        InlineKeyboardButton(text="Назад к списку", callback_data="list_promocodes")
-    )
-
-    builder.adjust(2, 2, 1, 1)
-    return builder.as_markup()
-
-def promocode_type_menu() -> InlineKeyboardMarkup:
-    """Выбор типа промокода"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Процентная скидка", callback_data="promo_type:percentage"),
-        InlineKeyboardButton(text="Фиксированная сумма", callback_data="promo_type:fixed"),
-        InlineKeyboardButton(text="Назад", callback_data="promocodes_menu")
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-def promocode_duration_menu() -> InlineKeyboardMarkup:
-    """Выбор срока действия промокода"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="1 день", callback_data="promo_duration:1"),
-        InlineKeyboardButton(text="7 дней", callback_data="promo_duration:7"),
-        InlineKeyboardButton(text="30 дней", callback_data="promo_duration:30"),
-        InlineKeyboardButton(text="90 дней", callback_data="promo_duration:90"),
-        InlineKeyboardButton(text="Бессрочно", callback_data="promo_duration:0"),
-        InlineKeyboardButton(text="Настраиваемый период", callback_data="promo_custom_duration"),
-        InlineKeyboardButton(text="Назад", callback_data="create_promocode")
-    )
-
-    builder.adjust(2, 2, 2, 1)
     return builder.as_markup()
 
 def promo_edit_field_menu() -> InlineKeyboardMarkup:
@@ -1277,18 +926,6 @@ def promo_creation_confirmation_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="✅ Да, создать промокод", callback_data="confirm_create_promo"),
         InlineKeyboardButton(text="✏️ Редактировать", callback_data="edit_promo_data"),
         InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_promo_creation")
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-def promo_cancel_menu() -> InlineKeyboardMarkup:
-    """Меню отмены создания промокода"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Да, отменить", callback_data="cancel_promo_creation"),
-        InlineKeyboardButton(text="Нет, продолжить", callback_data="back_to_promo_summary")
     )
 
     builder.adjust(1)

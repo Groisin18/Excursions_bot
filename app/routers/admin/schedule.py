@@ -9,7 +9,7 @@ from app.database.models import async_session, SlotStatus
 from app.utils.validation import Validators
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_view_options,
-    schedule_slots_management_menu, schedule_month_management_menu,
+    schedule_date_management_menu, schedule_month_management_menu,
     schedule_week_management_menu
 )
 from app.middlewares import AdminMiddleware
@@ -177,7 +177,7 @@ async def handle_schedule_date_view(message: Message, state: FSMContext):
             await message.answer(response)
             await message.answer(
                 "Выберите действие:",
-                reply_markup=schedule_slots_management_menu(slots, target_date)
+                reply_markup=schedule_date_management_menu(slots, target_date)
             )
 
         await state.clear()
@@ -242,7 +242,7 @@ async def schedule_today_callback(callback: CallbackQuery):
             # Показываем клавиатуру управления слотами
             await callback.message.answer(
                 "Выберите действие:",
-                reply_markup=schedule_slots_management_menu(slots, today)
+                reply_markup=schedule_date_management_menu(slots, today)
             )
 
     except Exception as e:
@@ -299,7 +299,7 @@ async def schedule_tomorrow_callback(callback: CallbackQuery):
             # Показываем клавиатуру управления слотами
             await callback.message.answer(
                 "Выберите действие:",
-                reply_markup=schedule_slots_management_menu(slots, tomorrow)
+                reply_markup=schedule_date_management_menu(slots, tomorrow)
             )
 
     except Exception as e:

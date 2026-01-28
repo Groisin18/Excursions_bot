@@ -9,9 +9,10 @@ from app.database.requests import DatabaseManager
 from app.database.models import async_session, SlotStatus, BookingStatus
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu,
-    slot_actions_menu, conflict_resolution_keyboard,
+    slot_actions_menu, slots_conflict_keyboard,
     captains_selection_menu, slot_action_confirmation_menu,
-    no_captains_options_menu, captain_conflict_keyboard, manage_date_slots_menu
+    no_captains_options_menu, captain_conflict_keyboard,
+    schedule_date_management_menu
 )
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_admin_logger
@@ -404,7 +405,7 @@ async def manage_date_slots_callback(callback: CallbackQuery):
             await callback.message.answer(response)
             await callback.message.answer(
                 "Выберите слот для управления:",
-                reply_markup=manage_date_slots_menu(target_date, slots)
+                reply_markup=schedule_date_management_menu(slots, target_date)
             )
 
     except Exception as e:
@@ -573,7 +574,7 @@ async def confirm_reschedule(callback: CallbackQuery, state: FSMContext):
                         "1. Ввести другое время\n"
                         "2. Просмотреть информацию о конфликтном слоте\n"
                         "3. Отменить перенос",
-                        reply_markup=conflict_resolution_keyboard(slot_id)
+                        reply_markup=slots_conflict_keyboard(slot_id)
                     )
 
                 elif "Капитан" in error_message and "занят" in error_message:
@@ -665,7 +666,7 @@ async def show_conflict_slot(callback: CallbackQuery, state: FSMContext):
     # Показываем клавиатуру снова
     await callback.message.answer(
         "Выберите действие:",
-        reply_markup=conflict_resolution_keyboard(slot_id)
+        reply_markup=slots_conflict_keyboard(slot_id)
     )
 
 @router.callback_query(F.data.startswith("change_captain:"))
@@ -806,7 +807,7 @@ async def select_captain_for_reschedule(callback: CallbackQuery, state: FSMConte
                     )
                     await callback.message.answer(
                         "Выберите действие:",
-                        reply_markup=conflict_resolution_keyboard(slot_id)
+                        reply_markup=slots_conflict_keyboard(slot_id)
                     )
                 else:
                     await callback.message.answer(
@@ -831,7 +832,7 @@ async def back_to_conflict_resolution(callback: CallbackQuery, state: FSMContext
     if error_type == "slot_conflict":
         await callback.message.answer(
             "Выберите действие:",
-            reply_markup=conflict_resolution_keyboard(slot_id)
+            reply_markup=slots_conflict_keyboard(slot_id)
         )
     elif error_type == "captain_busy":
         await callback.message.answer(
