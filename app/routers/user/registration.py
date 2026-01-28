@@ -513,7 +513,7 @@ async def reg_child(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка начала регистрации ребенка: {e}", exc_info=True)
 
 @router.message(Reg_child.name)
-async def reg_surname(message: Message, state: FSMContext):
+async def reg_child_surname(message: Message, state: FSMContext):
     """Ввод имени ребенка"""
     logger.info(f"Пользователь {message.from_user.id} ввел имя ребенка: '{message.text}'")
 
@@ -531,7 +531,7 @@ async def reg_surname(message: Message, state: FSMContext):
         await message.answer(str(e))
 
 @router.message(Reg_child.surname)
-async def reg_token_right(message: Message, state: FSMContext):
+async def reg_child_consest(message: Message, state: FSMContext):
     """Ввод фамилии ребенка. Согласие на обработку ПД ребенка"""
     logger.info(f"Пользователь {message.from_user.id} ввел фамилию ребенка: '{message.text}'")
     try:
@@ -598,7 +598,7 @@ async def reg_token_right(message: Message, state: FSMContext):
         logger.error(f"Ошибка в моменте согласия на обработку персональных данных ребенка: {e}", exc_info=True)
 
 @router.callback_query(F.data == 'pd_consent_child_false')
-async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
+async def reg_child_consest_false(callback: CallbackQuery, state: FSMContext):
     """Согласие не дано, отмена регистрации"""
     await callback.message.answer(
             'К сожалению, регистрация без согласия на обработку персональных'
@@ -606,7 +606,7 @@ async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
             reply_markup=kb.inline_pd_consent_child)
 
 @router.callback_query(F.data == 'pd_consent_child_true')
-async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
+async def reg_child_consest_true(callback: CallbackQuery, state: FSMContext):
     """Согласие дано, переход к вводу даты рождения ребенка"""
     data = await state.get_data()
     child_name = data.get('name')
@@ -635,7 +635,7 @@ def get_age(birth_date: str) -> int:
     return age
 
 @router.message(Reg_child.date_of_birth)
-async def reg_age(message: Message, state: FSMContext):
+async def reg_child_age(message: Message, state: FSMContext):
     """Ввод даты рождения ребенка"""
     logger.info(f"Пользователь {message.from_user.id} ввел дату рождения ребенка: '{message.text}'")
 
@@ -658,7 +658,7 @@ async def reg_age(message: Message, state: FSMContext):
         await message.answer(str(e))
 
 @router.message(Reg_child.weight)
-async def reg_weight(message: Message, state: FSMContext):
+async def reg_child_weight(message: Message, state: FSMContext):
     """Ввод веса ребенка"""
     logger.info(f"Пользователь {message.from_user.id} ввел вес ребенка: '{message.text}'")
 
@@ -675,7 +675,7 @@ async def reg_weight(message: Message, state: FSMContext):
         await message.answer(str(e))
 
 @router.message(Reg_child.address)
-async def reg_address(message: Message, state: FSMContext):
+async def reg_child_address(message: Message, state: FSMContext):
     """Ввод адреса ребенка и завершение регистрации"""
     logger.info(f"Пользователь {message.from_user.id} ввел адрес ребенка: '{message.text}'")
 
@@ -798,7 +798,7 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
 
 @router.callback_query(F.data == 'pd_consent_false')
-async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
+async def reg_consest_false(callback: CallbackQuery, state: FSMContext):
     """Согласие не дано, отмена регистрации"""
     await callback.message.answer(
             'К сожалению, регистрация без согласия на обработку персональных'
@@ -806,7 +806,7 @@ async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
             reply_markup=kb.inline_pd_consent)
 
 @router.callback_query(F.data == 'pd_consent_true')
-async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
+async def reg_consest_true(callback: CallbackQuery, state: FSMContext):
     """Согласие дано, переход к вводу email"""
     logger.info(f"Пользователь {callback.from_user.id} дал согласие на обработку персональных данных")
     logger.info(f"Пользователь {callback.from_user.id} начал регистрацию без токена")

@@ -1,11 +1,33 @@
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from typing import Callable, Dict, Any, Awaitable
-import logging
+from logging import getLogger
 
-from app.utils.auth import is_user_admin
+from app.database.requests import DatabaseManager
+from app.database.models import async_session, UserRole
 
-logger = logging.getLogger(__name__)
+logger = getLogger(__name__)
+
+async def is_user_admin(telegram_id: int) -> bool:
+    """Проверка, является ли пользователь администратором"""
+    logger.debug(f"Проверка прав администратора для пользователя {telegram_id}")
+
+    try:
+        async with async_session() as session:
+            db_manager = DatabaseManager(session)
+            user = await db_manager.get_user_by_telegram_id(telegram_id)
+            is_admin = user and user.role == UserRole.admin
+
+            if user:
+                logger.debug(f"Пользователь {telegram_id}: {user.full_name}, роль: {user.role.value}, is_admin: {is_admin}")
+            else:
+                logger.debug(f"Пользователь {telegram_id} не найден в базе, is_admin: {is_admin}")
+
+            return is_admin
+
+    except Exception as e:
+        logger.error(f"Ошибка при проверке прав администратора для пользователя {telegram_id}: {e}", exc_info=True)
+        return False
 
 class AdminMiddleware(BaseMiddleware):
     """Мидлварь для проверки прав администратора"""

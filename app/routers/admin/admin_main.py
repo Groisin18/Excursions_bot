@@ -15,10 +15,7 @@ from app.admin_panel.keyboards_adm import (
     settings_submenu
 )
 from app.database.requests import DatabaseManager
-from app.database.models import (
-    engine, async_session, User
-)
-from app.utils.auth import is_user_admin
+from app.database.models import engine, async_session, User
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_admin_logger
 
@@ -257,14 +254,7 @@ async def back_from_submenu(message: Message, state: FSMContext):
 @router.message(Command("promote"))
 async def promote_to_admin_command(message: Message):
     """Команда для изменения статуса админа, капитана, клиента"""
-    admin_id = message.from_user.id
-    logger.info(f"Администратор {admin_id} использует команду /promote")
-
-    if not await is_user_admin(admin_id):
-        logger.warning(f"Попытка использования /promote неадминистратором {admin_id}")
-        await message.answer("Вы не зарегистрированы либо не являетесь администратором", reply_markup=main_kb.main)
-        return
-
+    logger.info(f"Администратор {message.from_user.id} использует команду /promote")
     if len(message.text.split()) > 1:
         try:
             target_phone = message.text.split()[1]
@@ -307,7 +297,7 @@ async def promote_to_admin_command(message: Message):
             logger.error(f"Ошибка в команде /promote: {e}", exc_info=True)
             await message.answer("Произошла ошибка")
     else:
-        logger.debug(f"Администратор {admin_id} использовал /promote без параметров")
+        logger.debug(f"Администратор {message.from_user.id} использовал /promote без параметров")
         await message.answer("Использование: /promote (номер телефона)")
 
 
@@ -315,8 +305,7 @@ async def promote_to_admin_command(message: Message):
 async def promote_to_admin(callback: CallbackQuery):
     """Повышение до администратора"""
     target_user_id = int(callback.data.split(':')[1])
-    admin_id = callback.from_user.id
-    logger.info(f"Администратор {admin_id} повышает пользователя {target_user_id} до администратора")
+    logger.info(f"Администратор {callback.from_user.id} повышает пользователя {target_user_id} до администратора")
 
     await callback.answer('Меняем статус пользователя...')
 
@@ -355,8 +344,7 @@ async def promote_to_admin(callback: CallbackQuery):
 async def promote_to_captain(callback: CallbackQuery):
     """Повышение до капитана"""
     target_user_id = int(callback.data.split(':')[1])
-    admin_id = callback.from_user.id
-    logger.info(f"Администратор {admin_id} повышает пользователя {target_user_id} до капитана")
+    logger.info(f"Администратор {callback.from_user.id} повышает пользователя {target_user_id} до капитана")
 
     await callback.answer('Меняем статус пользователя...')
 
@@ -395,8 +383,7 @@ async def promote_to_captain(callback: CallbackQuery):
 async def promote_to_client(callback: CallbackQuery):
     """Понижение до клиента"""
     target_user_id = int(callback.data.split(':')[1])
-    admin_id = callback.from_user.id
-    logger.info(f"Администратор {admin_id} понижает пользователя {target_user_id} до клиента")
+    logger.info(f"Администратор {callback.from_user.id} понижает пользователя {target_user_id} до клиента")
 
     await callback.answer('Меняем статус пользователя...')
 
