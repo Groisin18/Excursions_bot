@@ -37,82 +37,14 @@
 ## Технические особенности
 
 *   Асинхронная архитектура на aiogram 3.x
-*   Профессиональное логирование с разделением по типам событий
 *   Система виртуальных телефонов для безопасной регистрации детей
 *   Middleware для контроля доступа к админ-панели
 *   Автоматическая проверка целостности базы данных
 
 ## Архитектура
 
-Проект построен по модульной архитектуре с четким разделением ответственности.
+Проект построен по модульной архитектуре с разделением ответственности.
 
-### 📁 Структура каталогов:
-
-```
-└── 📁 Project
-    ├── 📁 app
-    │   ├── 📁 admin_panel
-    │   │   ├── 📁 services
-    │   │   │   ├── 🐍 export_service.py
-    │   │   │   └── 🐍 statistics_service.py
-    │   │   ├── 🐍 keyboards_adm.py
-    │   │   └── 🐍 states_adm.py
-    │   ├── 📁 database
-    │   │   ├── 🐍 models.py
-    │   │   └── 🐍 requests.py
-    │   ├── 📁 middlewares
-    │   │   ├── 🐍 __init__.py
-    │   │   └── 🐍 admin_middleware.py
-    │   ├── 📁 migrations
-    │   │   ├── 🐍 add_missing_indexes.py
-    │   │   ├── 🐍 check_integrity.py
-    │   │   ├── 🐍 init.py
-    │   │   └── 📄 requirements-migrations.txt
-    │   ├── 📁 routers
-    │   │   ├── 📁 admin
-    │   │   │   ├── 🐍 admin_main_router.py
-    │   │   │   ├── 🐍 bookings.py
-    │   │   │   ├── 🐍 captains.py
-    │   │   │   ├── 🐍 clients.py
-    │   │   │   ├── 🐍 excursions.py
-    │   │   │   ├── 🐍 finances.py
-    │   │   │   ├── 🐍 notification.py
-    │   │   │   ├── 🐍 promocodes.py
-    │   │   │   ├── 🐍 schedule.py
-    │   │   │   ├── 🐍 settings.py
-    │   │   │   └── 🐍 statistic.py
-    │   │   ├── 🐍 __init__.py
-    │   │   ├── 🐍 fallback_router.py
-    │   │   ├── 🐍 payment_router.py
-    │   │   ├── 📄 README.md  #для роутеров
-    │   │   ├── 🐍 redaction_router.py
-    │   │   ├── 🐍 registration_router.py
-    │   │   └── 🐍 user_router.py
-    │   ├── 📁 utils
-    │   │   ├── 🐍 auth.py
-    │   │   ├── 🐍 datetime_utils.py
-    │   │   ├── 🐍 logging_config.py
-    │   │   ├── 🐍 token_utils.py
-    │   │   └── 🐍 validation.py
-    │   ├── 🐍 keyboards.py
-    │   └── 🐍 states.py
-    ├── 📁 logs
-    │   ├── 📝 admin.log
-    │   ├── 📝 bot.log
-    │   ├── 📝 database.log
-    │   ├── 📝 errors.log
-    │   ├── 📝 payments.log
-    │   └── 📝 user_actions.log
-    ├── 📁 scripts
-    │   └── 🐍 manage_migrations.py
-    ├── 📝 .env
-    ├── 📝 database.db
-    ├── 📄 README.md
-    ├── 📄 requirements.txt
-    ├── 🐍 run.py
-    ├── 📝 soglasie_na_obrabotku_PD_nesoversh.pdf
-    └── 📝 soglasie_na_obrabotku_PD.pdf
-```
 
 ## Технологический стек
 
@@ -124,7 +56,7 @@
 | Валидация              | Pydantic                | 2.11.10     |
 | Конфигурация           | python-dotenv           | 1.1.1       |
 | HTTP-клиент            | aiohttp                 | 3.12.15     |
-| Логирование            | logging + RotatingFileHandler | - |
+| Логирование            | logging                 | -           |
 
 ## Установка и запуск
 
@@ -162,10 +94,6 @@ ENABLE_CONSOLE_LOGGING=false
 ENABLE_FILE_LOGGING=true
 ROTATION_MAX_SIZE_MB=10
 ROTATION_BACKUP_COUNT=5
-
-# База данных
-SQL_LOGGING_ENABLED=false
-SQLALCHEMY_ECHO=false
 ```
 
 ### Шаг 4: Запуск
@@ -178,23 +106,20 @@ python run.py
 
 ### Переменные окружения (.env)
 
-| Переменная             | Значение по умолчанию | Описание |
-|------------------------|-----------------------|----------|
-| `TG_TOKEN`             |                       | Токен Telegram-бота |
-| `PAYMENTS_TOKEN`       |                       | Токен YooKassa |
-| `LOG_LEVEL`            | `INFO`                | Уровень детализации логов |
-| `ENABLE_FILE_LOGGING`  | `true`                | Запись логов в файлы |
-| `ROTATION_MAX_SIZE_MB` | `10`                  | Макс. размер файла лога (МБ) |
-| `ROTATION_BACKUP_COUNT`| `5`                   | Количество ротируемых файлов |
+| Переменная              | Значение по умолчанию | Описание |
+|-------------------------|-----------------------|----------|
+| `TG_TOKEN`              |                       | Токен Telegram-бота |
+| `PAYMENTS_TOKEN`        |                       | Токен YooKassa |
+| `LOG_LEVEL`             | `INFO`                | Уровень детализации логов |
+| `ENABLE_CONSOLE_LOGGING`| `false`               | Отображение логов в консоли |
+| `ENABLE_FILE_LOGGING`   | `true`                | Запись логов в файлы |
+| `ROTATION_MAX_SIZE_MB`  | `10`                  | Макс. размер файла лога (МБ) |
+| `ROTATION_BACKUP_COUNT` | `5`                   | Количество ротируемых файлов |
 
 ### Логирование
-Система создает отдельные логи для разных компонентов:
-*   `logs/bot.log` - Основные события бота
-*   `logs/admin.log` - Действия администраторов
-*   `logs/payments.log` - Платежные операции
-*   `logs/database.log` - Запросы к БД
-*   `logs/user_actions.log` - Действия пользователей
-*   `logs/errors.log` - Ошибки и исключения
+Система создает логи:
+*   `logs/app.log` - Основной файл логов
+*   `logs/errors.log` - Дублирование ошибок
 
 ## Бизнес-логика
 
@@ -218,6 +143,8 @@ python run.py
 *   `excursion_slots` - Слоты экскурсий
 *   `bookings` - Бронирования
 *   `payments` - Платежи
+*   `salary` - Зарплаты
+*   `expense` - Траты
 *   `promo_codes` - Промокоды
 *   `notifications` - Уведомления
 
