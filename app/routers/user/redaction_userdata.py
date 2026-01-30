@@ -1,11 +1,11 @@
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from app.states import Red_user, Red_child
+from app.user_panel.states import Red_user, Red_child
 from app.utils.validation import Validators
 from datetime import datetime
 
-import app.keyboards as kb
+import app.user_panel.keyboards as kb
 from app.database.requests import DatabaseManager
 from app.database.models import async_session
 from app.utils.logging_config import get_logger

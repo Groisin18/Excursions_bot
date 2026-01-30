@@ -7,7 +7,7 @@ from aiogram.fsm.context import FSMContext
 from datetime import datetime
 from sqlalchemy import select, text
 
-import app.keyboards as main_kb
+import app.user_panel.keyboards as main_kb
 
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, excursions_submenu, captains_submenu, clients_submenu,

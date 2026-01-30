@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.types import Message, LabeledPrice, PreCheckoutQuery, ContentType
 from dotenv import load_dotenv
 
-import app.keyboards as kb
+import app.user_panel.keyboards as kb
 from app.utils.logging_config import get_logger
 
 router = Router(name="payment")

@@ -1,6 +1,6 @@
 import asyncio
 
-import app.keyboards as kb
+import app.user_panel.keyboards as kb
 
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove

@@ -1,10 +1,8 @@
-# app/admin_panel/services/statistics_service.py
-from datetime import datetime, timedelta
-from typing import Dict, List, Optional
-from sqlalchemy import func, and_, select, extract
-from sqlalchemy.ext.asyncio import AsyncSession
+from datetime import datetime
+from typing import Dict
+from sqlalchemy import func, and_, select
 
-from app.database.models import async_session, Booking, Payment, User, Excursion, ExcursionSlot, UserRole
+from app.database.models import async_session, Booking, Payment, User, Excursion, ExcursionSlot
 from app.utils.logging_config import get_logger
 
 logger = get_logger(__name__)

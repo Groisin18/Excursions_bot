@@ -8,9 +8,9 @@ from aiogram.fsm.context import FSMContext
 from pydantic import BaseModel, Field, EmailStr
 from pathlib import Path
 
-import app.keyboards as kb
+import app.user_panel.keyboards as kb
 
-from app.states import Reg_user, Reg_token, Reg_child
+from app.user_panel.states import Reg_user, Reg_token, Reg_child
 from app.database.requests import DatabaseManager
 from app.database.models import UserRole, RegistrationType, async_session
 from app.utils.validation import Validators

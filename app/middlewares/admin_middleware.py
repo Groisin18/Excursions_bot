@@ -45,7 +45,7 @@ class AdminMiddleware(BaseMiddleware):
             logger.warning(f"Попытка доступа к админ-панели без прав: {telegram_id}")
 
             # Импорты здесь чтобы избежать циклических импортов
-            from app.keyboards import main as main_kb
+            from app.user_panel.keyboards import main as main_kb
             if isinstance(event, Message):
                 await event.answer(
                     "У вас нет прав доступа к админ-панели",
