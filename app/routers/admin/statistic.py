@@ -1,13 +1,11 @@
 import asyncio
 
 from aiogram import F, Router
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-from aiogram.filters import Command, StateFilter
+from aiogram.types import Message, CallbackQuery
+from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, date, timedelta
 from sqlalchemy import select, text, func
-from sqlalchemy.orm import selectinload
-from pydantic import BaseModel, Field
 from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, bookings_submenu, statistics_submenu, cancel_button
@@ -18,13 +16,15 @@ from app.database.models import (
     engine, async_session, User, Booking, ExcursionSlot, Excursion
 )
 from app.middlewares import AdminMiddleware
-from app.utils.logging_config import get_admin_logger
+from app.utils.logging_config import get_logger
+
+
+logger = get_logger(__name__)
+
 
 router = Router(name="admin_statistic_router")
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
-
-logger = get_admin_logger()
 
 
 # ===== СТАТИСТИКА =====

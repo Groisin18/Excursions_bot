@@ -1,39 +1,19 @@
-#!/usr/bin/env python3
 """
 Скрипт для управления миграциями базы данных
 """
 
 import asyncio
 import click
-import logging
 import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 from pathlib import Path
 
-from app.migrations.check_integrity import check_database_integrity
+from app.database.migrations.check_integrity import check_database_integrity
+from app.utils.logging_config import get_logger
 
-# Настройка логгера с правильной кодировкой
-def setup_logger():
-    """Настройка логгера с UTF-8 кодировкой"""
-    logger = logging.getLogger()
 
-    if not logger.handlers:
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.INFO)
-
-        # Простой формат без эмодзи
-        formatter = logging.Formatter(
-            '%(asctime)s - %(levelname)s - %(message)s',
-            datefmt='%Y-%m-%d %H:%M:%S'
-        )
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
-        logger.setLevel(logging.INFO)
-
-    return logger
-
-logger = setup_logger()
+logger = get_logger(__name__)
 
 @click.group()
 def cli():

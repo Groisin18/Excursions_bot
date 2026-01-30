@@ -15,15 +15,14 @@ from app.utils.logging_config import setup_logging
 load_dotenv()
 
 # Настройки логирования
-LOG_LEVEL = os.getenv('LOG_LEVEL', 'INFO').upper()
-ENABLE_CONSOLE_LOGGING = os.getenv('ENABLE_CONSOLE_LOGGING', 'true').lower() == 'true'
-ENABLE_FILE_LOGGING = os.getenv('ENABLE_FILE_LOGGING', 'true').lower() == 'true'
-LOG_DIR = os.getenv('LOG_DIR', 'logs')
-ROTATION_MAX_SIZE_MB = int(os.getenv('ROTATION_MAX_SIZE_MB', '10'))
-ROTATION_BACKUP_COUNT = int(os.getenv('ROTATION_BACKUP_COUNT', '5'))
+LOG_LEVEL = os.getenv('LOG_LEVEL').upper()
+ENABLE_CONSOLE_LOGGING = os.getenv('ENABLE_CONSOLE_LOGGING').lower() == 'true'
+ENABLE_FILE_LOGGING = os.getenv('ENABLE_FILE_LOGGING').lower() == 'true'
+LOG_DIR = os.getenv('LOG_DIR')
+ROTATION_MAX_SIZE_MB = int(os.getenv('ROTATION_MAX_SIZE_MB'))
+ROTATION_BACKUP_COUNT = int(os.getenv('ROTATION_BACKUP_COUNT'))
 
-# Настройка логирования с разделением
-app_logger = setup_logging(
+logger = setup_logging(
     level=LOG_LEVEL,
     console=ENABLE_CONSOLE_LOGGING,
     file_logging=ENABLE_FILE_LOGGING,
@@ -31,7 +30,6 @@ app_logger = setup_logging(
     max_size_mb=ROTATION_MAX_SIZE_MB,
     backup_count=ROTATION_BACKUP_COUNT
 )
-logger = app_logger
 
 # Создание бота
 bot = Bot(

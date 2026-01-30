@@ -10,10 +10,11 @@ from aiogram.enums import ChatAction
 
 from app.database.requests import DatabaseManager
 from app.database.models import async_session
-from app.utils.logging_config import get_user_actions_logger
+from app.utils.logging_config import get_logger
 
 router = Router(name="user")
-logger = get_user_actions_logger()
+
+logger = get_logger(__name__)
 
 _excursion_names_cache = None
 _cache_time = 0

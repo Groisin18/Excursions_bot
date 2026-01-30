@@ -5,11 +5,11 @@ from aiogram.types import Message, LabeledPrice, PreCheckoutQuery, ContentType
 from dotenv import load_dotenv
 
 import app.keyboards as kb
-from app.utils.logging_config import get_payment_logger
+from app.utils.logging_config import get_logger
 
 router = Router(name="payment")
 
-logger = get_payment_logger()
+logger = get_logger(__name__)
 
 PRICE = LabeledPrice(label="Подписка на 1 месяц", amount=500*100)
 load_dotenv()

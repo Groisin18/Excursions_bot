@@ -14,11 +14,11 @@ from app.states import Reg_user, Reg_token, Reg_child
 from app.database.requests import DatabaseManager
 from app.database.models import UserRole, RegistrationType, async_session
 from app.utils.validation import Validators
-from app.utils.logging_config import get_user_actions_logger
+from app.utils.logging_config import get_logger
 
 router = Router(name="registration")
 
-logger = get_user_actions_logger()
+logger = get_logger(__name__)
 
 class User(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, description="Имя")

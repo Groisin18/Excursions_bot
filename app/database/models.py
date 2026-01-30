@@ -8,9 +8,10 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, Asyn
 from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
 
-from app.utils.logging_config import get_database_logger
+from app.utils.logging_config import get_logger
 
-logger = get_database_logger()
+logger = get_logger(__name__)
+
 
 class DatabaseConfig:
     """Конфигурация базы данных для телеграм-бота"""

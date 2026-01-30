@@ -1,12 +1,14 @@
 from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from typing import Callable, Dict, Any, Awaitable
-from logging import getLogger
 
 from app.database.requests import DatabaseManager
 from app.database.models import async_session, UserRole
+from app.utils.logging_config import get_logger
 
-logger = getLogger(__name__)
+
+logger = get_logger(__name__)
+
 
 async def is_user_admin(telegram_id: int) -> bool:
     """Проверка, является ли пользователь администратором"""

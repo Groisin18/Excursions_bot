@@ -5,7 +5,7 @@ from sqlalchemy import select, update, and_, or_, func, case, exists
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.utils.logging_config import get_database_logger
+from app.utils.logging_config import get_logger
 from app.database.models import (
     User, UserRole, Excursion, ExcursionSlot, SlotStatus,
     Booking, BookingStatus, ClientStatus, PaymentStatus,
@@ -13,7 +13,9 @@ from app.database.models import (
     PaymentMethod, YooKassaStatus, RegistrationType
 )
 
-logger = get_database_logger()
+
+logger = get_logger(__name__)
+
 
 class DatabaseManager:
     def __init__(self, session: AsyncSession):

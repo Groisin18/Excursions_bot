@@ -8,14 +8,15 @@ from app.admin_panel.keyboards_adm import (
 )
 
 from app.middlewares import AdminMiddleware
-from app.utils.logging_config import get_admin_logger
+from app.utils.logging_config import get_logger
+
+
+logger = get_logger(__name__)
+
 
 router = Router(name="admin_notification")
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
-
-logger = get_admin_logger()
-
 
 
 # ===== УВЕДОМЛЕНИЯ =====

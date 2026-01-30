@@ -7,13 +7,15 @@ from app.database.models import (
     engine, async_session, UserRole, User
 )
 from app.middlewares import AdminMiddleware
-from app.utils.logging_config import get_admin_logger
+from app.utils.logging_config import get_logger
+
+
+logger = get_logger(__name__)
+
 
 router = Router(name="admin_settings")
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
-
-logger = get_admin_logger()
 
 # ===== НАСТРОЙКИ =====
 

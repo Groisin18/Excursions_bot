@@ -5,18 +5,22 @@ from sqlalchemy.orm import selectinload
 
 from app.database.requests import DatabaseManager
 from app.database.models import (
-    engine, async_session, Booking, ExcursionSlot,
+    async_session, Booking, ExcursionSlot,
     BookingStatus, PaymentStatus
 )
 
 from app.middlewares import AdminMiddleware
-from app.utils.logging_config import get_admin_logger
+from app.utils.logging_config import get_logger
+
+
+logger = get_logger(__name__)
+
 
 router = Router(name="admin_bookings")
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
 
-logger = get_admin_logger()
+
 
 # ===== УПРАВЛЕНИЕ ЗАПИСЯМИ =====
 
