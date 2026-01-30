@@ -17,10 +17,10 @@ def admin_main_menu():
 
     categories = [
         "Экскурсии",
-        "Капитаны",
-        "Клиенты",
         "Записи",
         "Статистика",
+        "Капитаны",
+        "Клиенты",
         "Финансы",
         "Уведомления",
         "Настройки",
@@ -30,7 +30,7 @@ def admin_main_menu():
     for text in categories:
         builder.add(KeyboardButton(text=text))
 
-    builder.adjust(2, 2, 2, 2, 1)
+    builder.adjust(3, 3, 3)
 
     return builder.as_markup(
         resize_keyboard=True,
