@@ -16,6 +16,7 @@ from .admin.captains import router as admin_captains_router
 from .admin.finances import router as admin_finances_router
 from .admin.notification import router as admin_notification_router
 from .admin.settings import router as admin_settings_router
+from .user.user_excursions import router as user_excursions_router
 from .user.test_payment import router as test_payment_router
 from .user.registration import router as registration_router
 from .user.redaction_userdata import router as redaction_userdata_router
@@ -37,6 +38,7 @@ __all__ = [
     'admin_finances_router',
     'admin_notification_router',
     'admin_settings_router',
+    'user_excursions_router',
     'test_payment_router',
     'registration_router',
     'redaction_userdata_router',
@@ -64,6 +66,7 @@ def setup_routers(dp):
     dp.include_router(admin_main_router)
 
     # Пользовательские роутеры
+    dp.include_router(user_excursions_router)
     dp.include_router(test_payment_router)
     dp.include_router(registration_router)
     dp.include_router(redaction_userdata_router)

@@ -33,8 +33,6 @@ class ExcursionModel(BaseModel):
     child_discount: int = Field(default=0, ge=0, le=100, description="Скидка для детей в процентах")
     is_active: bool = Field(default=True, description="Активна ли экскурсия")
 
-# TODO РАЗГРЕБАЕМ ЭТУ ЖУТЬ (надо еще протестировать сначала и потыкать кнопки, чего я тут наворотил)
-
 
 # ===== УПРАВЛЕНИЕ ЭКСКУРСИЯМИ =====
 

@@ -46,3 +46,6 @@ class Red_child(StatesGroup):
     weight = State()
     address = State()
     end_reg = State()
+
+class UserScheduleStates(StatesGroup):
+    waiting_for_schedule_date = State()

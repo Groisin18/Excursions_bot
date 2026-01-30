@@ -433,6 +433,7 @@ async def schedule_month_callback(callback: CallbackQuery):
                 "Выберите действие:",
                 reply_markup=schedule_month_management_menu(slots_by_date)
             )
+            # TODO Отработать show_more_month_dates из клавиатуры
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на месяц: {e}", exc_info=True)

@@ -9,6 +9,58 @@ router = Router(name="fallback")
 
 logger = get_logger(__name__)
 
+
+@router.callback_query(F.data == 'no_action')
+async def redact_exc_data(callback: CallbackQuery):
+    """Пустой обработчик для необрабатываемых инлайн-кнопок"""
+    logger.debug(f"Пользователь {callback.from_user.id} нажал кнопку 'no_action'")
+    await callback.answer("")
+
+
+@router.message(F.content_type.in_({'photo', 'video', 'document', 'sticker', 'voice'}))
+async def unsupported_content(message: Message):
+    """Обработка неподдерживаемых типов контента"""
+    logger.info(
+        f"Неподдерживаемый контент от пользователя {message.from_user.id}: "
+        f"тип={message.content_type}"
+    )
+    try:
+        content_type_names = {
+            'photo': 'фото',
+            'video': 'видео',
+            'document': 'документ',
+            'sticker': 'стикер',
+            'voice': 'голосовое сообщение'
+        }
+        content_type_name = content_type_names.get(message.content_type, message.content_type)
+        await message.answer(
+            f'Я не могу обработать {content_type_name}. '
+            f'Пожалуйста, используйте текстовые сообщения или кнопки меню.',
+            reply_markup=kb.main
+        )
+        logger.debug(f"Пользователю {message.from_user.id} отправлено сообщение о неподдерживаемом контенте")
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки неподдерживаемого контента: {e}", exc_info=True)
+
+
+@router.message(F.text.contains('/'))
+async def unknown_command(message: Message):
+    """Обработка неизвестных команд (со слешем)"""
+    logger.info(
+        f"Неизвестная команда от пользователя {message.from_user.id}: '{message.text}'"
+    )
+    try:
+        command = message.text.split()[0] if message.text else ""
+        if command.startswith('/'):
+            logger.debug(f"Пользователь {message.from_user.id} ввел неизвестную команду: {command}")
+        await message.answer(
+            f'Неизвестная команда. Используйте кнопки меню или введите /help для списка команд.',
+            reply_markup=kb.main
+        )
+    except Exception as e:
+        logger.error(f"Ошибка обработки неизвестной команды: {e}", exc_info=True)
+
 @router.callback_query()
 async def unknown_callback(callback:CallbackQuery, state:FSMContext):
     """Обработка неизвестных колбэков"""
@@ -69,48 +121,3 @@ async def unknown_message(message: Message, state:FSMContext):
             )
         except:
             pass
-
-
-@router.message(F.content_type.in_({'photo', 'video', 'document', 'sticker', 'voice'}))
-async def unsupported_content(message: Message):
-    """Обработка неподдерживаемых типов контента"""
-    logger.info(
-        f"Неподдерживаемый контент от пользователя {message.from_user.id}: "
-        f"тип={message.content_type}"
-    )
-    try:
-        content_type_names = {
-            'photo': 'фото',
-            'video': 'видео',
-            'document': 'документ',
-            'sticker': 'стикер',
-            'voice': 'голосовое сообщение'
-        }
-        content_type_name = content_type_names.get(message.content_type, message.content_type)
-        await message.answer(
-            f'Я не могу обработать {content_type_name}. '
-            f'Пожалуйста, используйте текстовые сообщения или кнопки меню.',
-            reply_markup=kb.main
-        )
-        logger.debug(f"Пользователю {message.from_user.id} отправлено сообщение о неподдерживаемом контенте")
-
-    except Exception as e:
-        logger.error(f"Ошибка обработки неподдерживаемого контента: {e}", exc_info=True)
-
-
-@router.message(F.text.contains('/'))
-async def unknown_command(message: Message):
-    """Обработка неизвестных команд (со слешем)"""
-    logger.info(
-        f"Неизвестная команда от пользователя {message.from_user.id}: '{message.text}'"
-    )
-    try:
-        command = message.text.split()[0] if message.text else ""
-        if command.startswith('/'):
-            logger.debug(f"Пользователь {message.from_user.id} ввел неизвестную команду: {command}")
-        await message.answer(
-            f'Неизвестная команда. Используйте кнопки меню или введите /help для списка команд.',
-            reply_markup=kb.main
-        )
-    except Exception as e:
-        logger.error(f"Ошибка обработки неизвестной команды: {e}", exc_info=True)

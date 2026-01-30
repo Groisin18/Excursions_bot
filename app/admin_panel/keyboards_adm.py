@@ -789,8 +789,8 @@ def schedule_month_management_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
 
-    # Показываем первые 5 дат для управления
-    sorted_dates = sorted(slots_by_date.keys())[:5]
+    # Показываем первые 7 дат для управления
+    sorted_dates = sorted(slots_by_date.keys())[:7]
 
     for slot_date in sorted_dates:
         date_str = slot_date.strftime('%d.%m.%Y')
@@ -803,7 +803,7 @@ def schedule_month_management_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
         )
 
     # Если есть еще даты
-    if len(slots_by_date) > 5:
+    if len(slots_by_date) > 7:
         builder.button(
             text=f"Показать еще {len(slots_by_date) - 5} дней...",
             callback_data="show_more_month_dates"

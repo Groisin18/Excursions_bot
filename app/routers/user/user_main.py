@@ -1,43 +1,16 @@
-import asyncio
-
-import app.user_panel.keyboards as kb
-
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
-from aiogram.filters import CommandStart, Command, Filter
+from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.enums import ChatAction
 
-from app.database.requests import DatabaseManager
-from app.database.models import async_session
+import app.user_panel.keyboards as kb
 from app.utils.logging_config import get_logger
+
 
 router = Router(name="user")
 
 logger = get_logger(__name__)
-
-_excursion_names_cache = None
-_cache_time = 0
-CACHE_TIMEOUT = 300  # 5 минут в секундах
-
-
-class ExcursionNameFilter(Filter):
-    """
-    Фильтр для определения, является ли текст сообщения
-    названием активной экскурсии
-    """
-    async def __call__(self, message: Message) -> bool:
-        global _excursion_names_cache, _cache_time
-        current_time = asyncio.get_event_loop().time()
-        # Обновляем кэш если нужно
-        if (_excursion_names_cache is None or
-            (current_time - _cache_time) >= CACHE_TIMEOUT):
-            async with async_session() as session:
-                db = DatabaseManager(session)
-                excursions = await db.get_all_excursions(active_only=True)
-                _excursion_names_cache = {exc.name for exc in excursions}
-                _cache_time = current_time
-        return message.text in _excursion_names_cache
 
 
 @router.message(CommandStart())
@@ -94,131 +67,6 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
         logger.debug(f"Главное меню показано пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка возврата в главное меню для пользователя {callback.from_user.id}: {e}", exc_info=True)
-
-@router.message(F.text == 'Наши экскурсии')
-async def excursions(message: Message):
-    """Показать список экскурсий из базы данных"""
-    logger.info(f"Пользователь {message.from_user.id} запросил список экскурсий")
-    try:
-        async with async_session() as session:
-            db = DatabaseManager(session)
-            excursions_list = await db.get_all_excursions(active_only=True)
-            if not excursions_list:
-                logger.warning(f"Нет доступных экскурсий для пользователя {message.from_user.id}")
-                await message.answer(
-                    "В настоящее время нет доступных экскурсий. Пожалуйста, проверьте позже.",
-                    reply_markup=kb.main
-                )
-                return
-
-            excursions_text = "Наши экскурсии:\n\n"
-            for i, excursion in enumerate(excursions_list, 1):
-                excursions_text += (
-                    f"{i}. {excursion.name}\n"
-                    f"   Стоимость: {excursion.base_price} руб.\n"
-                )
-                if excursion.child_discount > 0:
-                    excursions_text += f"   Детский билет: {excursion.child_price} руб. (скидка {excursion.child_discount}%)\n"
-                excursions_text += f"   Продолжительность: {excursion.base_duration_minutes} мин.\n"
-                if excursion.description and len(excursion.description) < 100:
-                    excursions_text += f"   {excursion.description}\n"
-                excursions_text += "\n"
-            excursions_text += "Выберите экскурсию для подробной информации:"
-
-            await message.answer(
-                excursions_text,
-                reply_markup=await kb.get_excursions_keyboard(message.from_user.id)
-            )
-            logger.debug(f"Список экскурсий отправлен пользователю {message.from_user.id}")
-    except Exception as e:
-        logger.error(f"Ошибка показа экскурсий для пользователя {message.from_user.id}: {e}", exc_info=True)
-        await message.answer(
-            "Произошла ошибка при загрузке списка экскурсий. Попробуйте позже.",
-            reply_markup=kb.main
-        )
-
-@router.message(ExcursionNameFilter())
-async def handle_excursion_selection(message: Message):
-    """Обработчик выбора конкретной экскурсии"""
-    logger.info(f"Пользователь {message.from_user.id} выбрал экскурсию: {message.text}")
-    try:
-        async with async_session() as session:
-            db = DatabaseManager(session)
-            excursions = await db.get_all_excursions(active_only=True)
-            selected_excursion = None
-            for excursion in excursions:
-                if excursion.name == message.text:
-                    selected_excursion = excursion
-                    break
-            if not selected_excursion:
-                await message.answer("Экскурсия не найдена", reply_markup=kb.main)
-                return
-
-            # Формируем детальную информацию об экскурсии
-            details = (
-                f"{selected_excursion.name}\n\n"
-                f"Стоимость:\n"
-                f"   • Взрослый: {selected_excursion.base_price} руб.\n"
-            )
-            if selected_excursion.child_discount > 0:
-                details += f"   • Детский: {selected_excursion.child_price} руб. (скидка {selected_excursion.child_discount}%)\n"
-            else:
-                details += f"   • Детский: {selected_excursion.base_price} руб.\n"
-            details += (
-                f"\nПродолжительность: {selected_excursion.base_duration_minutes} минут\n\n"
-            )
-            if selected_excursion.description:
-                details += f"Описание:\n{selected_excursion.description}\n\n"
-            details += "Выберите действие:"
-            await message.answer(
-                details,
-                reply_markup=await kb.get_excursion_details_inline(selected_excursion.id)
-            )
-    except Exception as e:
-        logger.error(f"Ошибка обработки выбора экскурсии: {e}", exc_info=True)
-        await message.answer(
-            "Произошла ошибка при загрузке информации об экскурсии",
-            reply_markup=kb.main
-        )
-
-#TODO реакция на "Посмотреть расписание", "Забронировать"
-
-
-@router.callback_query(F.data.startswith('excursion_details_'))
-async def show_excursion_details(callback: CallbackQuery):
-    """Показать полное описание экскурсии"""
-    excursion_id = int(callback.data.split('_')[2])
-    try:
-        async with async_session() as session:
-            db = DatabaseManager(session)
-            excursion = await db.get_excursion_by_id(excursion_id)
-            if not excursion:
-                await callback.answer("Экскурсия не найдена", show_alert=True)
-                return
-            details = (
-                f"{excursion.name}\n\n"
-                f"Полное описание:\n"
-                f"{excursion.description if excursion.description else 'Описание отсутствует'}\n\n"
-                f"Цены:\n"
-                f" • Взрослый: {excursion.base_price} руб.\n"
-                f" • Детский: {excursion.child_price} руб.\n"
-                f"Продолжительность: {excursion.base_duration_minutes} мин."
-            )
-            await callback.message.edit_text(
-                details,
-                reply_markup=await kb.get_excursion_details_inline(excursion_id)
-            )
-            await callback.answer()
-
-    except Exception as e:
-        logger.error(f"Ошибка показа деталей экскурсии: {e}", exc_info=True)
-        await callback.answer("Ошибка загрузки информации", show_alert=True)
-
-@router.callback_query(F.data == 'back_to_excursions_list')
-async def back_to_excursions_list(callback: CallbackQuery):
-    """Вернуться к списку экскурсий"""
-    await callback.answer()
-    await excursions(callback.message)
 
 @router.message(F.text == 'Назад в меню')
 async def back_to_main_menu(message: Message):

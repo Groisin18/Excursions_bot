@@ -420,13 +420,6 @@ async def promote_to_client(callback: CallbackQuery):
         await callback.message.answer("Произошла ошибка при изменении статуса")
 
 
-@router.callback_query(F.data == 'no_action')
-async def redact_exc_data(callback: CallbackQuery):
-    """Пустой обработчик для отмены действий"""
-    logger.debug(f"Пользователь {callback.from_user.id} отменил действие через 'no_action'")
-    await callback.answer("Действие отменено")
-
-
 # ===== КОМАНДЫ ДЕБАГА =====
 
 @router.message(Command('debug'))
