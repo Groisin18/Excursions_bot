@@ -38,7 +38,7 @@ async def show_active_bookings(message: Message):
                 select(Booking)
                 .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
                 .options(selectinload(Booking.slot).selectinload(ExcursionSlot.captain))
-                .options(selectinload(Booking.client))
+                .options(selectinload(Booking.adult_user))  # Изменено с client на adult_user
                 .where(Booking.booking_status == BookingStatus.active)
                 .order_by(Booking.created_at.desc())
             )
@@ -54,7 +54,7 @@ async def show_active_bookings(message: Message):
             for booking in bookings[:10]:  # Ограничиваем вывод
                 response += (
                     f"ID: {booking.id}\n"
-                    f"Клиент: {booking.client.full_name}\n"
+                    f"Клиент: {booking.adult_user.full_name}\n"
                     f"Экскурсия: {booking.slot.excursion.name}\n"
                     f"Время: {booking.slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
                     f"Капитан: {booking.slot.captain.full_name}\n"
@@ -85,7 +85,7 @@ async def show_unpaid_bookings(message: Message):
 
             result = await session.execute(
                 select(Booking)
-                .options(selectinload(Booking.client))
+                .options(selectinload(Booking.adult_user))
                 .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
                 .where(Booking.payment_status != PaymentStatus.paid)
                 .where(Booking.booking_status == BookingStatus.active)
@@ -102,7 +102,7 @@ async def show_unpaid_bookings(message: Message):
             for booking in bookings:
                 response += (
                     f"ID: {booking.id}\n"
-                    f"Клиент: {booking.client.full_name} ({booking.client.phone_number})\n"
+                    f"Клиент: {booking.adult_user.full_name} ({booking.adult_user.phone_number})\n"
                     f"Экскурсия: {booking.slot.excursion.name}\n"
                     f"Сумма: {booking.total_price} руб.\n"
                     f"---\n"

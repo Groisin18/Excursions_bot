@@ -362,11 +362,7 @@ class Booking(Base):
     admin_creator: Mapped["User"] = relationship("User", foreign_keys=[admin_creator_id], back_populates="bookings_as_admin")
     promo_code: Mapped["PromoCode"] = relationship("PromoCode", back_populates="bookings")
     payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="booking", cascade="all, delete-orphan")
-    booking_children: Mapped[List["BookingChild"]] = relationship(  # НОВОЕ
-        "BookingChild",
-        back_populates="booking",
-        cascade="all, delete-orphan"
-    )
+    booking_children: Mapped[List["BookingChild"]] = relationship("BookingChild", back_populates="booking",cascade="all, delete-orphan")
 
     @property
     def people_count(self) -> int:
