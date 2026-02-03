@@ -150,10 +150,16 @@ class User(Base):
     updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
 
     # Relationships
-    bookings_as_client: Mapped[List["Booking"]] = relationship(
+    bookings_as_adult: Mapped[List["Booking"]] = relationship(
         "Booking",
-        foreign_keys="Booking.client_id",
-        back_populates="client",
+        foreign_keys="[Booking.adult_user_id]",
+        back_populates="adult_user",
+        cascade="all, delete-orphan"
+    )
+    bookings_as_child: Mapped[List["BookingChild"]] = relationship(
+        "BookingChild",
+        foreign_keys="[BookingChild.child_user_id]",
+        back_populates="child",
         cascade="all, delete-orphan"
     )
     bookings_as_admin: Mapped[List["Booking"]] = relationship(
@@ -266,7 +272,6 @@ class Excursion(Base):
     description: Mapped[str] = mapped_column(Text, nullable=True)
     base_duration_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
     base_price: Mapped[int] = mapped_column(Integer, nullable=False)
-    child_discount: Mapped[int] = mapped_column(Integer, default=0)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
 
     # Relationships
@@ -284,22 +289,12 @@ class Excursion(Base):
         """Человекочитаемое представление экскурсии"""
         return f"{self.name} ({self.base_price} руб, {self.base_duration_minutes} мин)"
 
-    @property
-    def child_price(self) -> int:
-        """Цена для детей с учетом скидки"""
-        if self.child_discount <= 0:
-            return self.base_price
-
-        discount_amount = int(self.base_price * self.child_discount / 100)
-        return max(0, self.base_price - discount_amount)
-
     def to_dict(self) -> dict:
         """Преобразование экскурсии в словарь (для логирования)"""
         return {
             'id': self.id,
             'name': self.name,
             'base_price': self.base_price,
-            'child_price': self.child_price,
             'duration_minutes': self.base_duration_minutes,
             'is_active': self.is_active
         }
@@ -352,11 +347,9 @@ class Booking(Base):
 
     id: Mapped[int] = mapped_column(primary_key=True)
     slot_id: Mapped[int] = mapped_column(ForeignKey("excursion_slots.id"), nullable=False, index=True)
-    client_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    adult_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)  # Было client_id
     admin_creator_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True, index=True)
-    people_count: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
-    children_count: Mapped[int] = mapped_column(Integer, default=0)
-    total_price: Mapped[int] = mapped_column(Integer, nullable=False)
+    total_price: Mapped[int] = mapped_column(Integer, nullable=False)  # Общая сумма: взрослый + все дети
     booking_status: Mapped[BookingStatus] = mapped_column(Enum(BookingStatus), default=BookingStatus.active, index=True)
     client_status: Mapped[ClientStatus] = mapped_column(Enum(ClientStatus), default=ClientStatus.not_arrived)
     payment_status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.not_paid, index=True)
@@ -365,24 +358,30 @@ class Booking(Base):
 
     # Relationships
     slot: Mapped["ExcursionSlot"] = relationship("ExcursionSlot", back_populates="bookings")
-    client: Mapped["User"] = relationship("User", foreign_keys=[client_id], back_populates="bookings_as_client")
+    adult_user: Mapped["User"] = relationship("User", foreign_keys=[adult_user_id], back_populates="bookings_as_adult")
     admin_creator: Mapped["User"] = relationship("User", foreign_keys=[admin_creator_id], back_populates="bookings_as_admin")
     promo_code: Mapped["PromoCode"] = relationship("PromoCode", back_populates="bookings")
     payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="booking", cascade="all, delete-orphan")
+    booking_children: Mapped[List["BookingChild"]] = relationship(  # НОВОЕ
+        "BookingChild",
+        back_populates="booking",
+        cascade="all, delete-orphan"
+    )
 
-    def __repr__(self) -> str:
-        """Строковое представление бронирования для отладки"""
-        return f"Booking(id={self.id}, slot={self.slot_id}, client={self.client_id}, status={self.booking_status.value})"
+    @property
+    def people_count(self) -> int:
+        """Общее количество людей: 1 взрослый + количество детей"""
+        return 1 + len(self.booking_children)
 
-    def __str__(self) -> str:
-        """Человекочитаемое представление бронирования"""
-        return f"Бронирование #{self.id} ({self.people_count} чел., {self.total_price} руб.)"
+    @property
+    def children_count(self) -> int:
+        """Количество детей"""
+        return len(self.booking_children)
 
     @property
     def adults_count(self) -> int:
-        """Количество взрослых"""
-        return self.people_count - self.children_count
-
+        """Количество взрослых (всегда 1)"""
+        return 1
     @property
     def is_active(self) -> bool:
         """Активно ли бронирование"""
@@ -398,7 +397,7 @@ class Booking(Base):
         return {
             'id': self.id,
             'slot_id': self.slot_id,
-            'client_id': self.client_id,
+            'adult_user_id': self.adult_user_id,
             'people_count': self.people_count,
             'children_count': self.children_count,
             'total_price': self.total_price,
@@ -406,6 +405,24 @@ class Booking(Base):
             'payment_status': self.payment_status.value,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+class BookingChild(Base):
+    """Информация о ребенке в бронировании"""
+    __tablename__ = 'booking_children'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), nullable=False, index=True)
+    child_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    age_category: Mapped[str] = mapped_column(String(50), nullable=False)  # "до 3 лет", "4-7 лет", "8-12 лет", "13+ лет"
+    calculated_price: Mapped[int] = mapped_column(Integer, nullable=False)  # Цена с учетом скидки
+    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+
+    # Relationships
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="booking_children")
+    child: Mapped["User"] = relationship("User", foreign_keys=[child_user_id])
+
+    def __repr__(self) -> str:
+        return f"BookingChild(id={self.id}, booking={self.booking_id}, child={self.child_user_id}, price={self.calculated_price})"
 
 class Payment(Base):
     """Модель платежа"""
@@ -679,7 +696,6 @@ async def init_models():
             logger.info(f"Всего таблиц в БД: {len(tables)}")
             logger.debug(f"Таблицы: {', '.join(tables)}")
 
-            # ИСПРАВЛЕНО: синхронный метод
             result = await conn.execute(text("PRAGMA journal_mode"))
             journal_row = result.fetchone()
             journal_mode = journal_row[0] if journal_row else "unknown"

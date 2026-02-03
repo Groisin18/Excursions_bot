@@ -305,7 +305,6 @@ def exc_redaction_builder(exc_id:int):
     'Описание',
     'Продолжительность',
     'Стоимость',
-    'Детская скидка'
     )
 
     redact_reg_collback_list = (
@@ -313,7 +312,6 @@ def exc_redaction_builder(exc_id:int):
     f'redact_exc_description:{exc_id}',
     f'redact_exc_duration:{exc_id}',
     f'redact_exc_price:{exc_id}',
-    f'redact_exc_discount:{exc_id}'
     )
     keyboard = InlineKeyboardBuilder()
 

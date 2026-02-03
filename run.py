@@ -9,7 +9,6 @@ from dotenv import load_dotenv
 
 from app.routers import setup_routers
 from app.database.models import init_models
-from app.database.migrations.check_integrity import check_database_integrity
 from app.utils.logging_config import setup_logging
 
 load_dotenv()
@@ -60,13 +59,6 @@ async def startup(dispatcher: Dispatcher):
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
         raise
-
-    try:
-        logger.info("Проверка целостности базы данных...")
-        await check_database_integrity()
-        logger.info("Проверка целостности завершена")
-    except Exception as e:
-        logger.warning(f"Проверка целостности пропущена: {e}")
 
     logger.info('Бот запущен!')
     print('Бот запущен!')

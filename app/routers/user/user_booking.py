@@ -115,14 +115,13 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 f"Экскурсия: {excursion.name}\n"
                 f"Продолжительность: {excursion.base_duration_minutes} мин.\n\n"
                 f"Стоимость:\n"
+                f"• Взрослый: {excursion.base_price} руб.\n"
+                f"• Детский: по возрастным категориям\n"
+                f"  - до 3 лет: бесплатно\n"
+                f"  - 4-7 лет: скидка 60%\n"
+                f"  - 8-12 лет: скидка 40%\n"
+                f"  - 13 лет и старше: полная стоимость\n"
             )
-
-            if excursion.child_discount > 0:
-                child_price = excursion.child_price()
-                excursion_info += f"• Взрослый: {excursion.base_price} руб.\n"
-                excursion_info += f"• Детский: {child_price} руб. (скидка {excursion.child_discount}%)\n"
-            else:
-                excursion_info += f"• {excursion.base_price} руб.\n"
 
             excursion_info += (
                 f"\nОграничения:\n"
@@ -142,8 +141,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 "user_has_children": user_has_children,
                 "available_weight": available_weight,
                 "max_weight": slot.max_weight,
-                "adult_price": excursion.base_price,
-                "child_price": excursion.child_price() if excursion.child_discount > 0 else excursion.base_price,
+                "adult_price": excursion.base_price
             })
 
             await callback.message.answer(excursion_info)

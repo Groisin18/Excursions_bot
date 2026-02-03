@@ -43,7 +43,6 @@ class NewExcursion(StatesGroup):
     description = State()
     base_duration_minutes = State()
     base_price = State()
-    child_discount = State()
     end_reg = State()
 
 class RedactExcursion(StatesGroup):
@@ -52,7 +51,6 @@ class RedactExcursion(StatesGroup):
     description = State()
     base_duration_minutes = State()
     base_price = State()
-    child_discount = State()
     excursion_id = State()
 
 class CreatePromocode(StatesGroup):

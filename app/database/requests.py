@@ -502,8 +502,7 @@ class DatabaseManager:
             return None
 
     async def create_excursion(self, name: str, base_duration_minutes: int, base_price: int,
-                          description: str = None, child_discount: int = 0,
-                          is_active: bool = True) -> Excursion:
+                          description: str = None, is_active: bool = True) -> Excursion:
         """Создать новую экскурсию"""
         logger.info(f"Создание новой экскурсии: '{name}'")
         logger.debug(f"Параметры: duration={base_duration_minutes}мин, price={base_price}руб")
@@ -514,7 +513,6 @@ class DatabaseManager:
                 description=description,
                 base_duration_minutes=base_duration_minutes,
                 base_price=base_price,
-                child_discount=child_discount,
                 is_active=is_active
             )
             self.session.add(excursion)
@@ -1159,26 +1157,6 @@ class DatabaseManager:
 
         return client_weight + captain_weight
 
-    async def get_booking_calculated_price(self, booking_id: int) -> int:
-        """Получить расчетную стоимость бронирования"""
-        from sqlalchemy.orm import selectinload
-
-        stmt = select(Booking).options(
-            selectinload(Booking.slot).selectinload(ExcursionSlot.excursion)
-        ).where(Booking.id == booking_id)
-
-        result = await self.session.execute(stmt)
-        booking = result.scalar_one_or_none()
-
-        if not booking or not booking.slot or not booking.slot.excursion:
-            return 0
-
-        base_price = booking.slot.excursion.base_price
-        child_price = booking.slot.excursion.child_price
-        adults = booking.people_count - booking.children_count
-
-        return (adults * base_price) + (booking.children_count * child_price)
-
     async def get_slot_full_info(self, slot_id: int) -> dict:
         """Получить полную информацию о слоте"""
         from sqlalchemy.orm import selectinload
@@ -1391,6 +1369,32 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка проверки активной брони: пользователь={user_id}, слот={slot_id}: {e}")
             return None
+
+    async def get_booking_calculated_price(self, booking_id: int) -> int:
+        """Получить расчетную стоимость бронирования"""
+
+        # Загружаем бронирование с детьми и экскурсией
+        stmt = select(Booking).options(
+            selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+            selectinload(Booking.booking_children)  # Загружаем детей
+        ).where(Booking.id == booking_id)
+
+        result = await self.session.execute(stmt)
+        booking = result.scalar_one_or_none()
+
+        if not booking or not booking.slot or not booking.slot.excursion:
+            return 0
+
+        # Цена взрослого (всегда 1 взрослый)
+        adult_price = booking.slot.excursion.base_price
+
+        # Сумма цен детей из BookingChild
+        children_total = sum(child.calculated_price for child in booking.booking_children)
+
+        # Общая стоимость: взрослый + все дети
+        total = adult_price + children_total
+
+        return total
 
 
     # ===== PAYMENT OPERATIONS =====

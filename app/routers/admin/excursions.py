@@ -30,7 +30,6 @@ class ExcursionModel(BaseModel):
     description: Optional[str] = Field(None, description="Описание экскурсии")
     base_duration_minutes: int = Field(..., gt=0, description="Базовая продолжительность в минутах")
     base_price: int = Field(..., gt=0, description="Базовая цена в рублях")
-    child_discount: int = Field(default=0, ge=0, le=100, description="Скидка для детей в процентах")
     is_active: bool = Field(default=True, description="Активна ли экскурсия")
 
 
@@ -219,7 +218,7 @@ async def reg_exc_base_duration(message: Message, state: FSMContext):
 
         await state.update_data(base_duration_minutes=exc_base_duration)
         await state.set_state(NewExcursion.base_price)
-        await message.answer('Введите стоимость экскурсии в рублях (без скидок)')
+        await message.answer('Введите полную стоимость экскурсии в рублях')
 
     except ValueError as e:
         logger.warning(f"Невалидная продолжительность от администратора {message.from_user.id}: {message.text}")
@@ -230,67 +229,25 @@ async def reg_exc_base_duration(message: Message, state: FSMContext):
 
 @router.message(NewExcursion.base_price)
 async def reg_exc_base_price(message: Message, state: FSMContext):
-    """Ввод стоимости экскурсии"""
+    """Ввод стоимости экскурсии и завершение создания"""
     logger.info(f"Администратор {message.from_user.id} ввел стоимость: '{message.text}'")
 
     try:
+        # Валидация базовой цены
         exc_base_price = Validators.validate_amount_rub(message.text)
         logger.debug(f"Стоимость валидирована: {exc_base_price} руб.")
 
         await state.update_data(base_price=exc_base_price)
-        await state.set_state(NewExcursion.child_discount)
-        await message.answer('Введите размер скидки для детей (число от 0 до 100 процентов)')
+        await state.set_state(NewExcursion.end_reg)
+        await message.answer('Стоимость принята. Завершаю создание экскурсии...')
 
     except ValueError as e:
         logger.warning(f"Невалидная стоимость от администратора {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+        return
     except Exception as e:
         logger.error(f"Ошибка обработки стоимости: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработке стоимости")
-
-async def handle_registration(message, excursion):
-    """Сохранение экскурсии в БД"""
-    logger.info(f"Сохранение экскурсии '{excursion.name}' в базу данных")
-
-    try:
-        async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursion = await db_manager.create_excursion(
-                name=excursion.name,
-                description=excursion.description,
-                base_duration_minutes=excursion.base_duration_minutes,
-                base_price=excursion.base_price,
-                child_discount=excursion.child_discount,
-                is_active=True
-            )
-
-            if excursion:
-                logger.info(f"Экскурсия создана: ID={excursion.id}, название='{excursion.name}'")
-                return excursion
-            else:
-                logger.error("Ошибка создания экскурсии: объект не возвращен")
-                raise ValueError('Ошибка создания экскурсии!')
-
-    except Exception as e:
-        logger.error(f"Ошибка сохранения экскурсии в БД: {e}", exc_info=True)
-        raise
-
-@router.message(NewExcursion.child_discount)
-async def reg_ex_child_discount(message: Message, state: FSMContext):
-    """Ввод скидки для детей и завершение создания"""
-    logger.info(f"Администратор {message.from_user.id} ввел скидку: '{message.text}'")
-
-    try:
-        exc_child_discount = Validators.validate_discount(message.text)
-        logger.debug(f"Скидка валидирована: {exc_child_discount}%")
-
-        await state.update_data(child_discount=exc_child_discount)
-        await state.set_state(NewExcursion.end_reg)
-        await message.answer('Создание экскурсии завершается...')
-
-    except ValueError as e:
-        logger.warning(f"Невалидная скидка от администратора {message.from_user.id}: {message.text}")
-        await message.answer(str(e))
+        await message.answer("Произошла ошибка при обработки стоимости")
         return
 
     try:
@@ -302,10 +259,22 @@ async def reg_ex_child_discount(message: Message, state: FSMContext):
         logger.info(f"Создание экскурсии: {final_exc.name}")
 
         # Сохраняем в БД
-        exc = await handle_registration(message, final_exc)
-        exc_id = exc.id
+        async with async_session() as session:
+            db_manager = DatabaseManager(session)
+            excursion = await db_manager.create_excursion(
+                name=final_exc.name,
+                description=final_exc.description,
+                base_duration_minutes=final_exc.base_duration_minutes,
+                base_price=final_exc.base_price,
+                is_active=True
+            )
 
-        logger.info(f"Экскурсия успешно создана: ID={exc_id}")
+            if excursion:
+                logger.info(f"Экскурсия создана: ID={excursion.id}, название='{excursion.name}'")
+                exc_id = excursion.id
+            else:
+                logger.error("Ошибка создания экскурсии: объект не возвращен")
+                raise ValueError('Ошибка создания экскурсии!')
 
         await message.answer(
             "Создание экскурсии завершено!\n\n"
@@ -313,10 +282,9 @@ async def reg_ex_child_discount(message: Message, state: FSMContext):
             f" - Название: {final_exc.name}\n"
             f' - Описание:\n"{final_exc.description}"\n'
             f" - Длительность в минутах: {final_exc.base_duration_minutes} минут\n"
-            f" - Стоимость: {final_exc.base_price} рублей\n"
-            f" - Скидка для детей: {final_exc.child_discount}%\n",
+            f" - Стоимость: {final_exc.base_price} рублей\n",
             reply_markup=inline_end_add_exc(exc_id)
-            )
+        )
 
         await state.clear()
         logger.debug(f"Состояние FSM очищено для администратора {message.from_user.id}")
@@ -361,7 +329,6 @@ async def redact_exc_data(callback:CallbackQuery):
                 f' - Описание:\n"{exc.description}"\n'
                 f" - Длительность в минутах: {exc.base_duration_minutes} минут\n"
                 f" - Стоимость: {exc.base_price} рублей\n"
-                f" - Скидка для детей: {exc.child_discount}%\n"
                 f" - Статус: {'Активна' if exc.is_active else 'Не активна'}\n"
                 "Выберите пункт, который хотите поменять",
                 reply_markup=exc_redaction_builder(exc_id))
@@ -424,7 +391,6 @@ async def redact_name_two(message: Message, state: FSMContext):
                     f' - Описание:\n"{updated_exc.description}"\n'
                     f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                     f" - Стоимость: {updated_exc.base_price} рублей\n"
-                    f" - Скидка для детей: {updated_exc.child_discount}%\n"
                     f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
                     reply_markup=inline_end_add_exc(exc_id)
                     )
@@ -488,7 +454,6 @@ async def redact_description_two(message: Message, state: FSMContext):
                 f' - Описание:\n"{updated_exc.description}"\n'
                 f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                 f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Скидка для детей: {updated_exc.child_discount}%\n"
                 f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
                 reply_markup=inline_end_add_exc(exc_id)
                 )
@@ -554,7 +519,6 @@ async def redact_duration_two(message: Message, state: FSMContext):
                 f' - Описание:\n"{updated_exc.description}"\n'
                 f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                 f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Скидка для детей: {updated_exc.child_discount}%\n"
                 f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
                 reply_markup=inline_end_add_exc(exc_id)
                 )
@@ -620,7 +584,6 @@ async def redact_price_two(message: Message, state: FSMContext):
                 f' - Описание:\n"{updated_exc.description}"\n'
                 f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                 f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Скидка для детей: {updated_exc.child_discount}%\n"
                 f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
                 reply_markup=inline_end_add_exc(exc_id)
                 )
@@ -637,71 +600,5 @@ async def redact_price_two(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Неожиданная ошибка при редактировании стоимости: {e}", exc_info=True)
-        await message.answer("Произошла непредвиденная ошибка")
-        await state.clear()
-
-@router.callback_query(F.data.startswith('redact_exc_discount:'))
-async def redact_discount_one(callback:CallbackQuery, state:FSMContext):
-    """Начало редактирования скидки"""
-    exc_id = int(callback.data.split(':')[1])
-    logger.info(f"Администратор {callback.from_user.id} начал редактирование скидки экскурсии {exc_id}")
-
-    await callback.answer('Редактируем скидку для детей')
-
-    try:
-        await state.update_data(excursion_id=exc_id)
-        await state.set_state(RedactExcursion.child_discount)
-        await callback.message.answer('Введите новую скидку')
-        logger.debug(f"Администратор {callback.from_user.id} перешел в состояние редактирования скидки")
-    except Exception as e:
-        logger.error(f"Ошибка начала редактирования скидки: {e}", exc_info=True)
-
-@router.message(RedactExcursion.child_discount)
-async def redact_discount_two(message: Message, state: FSMContext):
-    """Завершение редактирования скидки"""
-    logger.info(f"Администратор {message.from_user.id} ввел новую скидку: '{message.text}'")
-
-    try:
-        new_discount = Validators.validate_discount(message.text)
-        logger.debug(f"Новая скидка валидирована: {new_discount}%")
-
-        data = await state.get_data()
-        exc_id = data.get('excursion_id')
-
-        async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            success = await db_manager.update_excursion_data(
-                exc_id=exc_id,
-                child_discount=new_discount
-                )
-
-            if success:
-                updated_exc = await db_manager.get_excursion_by_id(exc_id)
-                logger.info(f"Скидка экскурсии {exc_id} обновлена на {new_discount}%")
-
-                await message.answer(
-                "Скидка обновлена!\n\n"
-                "Актуальные данные экскурсии:\n"
-                f" - Название: {updated_exc.name}\n"
-                f' - Описание:\n"{updated_exc.description}"\n'
-                f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
-                f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Скидка для детей: {updated_exc.child_discount}%\n"
-                f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                reply_markup=inline_end_add_exc(exc_id)
-                )
-            else:
-                logger.warning(f"Не удалось обновить скидку экскурсии {exc_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=inline_end_add_exc(exc_id))
-
-        await state.clear()
-        logger.debug(f"Состояние очищено для администратора {message.from_user.id}")
-
-    except ValueError as e:
-        logger.warning(f"Невалидная скидка от администратора {message.from_user.id}: {message.text}")
-        await message.answer(str(e))
-    except Exception as e:
-        logger.error(f"Неожиданная ошибка при редактировании скидки: {e}", exc_info=True)
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()

@@ -40,13 +40,17 @@ async def excursions(message: Message):
                 excursions_text += (
                     f"{i}. {excursion.name}\n"
                     f"   Стоимость: {excursion.base_price} руб.\n"
+                    f"   Продолжительность: {excursion.base_duration_minutes} мин.\n"
                 )
-                if excursion.child_discount > 0:
-                    excursions_text += f"   Детский билет: {excursion.child_price} руб. (скидка {excursion.child_discount}%)\n"
-                excursions_text += f"   Продолжительность: {excursion.base_duration_minutes} мин.\n"
-                if excursion.description and len(excursion.description) < 100:
-                    excursions_text += f"   {excursion.description}\n"
-                excursions_text += "\n"
+            if excursion.description and len(excursion.description) < 100:
+                excursions_text += f"   {excursion.description}\n"
+            excursions_text += ("\n"
+                                f"   Скидки для детей:\n"
+                                f"     - до 3 лет: бесплатно\n"
+                                f"     - 4-7 лет: скидка 60%\n"
+                                f"     - 8-12 лет: скидка 40%\n"
+                                f"     - 13 лет и старше: полная стоимость\n"
+                )
 
             excursions_text += "Выберите экскурсию для подробной информации или посмотрите общее расписание:"
 
@@ -98,13 +102,17 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
                 excursions_text += (
                     f"{i}. {excursion.name}\n"
                     f"   Стоимость: {excursion.base_price} руб.\n"
+                    f"   Продолжительность: {excursion.base_duration_minutes} мин.\n"
                 )
-                if excursion.child_discount > 0:
-                    excursions_text += f"   Детский билет: {excursion.child_price} руб. (скидка {excursion.child_discount}%)\n"
-                excursions_text += f"   Продолжительность: {excursion.base_duration_minutes} мин.\n"
-                if excursion.description and len(excursion.description) < 100:
-                    excursions_text += f"   {excursion.description}\n"
-                excursions_text += "\n"
+            if excursion.description and len(excursion.description) < 100:
+                excursions_text += f"   {excursion.description}\n"
+            excursions_text += ("\n"
+                                f"   Скидки для детей:\n"
+                                f"     - до 3 лет: бесплатно\n"
+                                f"     - 4-7 лет: скидка 60%\n"
+                                f"     - 8-12 лет: скидка 40%\n"
+                                f"     - 13 лет и старше: полная стоимость\n"
+                )
 
             excursions_text += "Выберите экскурсию для подробной информации или посмотрите общее расписание:"
 
@@ -417,15 +425,10 @@ async def show_excursion_public_detail(callback: CallbackQuery):
             details = (
                 f"{excursion.name}\n\n"
                 f"Стоимость:\n"
+                f"   • Взрослый: {excursion.base_price} руб.\n"
+                f"   • Детский: до 3 лет - бесплатно, 4-7 лет скидка 60%, 8-12 лет скидка 40%, 13+ лет - полная цена\n\n"
+                f"\nПродолжительность: {excursion.base_duration_minutes} минут\n\n"
             )
-            if excursion.child_discount > 0:
-                details += f"   • Взрослый: {excursion.base_price} руб.\n"
-                details += f"   • Детский: {excursion.child_price()} руб. (скидка {excursion.child_discount}%)\n"
-            else:
-                details += f"   • {excursion.base_price} руб.\n"
-
-            details += f"\nПродолжительность: {excursion.base_duration_minutes} минут\n\n"
-
             if excursion.description:
                 details += f"Описание:\n{excursion.description}\n\n"
 
