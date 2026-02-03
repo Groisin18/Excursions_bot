@@ -49,3 +49,14 @@ class Red_child(StatesGroup):
 
 class UserScheduleStates(StatesGroup):
     waiting_for_schedule_date = State()
+
+class UserBookingStates(StatesGroup):
+    """Состояния для процесса бронирования"""
+    checking_weight = State()           # 1. Проверка веса взрослого
+    requesting_adult_weight = State()
+    selecting_participants = State()    # 2. Я один / Я с детьми
+    selecting_children = State()        # 3. Выбор конкретных детей
+    requesting_child_weight = State()   # 4. Запрос веса для детей без веса (динамическое)
+    applying_promo_code = State()       # 5. Ввод промокода
+    calculating_total = State()         # 6. Расчет и показ суммы
+    confirming_booking = State()        # 7. Финальное подтверждение

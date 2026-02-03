@@ -728,14 +728,25 @@ class DatabaseManager:
 
     # ===== SLOT OPERATIONS =====
     async def get_slot_by_id(self, slot_id: int) -> Optional[ExcursionSlot]:
-        """Получить слот по ID"""
+        """Получить слот по ID с загрузкой экскурсии"""
+        logger.debug(f"Получение слота {slot_id} с экскурсией")
+
         try:
             result = await self.session.execute(
-                select(ExcursionSlot).where(ExcursionSlot.id == slot_id)
+                select(ExcursionSlot)
+                .options(selectinload(ExcursionSlot.excursion))
+                .where(ExcursionSlot.id == slot_id)
             )
-            return result.scalar_one_or_none()
+            slot = result.scalar_one_or_none()
+
+            if slot:
+                logger.debug(f"Слот {slot_id} найден: экскурсия={slot.excursion.name if slot.excursion else 'Нет'}")
+            else:
+                logger.warning(f"Слот {slot_id} не найден")
+
+            return slot
         except Exception as e:
-            logger.error(f"Ошибка получения слота {slot_id}: {e}")
+            logger.error(f"Ошибка получения слота {slot_id}: {e}", exc_info=True)
             return None
 
     async def get_available_slots(self, excursion_id: int, date_from: datetime,
@@ -1351,6 +1362,36 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Ошибка получения бронирования {booking_id}: {e}", exc_info=True)
             return None
+
+    async def get_user_active_booking_for_slot(self, user_id: int, slot_id: int) -> Optional[Booking]:
+        """Проверить есть ли у пользователя активная бронь на конкретный слот"""
+        logger.debug(f"Проверка активной брони пользователя {user_id} на слот {slot_id}")
+
+        try:
+            result = await self.session.execute(
+                select(Booking)
+                .where(
+                    and_(
+                        Booking.client_id == user_id,
+                        Booking.slot_id == slot_id,
+                        Booking.booking_status == BookingStatus.active
+                    )
+                )
+                .limit(1)
+            )
+            booking = result.scalar_one_or_none()
+
+            if booking:
+                logger.debug(f"Найдена активная бронь пользователя {user_id} на слот {slot_id}")
+            else:
+                logger.debug(f"Активной брони пользователя {user_id} на слот {slot_id} не найдено")
+
+            return booking
+
+        except Exception as e:
+            logger.error(f"Ошибка проверки активной брони: пользователь={user_id}, слот={slot_id}: {e}")
+            return None
+
 
     # ===== PAYMENT OPERATIONS =====
     async def create_payment(self, booking_id: int, amount: int,

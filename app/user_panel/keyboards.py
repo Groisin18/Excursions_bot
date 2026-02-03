@@ -482,3 +482,29 @@ inline_questions = InlineKeyboardMarkup(
         [InlineKeyboardButton(text='В главное меню', callback_data='back_to_main')]
     ]
 )
+
+
+# ===== 10. БРОНИРОВАНИЕ НА СЛОТ =====
+
+async def create_participants_keyboard(has_children: bool) -> InlineKeyboardMarkup:
+    """Создать клавиатуру выбора участников"""
+    builder = InlineKeyboardBuilder()
+
+    builder.add(InlineKeyboardButton(
+        text="Я один",
+        callback_data="booking_just_me"
+    ))
+
+    if has_children:
+        builder.add(InlineKeyboardButton(
+            text="Я с детьми (макс. 5)",
+            callback_data="booking_with_children"
+        ))
+
+    builder.add(InlineKeyboardButton(
+        text="Отменить бронирование",
+        callback_data="booking_cancel"
+    ))
+
+    builder.adjust(1)
+    return builder.as_markup()
