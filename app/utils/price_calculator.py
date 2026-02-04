@@ -53,8 +53,10 @@ class PriceCalculator:
     @staticmethod
     def get_age_category(age: int) -> str:
         """Получить текстовое описание возрастной категории"""
-        if age <= AgeCategories.FREE_MAX_AGE:
-            return f"до {AgeCategories.FREE_MAX_AGE} лет (бесплатно)"
+        if age < 0:
+            raise ValueError("Отрицательный возраст")
+        elif age <= AgeCategories.FREE_MAX_AGE:
+            return f"до {AgeCategories.FREE_MAX_AGE} лет включительно (бесплатно)"
         elif age <= AgeCategories.DISCOUNT_1_MAX_AGE:
             return f"{AgeCategories.FREE_MAX_AGE + 1}-{AgeCategories.DISCOUNT_1_MAX_AGE} лет (скидка 60%)"
         elif age <= AgeCategories.DISCOUNT_2_MAX_AGE:
