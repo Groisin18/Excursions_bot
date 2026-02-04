@@ -10,7 +10,7 @@ from app.database.models import (
     User, UserRole, Excursion, ExcursionSlot, SlotStatus,
     Booking, BookingStatus, ClientStatus, PaymentStatus,
     Payment, PromoCode, Salary, Expense, Notification, NotificationType,
-    PaymentMethod, YooKassaStatus, RegistrationType
+    PaymentMethod, YooKassaStatus, RegistrationType, BookingChild
 )
 
 
@@ -1125,37 +1125,82 @@ class DatabaseManager:
 
     async def get_booked_places_for_slot(self, slot_id: int) -> int:
         """Получить количество забронированных мест для слота"""
-        stmt = select(func.coalesce(func.sum(Booking.people_count), 0)).where(
-            (Booking.slot_id == slot_id) &
-            (Booking.booking_status == BookingStatus.active)
-        )
-        result = await self.session.execute(stmt)
-        return result.scalar() or 0
+        try:
+            # Получаем количество активных бронирований (каждое = 1 взрослый)
+            bookings_stmt = select(func.count(Booking.id)).where(
+                (Booking.slot_id == slot_id) &
+                (Booking.booking_status == BookingStatus.active)
+            )
+            bookings_result = await self.session.execute(bookings_stmt)
+            adults_count = bookings_result.scalar() or 0
+
+            # Получаем количество детей во всех активных бронированиях
+            children_stmt = select(func.count(BookingChild.id)).select_from(
+                BookingChild
+            ).join(
+                Booking, BookingChild.booking_id == Booking.id
+            ).where(
+                (Booking.slot_id == slot_id) &
+                (Booking.booking_status == BookingStatus.active)
+            )
+            children_result = await self.session.execute(children_stmt)
+            children_count = children_result.scalar() or 0
+
+            total = adults_count + children_count
+
+            logger.debug(f"Забронировано мест в слоте {slot_id}: взрослые={adults_count}, дети={children_count}, всего={total}")
+            return total
+
+        except Exception as e:
+            logger.error(f"Ошибка получения забронированных мест для слота {slot_id}: {e}")
+            return 0
 
     async def get_current_weight_for_slot(self, slot_id: int) -> int:
         """Получить текущий вес для слота"""
-        # Получаем вес активных клиентов
-        stmt = select(func.coalesce(func.sum(User.weight), 0)).select_from(Booking).join(
-            User, Booking.client_id == User.id
-        ).where(
-            (Booking.slot_id == slot_id) &
-            (Booking.booking_status == BookingStatus.active) &
-            (User.weight.is_not(None))
-        )
-        client_weight = (await self.session.execute(stmt)).scalar() or 0
+        try:
+            # Получаем вес активных клиентов (взрослых)
+            stmt = select(func.coalesce(func.sum(User.weight), 0)).select_from(Booking).join(
+                User, Booking.adult_user_id == User.id
+            ).where(
+                (Booking.slot_id == slot_id) &
+                (Booking.booking_status == BookingStatus.active) &
+                (User.weight.is_not(None))
+            )
+            client_weight = (await self.session.execute(stmt)).scalar() or 0
 
-        # Получаем вес капитана
-        slot_stmt = select(ExcursionSlot.captain_id).where(ExcursionSlot.id == slot_id)
-        slot_result = await self.session.execute(slot_stmt)
-        captain_id = slot_result.scalar_one_or_none()
+            # Получаем вес детей из бронирований
+            children_weight_stmt = select(func.coalesce(func.sum(User.weight), 0)).select_from(
+                BookingChild
+            ).join(
+                Booking, BookingChild.booking_id == Booking.id
+            ).join(
+                User, BookingChild.child_user_id == User.id
+            ).where(
+                (Booking.slot_id == slot_id) &
+                (Booking.booking_status == BookingStatus.active) &
+                (User.weight.is_not(None))
+            )
+            children_weight = (await self.session.execute(children_weight_stmt)).scalar() or 0
 
-        captain_weight = 0
-        if captain_id:
-            captain_stmt = select(User.weight).where(User.id == captain_id)
-            captain_result = await self.session.execute(captain_stmt)
-            captain_weight = captain_result.scalar_one_or_none() or 0
+            # Получаем вес капитана
+            slot_stmt = select(ExcursionSlot.captain_id).where(ExcursionSlot.id == slot_id)
+            slot_result = await self.session.execute(slot_stmt)
+            captain_id = slot_result.scalar_one_or_none()
 
-        return client_weight + captain_weight
+            captain_weight = 0
+            if captain_id:
+                captain_stmt = select(User.weight).where(User.id == captain_id)
+                captain_result = await self.session.execute(captain_stmt)
+                captain_weight = captain_result.scalar_one_or_none() or 0
+
+            total_weight = client_weight + children_weight + captain_weight
+            logger.debug(f"Текущий вес слота {slot_id}: взрослые={client_weight}кг, дети={children_weight}кг, капитан={captain_weight}кг, всего={total_weight}кг")
+
+            return total_weight
+
+        except Exception as e:
+            logger.error(f"Ошибка получения текущего веса для слота {slot_id}: {e}")
+            return 0
 
     async def get_slot_full_info(self, slot_id: int) -> dict:
         """Получить полную информацию о слоте"""
@@ -1242,7 +1287,7 @@ class DatabaseManager:
                     selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
                     selectinload(Booking.slot).selectinload(ExcursionSlot.captain)
                 )
-                .join(User, Booking.client_id == User.id)
+                .join(User, Booking.adult_user_id == User.id)
                 .where(User.telegram_id == user_telegram_id)
                 .order_by(Booking.created_at.desc())
             )
@@ -1350,7 +1395,7 @@ class DatabaseManager:
                 select(Booking)
                 .where(
                     and_(
-                        Booking.client_id == user_id,
+                        Booking.adult_user_id == user_id,
                         Booking.slot_id == slot_id,
                         Booking.booking_status == BookingStatus.active
                     )

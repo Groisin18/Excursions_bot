@@ -2,11 +2,12 @@ from datetime import datetime, timedelta, date
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import app.user_panel.keyboards as kb
 
 from app.database.requests import DatabaseManager
-from app.database.models import async_session
+from app.database.models import async_session, SlotStatus
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_name
 from app.utils.validation import Validators
@@ -157,16 +158,18 @@ async def format_public_schedule_for_date(
 
         response += f"• {start_time}-{end_time} {excursion_name} {places_text}\n"
 
+    response += "\nНажмите на экскурсию, чтобы увидеть детали и записаться"
+
     return response
 
-async def show_date_schedule(reply_func, target_date: date, answer_func=None):
+async def show_date_schedule(message_or_callback, target_date: date, is_callback: bool = False):
     """
     Общая функция показа расписания на дату
 
     Args:
-        reply_func: функция для отправки сообщения (callback.message.answer или message.answer)
+        message_or_callback: объект Message или CallbackQuery
         target_date: дата для показа
-        answer_func: функция для callback.answer (только для callback)
+        is_callback: True если это callback, False если message
     """
     try:
         date_from = datetime.combine(target_date, datetime.min.time())
@@ -177,36 +180,44 @@ async def show_date_schedule(reply_func, target_date: date, answer_func=None):
             slots = await db.get_public_schedule_for_period(date_from, date_to)
 
             if not slots:
-                await reply_func(
-                    f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
-                    reply_markup=kb.public_schedule_options()
-                )
-                if answer_func:
-                    await answer_func()
+                if is_callback:
+                    await message_or_callback.message.answer(
+                        f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
+                        reply_markup=kb.public_schedule_options()
+                    )
+                    await message_or_callback.answer()
+                else:
+                    await message_or_callback.answer(
+                        f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
+                        reply_markup=kb.public_schedule_options()
+                    )
                 return
 
             text = await format_public_schedule_for_date(target_date, slots, db)
             keyboard = kb.public_schedule_date_menu(slots, target_date)
-            await reply_func(text, reply_markup=keyboard)
-            if answer_func:
-                await answer_func()
+
+            if is_callback:
+                await message_or_callback.message.answer(text, reply_markup=keyboard)
+                await message_or_callback.answer()
+            else:
+                await message_or_callback.answer(text, reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания: {e}", exc_info=True)
-        if answer_func:
-            await answer_func("Ошибка загрузки расписания", show_alert=True)
+        if is_callback:
+            await message_or_callback.answer("Ошибка загрузки расписания", show_alert=True)
         else:
-            await reply_func("Произошла ошибка при получении расписания")
+            await message_or_callback.answer("Произошла ошибка при получении расписания")
 
 @router.callback_query(F.data == "public_schedule_today")
 async def public_schedule_today(callback: CallbackQuery):
     """Показать расписание на сегодня"""
-    await show_date_schedule(callback.message.answer, datetime.now().date(), callback.answer)
+    await show_date_schedule(callback, datetime.now().date(), is_callback=True)
 
 @router.callback_query(F.data == "public_schedule_tomorrow")
 async def public_schedule_tomorrow(callback: CallbackQuery):
     """Показать расписание на завтра"""
-    await show_date_schedule(callback.message.answer, datetime.now().date() + timedelta(days=1), callback.answer)
+    await show_date_schedule(callback, datetime.now().date() + timedelta(days=1), is_callback=True)
 
 @router.callback_query(F.data == "public_schedule_week")
 async def public_schedule_week(callback: CallbackQuery):
@@ -377,7 +388,7 @@ async def handle_public_schedule_date(message: Message, state: FSMContext):
             return
 
         # Используем общую функцию
-        await show_date_schedule(message.answer, target_date)
+        await show_date_schedule(message, target_date, is_callback=False)
         await state.clear()
 
     except Exception as e:
@@ -390,7 +401,7 @@ async def public_view_date_callback(callback: CallbackQuery):
     """Показать расписание на выбранную дату"""
     date_str = callback.data.split(":")[-1]
     target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-    await show_date_schedule(callback.message.answer, target_date, callback.answer)
+    await show_date_schedule(callback, target_date, is_callback=True)
 
 @router.callback_query(F.data == "public_back_to_schedule_options")
 async def public_back_to_schedule_options(callback: CallbackQuery):
@@ -564,7 +575,7 @@ async def public_view_exc_date(callback: CallbackQuery):
                     places_text = "(Мест нет)"
 
                 text += f"• {start_time}-{end_time} {places_text}\n"
-                text += "\nНажмите на экскурсию, чтобы записаться"
+                text += "\nНажмите на экскурсию, чтобы увидеть детали и записаться"
 
             keyboard = kb.public_schedule_date_menu(slots, target_date)
             await callback.message.answer(text, reply_markup=keyboard)
@@ -573,3 +584,138 @@ async def public_view_exc_date(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка показа слотов экскурсии на дату: {e}", exc_info=True)
         await callback.answer("Ошибка загрузки", show_alert=True)
+
+@router.callback_query(F.data.startswith("public_view_slot:"))
+async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
+    """Просмотр деталей слота перед бронированием"""
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} просматривает детали слота")
+
+    try:
+        slot_id = int(callback.data.split(":")[-1])
+
+        await callback.answer()
+
+        async with async_session() as session:
+            db = DatabaseManager(session)
+
+            # Получаем слот с загруженными данными
+            slot = await db.get_slot_by_id(slot_id)
+            if not slot:
+                logger.warning(f"Слот {slot_id} не найден для пользователя {user_telegram_id}")
+                await callback.message.answer(
+                    "Слот не найден. Возможно, он был удален или изменен.",
+                    reply_markup=kb.public_schedule_options()
+                )
+                return
+
+            if slot.status != SlotStatus.scheduled:
+                logger.warning(f"Слот {slot_id} не доступен для бронирования. Статус: {slot.status}")
+                await callback.message.answer(
+                    "Этот слот недоступен для записи.",
+                    reply_markup=kb.public_schedule_options()
+                )
+                return
+
+            if not slot.excursion:
+                logger.error(f"Экскурсия не найдена для слота {slot.id}")
+                await callback.message.answer(
+                    "Ошибка: данные экскурсии не найдены.",
+                    reply_markup=kb.main
+                )
+                return
+
+            booked_places = await db.get_booked_places_for_slot(slot.id)
+            free_places = slot.max_people - booked_places
+            current_weight = await db.get_current_weight_for_slot(slot.id)
+            available_weight = slot.max_weight - current_weight
+
+            weekday = get_weekday_name(slot.start_datetime)
+
+            # Формируем подробное описание
+            slot_info = (
+                f"<b>Детали экскурсии</b>\n\n"
+                f"<b>Дата:</b> {slot.start_datetime.strftime('%d.%m.%Y')} ({weekday})\n"
+                f"<b>Время:</b> {slot.start_datetime.strftime('%H:%M')}\n"
+                f"<b>Продолжительность:</b> {slot.excursion.base_duration_minutes} мин.\n"
+                f"<b>Экскурсия:</b> {slot.excursion.name}\n"
+                f"<b>Описание:</b> {slot.excursion.description or 'Нет описания'}\n\n"
+
+                f"<b>Стоимость:</b>\n"
+                f"• Взрослый: {slot.excursion.base_price} руб.\n"
+                f"• Детский билет:\n"
+                f"  - до 3 лет: бесплатно\n"
+                f"  - 4-7 лет: скидка 60%\n"
+                f"  - 8-12 лет: скидка 40%\n"
+                f"  - 13 лет и старше: полная стоимость\n\n"
+
+                f"<b>Ограничения:</b>\n"
+                f"• Максимальное количество человек: {slot.max_people}\n"
+                f"• Свободных мест: {free_places}\n"
+                f"• Максимальный суммарный вес: {slot.max_weight} кг\n"
+                f"• Доступный вес: {available_weight} кг\n"
+            )
+
+            # Добавляем информацию о капитане если есть
+            if slot.captain_id:
+                captain = await db.get_user_by_id(slot.captain_id)
+                if captain:
+                    captain_name = f"{captain.full_name}"
+                    slot_info += f"\n<b>Капитан:</b> {captain_name}"
+
+            # Добавляем предупреждение если мест мало
+            if free_places <= 2:
+                slot_info += f"\n\n<i>Осталось всего {free_places} места!</i>"
+
+            # Создаем клавиатуру [Записаться][Вернуться]
+            builder = InlineKeyboardBuilder()
+            builder.button(
+                text="Записаться",
+                callback_data=f"public_book_slot:{slot_id}"
+            )
+            builder.button(
+                text="Вернуться",
+                callback_data="public_schedule_back"
+            )
+            builder.adjust(1)
+
+            # Отправляем сообщение с клавиатурой
+            await callback.message.answer(
+                slot_info,
+                reply_markup=builder.as_markup(),
+                parse_mode="HTML"
+            )
+
+            logger.debug(f"Показаны детали слота {slot_id} пользователю {user_telegram_id}")
+
+    except ValueError as e:
+        logger.error(f"Ошибка парсинга slot_id для пользователя {user_telegram_id}: {e}")
+        await callback.answer("Ошибка: некорректный идентификатор слота", show_alert=True)
+
+    except Exception as e:
+        logger.error(
+            f"Ошибка показа деталей слота для пользователя {user_telegram_id}: {e}",
+            exc_info=True
+        )
+        await callback.message.answer(
+            "Произошла ошибка при загрузке деталей. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+
+@router.callback_query(F.data == "public_schedule_back")
+async def public_schedule_back(callback: CallbackQuery, state: FSMContext):
+    """Возврат к расписанию из деталей слота"""
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} вернулся к расписанию")
+
+    # Очищаем состояние если есть
+    await state.clear()
+
+    # Получаем последнюю выбранную дату из state или используем сегодняшнюю
+    data = await state.get_data()
+    target_date = data.get("schedule_target_date", date.today())
+
+    # Показываем расписание на выбранную дату
+    await show_date_schedule(callback, target_date, is_callback=True)
+
+    await callback.answer()

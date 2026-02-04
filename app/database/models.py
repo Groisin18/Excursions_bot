@@ -9,6 +9,7 @@ from sqlalchemy.pool import NullPool
 from sqlalchemy.sql import func
 
 from app.utils.logging_config import get_logger
+from app.utils.datetime_utils import calculate_age
 
 logger = get_logger(__name__)
 
@@ -240,15 +241,7 @@ class User(Base):
         """Возраст пользователя"""
         if not self.date_of_birth:
             return None
-
-        today = date.today()
-        age = today.year - self.date_of_birth.year
-
-        # Проверяем, был ли уже день рождения в этом году
-        if (today.month, today.day) < (self.date_of_birth.month, self.date_of_birth.day):
-            age -= 1
-
-        return age
+        return calculate_age(self.date_of_birth)
 
     def to_dict(self) -> dict:
         """Преобразование пользователя в словарь (для логирования)"""

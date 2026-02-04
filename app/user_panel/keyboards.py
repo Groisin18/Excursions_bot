@@ -1,12 +1,15 @@
 from datetime import date
 
-from aiogram.types import ReplyKeyboardMarkup, KeyboardButton, InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import (
+                        ReplyKeyboardMarkup, KeyboardButton,
+                        InlineKeyboardMarkup, InlineKeyboardButton
+)
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.database.requests import DatabaseManager
-from app.database.models import async_session, SlotStatus
+from app.database.models import async_session
 from app.utils.logging_config import get_logger
-from app.utils.datetime_utils import get_weekday_name, get_weekday_short_name
+from app.utils.datetime_utils import get_weekday_short_name
 
 logger = get_logger(__name__)
 
@@ -270,67 +273,29 @@ def public_slot_action_menu(slot_id: int, available_places: int) -> InlineKeyboa
     return builder.as_markup()
 
 def public_schedule_date_menu(slots: list, target_date: date) -> InlineKeyboardMarkup:
-    """
-    Клавиатура для записи на слоты на конкретную дату (публичная)
-
-    Args:
-        slots: Список объектов ExcursionSlot
-        target_date: Дата для которой показывается расписание
-    """
+    """Клавиатура слотов на конкретную дату"""
     builder = InlineKeyboardBuilder()
 
-    # Добавляем кнопки для записи на слоты
     for slot in slots:
-        if slot.status == SlotStatus.scheduled:
-            # Получаем свободные места для текста кнопки
-            # (свободные места будем считать в хэндлере и передавать отдельно)
-            start_time = slot.start_datetime.strftime("%H:%M")
-            excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
+        # Формируем текст кнопки
+        start_time = slot.start_datetime.strftime("%H:%M")
+        excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
 
-            builder.button(
-                text=f"{start_time} - {excursion_name}",
-                callback_data=f"public_view_slot:{slot.id}"
-            )
+        # Получаем свободные места (нужен доступ к БД, поэтому просто время и название)
+        button_text = f"{start_time} - {excursion_name}"
+        if len(button_text) > 30:
+            button_text = button_text[:27] + "..."
 
-    # Кнопка возврата
-    builder.button(
-        text="Назад к выбору периода",
-        callback_data="public_back_to_schedule_options"
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
-def public_slot_detail_menu(slot_id: int, free_places: int, slot_time: str, excursion_name: str) -> InlineKeyboardMarkup:
-    """
-    Клавиатура для записи на конкретный слот
-
-    Args:
-        slot_id: ID слота
-        free_places: Количество свободных мест
-        slot_time: Время слота (формат "12:00-16:00")
-        excursion_name: Название экскурсии
-    """
-    builder = InlineKeyboardBuilder()
-
-    if free_places > 0:
         builder.button(
-            text=f"Записаться ({free_places} мест)",
-            callback_data=f"public_book_slot:{slot_id}"
+            text=button_text,
+            callback_data=f"public_view_slot:{slot.id}"
         )
-    else:
         builder.button(
-            text="Мест нет",
-            callback_data="no_action"
+            text="Назад к расписанию",
+            callback_data="public_back_to_date_schedule"
         )
-
-    # Кнопка назад к расписанию на дату
-    builder.button(
-        text="Назад к расписанию",
-        callback_data="public_back_to_date_schedule"
-    )
-
     builder.adjust(1)
+
     return builder.as_markup()
 
 def public_schedule_week_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
@@ -491,13 +456,13 @@ async def create_participants_keyboard(has_children: bool) -> InlineKeyboardMark
     builder = InlineKeyboardBuilder()
 
     builder.add(InlineKeyboardButton(
-        text="Я один",
+        text="Записываюсь только я",
         callback_data="booking_just_me"
     ))
 
     if has_children:
         builder.add(InlineKeyboardButton(
-            text="Я с детьми (макс. 5)",
+            text="Я буду с детьми (макс. 5)",
             callback_data="booking_with_children"
         ))
 
@@ -506,5 +471,61 @@ async def create_participants_keyboard(has_children: bool) -> InlineKeyboardMark
         callback_data="booking_cancel"
     ))
 
+    builder.adjust(1)
+    return builder.as_markup()
+
+async def create_promo_code_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для шага промокода"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить промокод", callback_data="skip_promo_code")
+    builder.button(text="Отменить бронирование", callback_data="cancel_booking")
+    builder.adjust(1)
+    return builder.as_markup()
+
+async def create_children_selection_keyboard(children: list, selected_ids: list = None) -> InlineKeyboardMarkup:
+    """Создает клавиатуру для выбора детей"""
+    builder = InlineKeyboardBuilder()
+
+    if selected_ids is None:
+        selected_ids = []
+
+    for child in children:
+        # Проверяем возраст для информации
+        age_info = ""
+        if child.date_of_birth:
+            today = date.today()
+            age = today.year - child.date_of_birth.year
+            age_info = f" ({age} лет)"
+
+        # Добавляем галочку если ребенок уже выбран
+        prefix = "✓ " if child.id in selected_ids else ""
+        button_text = f"{prefix}{child.full_name}{age_info}"
+
+        builder.button(
+            text=button_text,
+            callback_data=f"select_child:{child.id}"
+        )
+
+    # Кнопки управления
+    builder.button(text="Завершить выбор", callback_data="finish_children_selection")
+    builder.button(text="Назад", callback_data="back_to_participants")
+    builder.button(text="Отменить бронирование", callback_data="cancel_booking")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+async def create_child_weight_keyboard(child_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для ввода веса ребенка"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Пропустить (использовать средний вес)", callback_data=f"skip_child_weight:{child_id}")
+    builder.button(text="Отменить бронирование", callback_data="cancel_booking")
+    builder.adjust(1)
+    return builder.as_markup()
+
+async def booking_start_confirm_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура для ввода веса ребенка"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Начать бронирование", callback_data=f"confirm_start_booking")
+    builder.button(text="Другие варианты", callback_data="public_schedule_back")
     builder.adjust(1)
     return builder.as_markup()
