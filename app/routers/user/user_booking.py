@@ -371,7 +371,7 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
                     "full_name": child.full_name,
                     "birthdate": child.date_of_birth,
                     "weight": child.weight,
-                    "age": child.age() if child.date_of_birth else None
+                    "age": child.age if child.date_of_birth else None
                 })
 
             await state.update_data({
@@ -516,7 +516,7 @@ async def process_to_promo_code(message: Message, state: FSMContext):
     # Переходим к промокоду
     await state.set_state(UserBookingStates.applying_promo_code)
 
-    total_children = len(data.get("children_ids", []))
+    total_children = len(data.get("selected_children_ids", []))
     participants_text = "1 взрослый"
     if total_children > 0:
         participants_text += f" и {total_children} детей"
@@ -538,7 +538,7 @@ async def get_child_info_for_display(child_id: int, db: DatabaseManager) -> dict
     return {
         "id": child_user.id,
         "full_name": child_user.full_name,
-        "age": child_user.age(),
+        "age": child_user.age,
         "weight": child_user.weight
     }
 
@@ -561,7 +561,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
 
         # Сохраняем финальный список выбранных детей
         await state.update_data({
-            "children_ids": selected_ids,
+            "selected_children_ids": selected_ids,
             "total_children": len(selected_ids)
         })
 
@@ -774,8 +774,8 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
                 await callback.answer("Ошибка: ребенок не найден", show_alert=True)
                 return
 
-            # Используем функцию age() из модели
-            age = child_user.age()
+            # Используем проперти age из модели
+            age = child_user.age
 
             # Рассчитываем средний вес в зависимости от возраста
             if age is None:
