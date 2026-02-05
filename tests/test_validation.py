@@ -571,6 +571,19 @@ class TestValidatePromoCode:
 
         with pytest.raises(ValueError, match="максимум 20 символов"):
             validate_promo_code("A" * 21)
+    def test_short_promo_codes(self):
+        """Слишком короткие промокоды."""
+        short_codes = [
+            "",
+            "A",
+            "AB",
+            "ABC",
+            "123",
+        ]
+
+        for code in short_codes:
+            with pytest.raises(ValueError, match="Код промокода должен содержать минимум"):
+                validate_promo_code(code)
 
     def test_invalid_characters(self):
         """Недопустимые символы в промокоде."""
@@ -579,8 +592,7 @@ class TestValidatePromoCode:
             "code-with-dash",
             "code with spaces",
             "code_underscore",
-            "тест",
-            ""
+            "тест"
         ]
 
         for code in invalid_codes:
