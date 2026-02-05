@@ -835,7 +835,7 @@ def promocodes_menu() -> InlineKeyboardMarkup:
 
     builder.add(
         InlineKeyboardButton(text="Создать промокод", callback_data="create_promocode"),
-        InlineKeyboardButton(text="Список промокодов", callback_data="list_promocodes"),
+        InlineKeyboardButton(text="Управление промокодами", callback_data="list_promocodes"),
         InlineKeyboardButton(text="Архивные промокоды", callback_data="archive_promocodes"),
         InlineKeyboardButton(text="Статистика промокодов", callback_data="promocodes_stats"),
         InlineKeyboardButton(text="Назад", callback_data="back_to_exc_menu")
@@ -844,33 +844,15 @@ def promocodes_menu() -> InlineKeyboardMarkup:
     builder.adjust(2, 2, 1)
     return builder.as_markup()
 
-def promo_edit_field_menu() -> InlineKeyboardMarkup:
-    """Меню выбора поля промокода для редактирования"""
-    builder = InlineKeyboardBuilder()
-
-    builder.add(
-        InlineKeyboardButton(text="Код промокода", callback_data="edit_promo_field:code"),
-        InlineKeyboardButton(text="Тип скидки", callback_data="edit_promo_field:type"),
-        InlineKeyboardButton(text="Значение скидки", callback_data="edit_promo_field:value"),
-        InlineKeyboardButton(text="Описание", callback_data="edit_promo_field:description"),
-        InlineKeyboardButton(text="Лимит использований", callback_data="edit_promo_field:limit"),
-        InlineKeyboardButton(text="Срок действия", callback_data="edit_promo_field:duration"),
-        InlineKeyboardButton(text="Назад к сводке", callback_data="back_to_promo_summary")
-    )
-
-    builder.adjust(1)
-    return builder.as_markup()
-
 def promo_type_selection_menu() -> InlineKeyboardMarkup:
     """Меню выбора типа скидки для промокода"""
     builder = InlineKeyboardBuilder()
 
     builder.add(
-        InlineKeyboardButton(text="Процентная скидка", callback_data="promo_type:percentage"),
-        InlineKeyboardButton(text="Фиксированная сумма", callback_data="promo_type:fixed"),
-        InlineKeyboardButton(text="Назад к редактированию", callback_data="edit_promo_data")
+        InlineKeyboardButton(text="Скидка в процентах", callback_data="promo_type:percent"),
+        InlineKeyboardButton(text="Скидка точной суммой", callback_data="promo_type:fixed"),
+        InlineKeyboardButton(text="Отмена", callback_data="cancel_promo_creation")
     )
-
     builder.adjust(1)
     return builder.as_markup()
 
@@ -911,8 +893,10 @@ def promo_duration_selection_menu(
     # Настраиваем расположение
     if include_back and include_cancel:
         builder.adjust(2, 2, 1, 1, 1, 2)
-    else:
+    elif include_back or include_cancel:
         builder.adjust(2, 2, 1, 1, 1)
+    else:
+        builder.adjust(2, 2, 1, 1)
 
     return builder.as_markup()
 
@@ -922,8 +906,24 @@ def promo_creation_confirmation_menu() -> InlineKeyboardMarkup:
 
     builder.add(
         InlineKeyboardButton(text="Да, создать промокод", callback_data="confirm_create_promo"),
-        InlineKeyboardButton(text="Редактировать", callback_data="edit_promo_data"),
         InlineKeyboardButton(text="Отмена", callback_data="cancel_promo_creation")
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def promo_edit_field_menu() -> InlineKeyboardMarkup:
+    """Меню выбора поля промокода для редактирования"""
+    builder = InlineKeyboardBuilder()
+
+    builder.add(
+        InlineKeyboardButton(text="Код промокода", callback_data="edit_promo_field:code"),
+        InlineKeyboardButton(text="Тип скидки", callback_data="edit_promo_field:type"),
+        InlineKeyboardButton(text="Значение скидки", callback_data="edit_promo_field:value"),
+        InlineKeyboardButton(text="Описание", callback_data="edit_promo_field:description"),
+        InlineKeyboardButton(text="Лимит использований", callback_data="edit_promo_field:limit"),
+        InlineKeyboardButton(text="Срок действия", callback_data="edit_promo_field:duration"),
+        InlineKeyboardButton(text="Назад к сводке", callback_data="back_to_promo_summary")
     )
 
     builder.adjust(1)

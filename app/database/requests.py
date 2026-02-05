@@ -8,7 +8,7 @@ from sqlalchemy.orm import selectinload
 from app.utils.logging_config import get_logger
 from app.database.models import (
     User, UserRole, Excursion, ExcursionSlot, SlotStatus,
-    Booking, BookingStatus, ClientStatus, PaymentStatus,
+    Booking, BookingStatus, ClientStatus, PaymentStatus, DiscountType,
     Payment, PromoCode, Salary, Expense, Notification, NotificationType,
     PaymentMethod, YooKassaStatus, RegistrationType, BookingChild
 )
@@ -1513,6 +1513,68 @@ class DatabaseManager:
             return False
 
     # ===== PROMOCODE OPERATIONS =====
+    async def create_promo_code(self, code: str, discount_type: DiscountType,
+                          discount_value: int, valid_from: datetime,
+                          valid_until: datetime, usage_limit: int = 1) -> PromoCode:
+        """
+        Создать промокод
+
+        Args:
+            code: Код промокода (уникальный)
+            discount_type: Тип скидки (percent/fixed)
+            discount_value: Значение скидки
+            valid_from: Дата начала действия
+            valid_until: Дата окончания действия
+            usage_limit: Лимит использований (по умолчанию 1)
+
+        Returns:
+            Созданный промокод
+
+        Raises:
+            ValueError: Если промокод с таким кодом уже существует
+            Exception: При других ошибках БД
+        """
+        logger.info(
+            f"Создание промокода: code='{code}', "
+            f"тип={discount_type.value}, значение={discount_value}, "
+            f"действует с {valid_from} по {valid_until}, лимит={usage_limit}"
+        )
+
+        try:
+            # Проверяем, нет ли уже промокода с таким кодом
+            existing_promo = await self.get_promocode(code)
+            if existing_promo:
+                logger.warning(f"Промокод с кодом '{code}' уже существует: ID={existing_promo.id}")
+                raise ValueError(f"Промокод с кодом '{code}' уже существует")
+
+            # Создаем промокод
+            promocode = PromoCode(
+                code=code,
+                discount_type=discount_type,
+                discount_value=discount_value,
+                valid_from=valid_from,
+                valid_until=valid_until,
+                usage_limit=usage_limit,
+                used_count=0
+            )
+
+            self.session.add(promocode)
+            await self.session.commit()
+            await self.session.refresh(promocode)
+
+            logger.info(f"Промокод создан: ID={promocode.id}, code='{promocode.code}'")
+            return promocode
+
+        except ValueError as e:
+            logger.warning(f"Ошибка валидации при создании промокода: {e}")
+            await self.session.rollback()
+            raise
+
+        except Exception as e:
+            logger.error(f"Ошибка создания промокода: {e}", exc_info=True)
+            await self.session.rollback()
+            raise
+
     async def get_promocode(self, code: str) -> Optional[PromoCode]:
         """Получить промокод по коду"""
         logger.debug(f"Поиск промокода: '{code}'")

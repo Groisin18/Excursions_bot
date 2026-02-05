@@ -32,7 +32,7 @@ from app.utils.validation import (
     validate_token_format,
     generate_virtual_phone,
     parse_virtual_phone,
-    validate_promo_code,
+    validate_promocode,
 
     # Pydantic валидаторы
     pydantic_validate_name,
@@ -556,21 +556,21 @@ class TestValidatePromoCode:
         ]
 
         for code, expected in test_cases:
-            result = validate_promo_code(code)
+            result = validate_promocode(code)
             assert result == expected
 
     def test_case_normalization(self):
         """Проверка приведения к верхнему регистру."""
-        assert validate_promo_code("summer2024") == "SUMMER2024"
-        assert validate_promo_code("Summer2024") == "SUMMER2024"
+        assert validate_promocode("summer2024") == "SUMMER2024"
+        assert validate_promocode("Summer2024") == "SUMMER2024"
 
     def test_invalid_length(self):
         """Некорректная длина промокода."""
         with pytest.raises(ValueError, match="минимум 4 символа"):
-            validate_promo_code("ABC")
+            validate_promocode("ABC")
 
         with pytest.raises(ValueError, match="максимум 20 символов"):
-            validate_promo_code("A" * 21)
+            validate_promocode("A" * 21)
     def test_short_promo_codes(self):
         """Слишком короткие промокоды."""
         short_codes = [
@@ -583,7 +583,7 @@ class TestValidatePromoCode:
 
         for code in short_codes:
             with pytest.raises(ValueError, match="Код промокода должен содержать минимум"):
-                validate_promo_code(code)
+                validate_promocode(code)
 
     def test_invalid_characters(self):
         """Недопустимые символы в промокоде."""
@@ -597,12 +597,12 @@ class TestValidatePromoCode:
 
         for code in invalid_codes:
             with pytest.raises(ValueError, match="Код промокода может содержать только"):
-                validate_promo_code(code)
+                validate_promocode(code)
 
     def test_only_digits(self):
         """Промокод не может состоять только из цифр."""
         with pytest.raises(ValueError, match="Промокод не может состоять только из цифр"):
-            validate_promo_code("123456")
+            validate_promocode("123456")
 
 
 # ==================== Тесты для token и virtual phone ====================
@@ -759,7 +759,7 @@ def test_validate_phone_parametrized(phone, expected):
 ])
 def test_validate_promo_code_parametrized(promo_code, expected):
     """Параметризованные тесты для validate_promo_code."""
-    result = validate_promo_code(promo_code)
+    result = validate_promocode(promo_code)
     assert result == expected
 
 
@@ -782,7 +782,7 @@ class TestEdgeCases:
             (validate_excursion_duration, ""),
             (validate_amount_rub, ""),
             (validate_discount, ""),
-            (validate_promo_code, ""),
+            (validate_promocode, ""),
         ]
 
         for validator, value in validators:
@@ -819,8 +819,8 @@ class TestEdgeCases:
         assert validate_amount_rub("20000") == 20000
 
         # Промокод на границах длины
-        assert validate_promo_code("ABCD") == "ABCD"
-        assert validate_promo_code("A" * 20) == "A" * 20
+        assert validate_promocode("ABCD") == "ABCD"
+        assert validate_promocode("A" * 20) == "A" * 20
 
 
 # ==================== Интеграционные тесты ====================

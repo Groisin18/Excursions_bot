@@ -61,4 +61,5 @@ class CreatePromocode(StatesGroup):
     waiting_for_description = State()
     waiting_for_usage_limit = State()
     waiting_for_duration = State()
+    waiting_for_custom_duration = State()
     waiting_for_confirmation = State()

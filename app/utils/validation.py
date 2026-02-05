@@ -504,7 +504,7 @@ def validate_token_format(token: str) -> bool:
     return result
 
 
-def validate_promo_code(code: str) -> str:
+def validate_promocode(code: str) -> str:
     """Валидация промокода"""
     logger.debug(f"Валидация промокода | входное значение: '{code}'")
 
