@@ -262,9 +262,9 @@ async def request_adult_weight(message: Message, state: FSMContext):
             return
 
         # Валидация веса
-        from app.utils.validation import Validators
+        from app.utils.validation import validate_weight
         try:
-            weight = Validators.validate_weight(message.text)
+            weight = validate_weight(message.text)
         except ValueError as e:
             logger.warning(f"Невалидный вес от пользователя {user_telegram_id}: {message.text}")
             await message.answer(str(e))
@@ -679,9 +679,9 @@ async def request_child_weight(message: Message, state: FSMContext):
         current_child = children_without_weight[current_index]
 
         # Валидация веса
-        from app.utils.validation import Validators
+        from app.utils.validation import validate_weight
         try:
-            weight = Validators.validate_weight(message.text)
+            weight = validate_weight(message.text)
         except ValueError as e:
             logger.warning(f"Невалидный вес ребенка от пользователя {user_telegram_id}: {message.text}")
             await message.answer(str(e))

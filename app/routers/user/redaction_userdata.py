@@ -2,7 +2,10 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from app.user_panel.states import Red_user, Red_child
-from app.utils.validation import Validators
+from app.utils.validation import (validate_email, validate_phone, validate_name,
+                                  validate_surname, validate_birthdate,
+                                  validate_weight, validate_address
+                                  )
 from datetime import datetime
 
 import app.user_panel.keyboards as kb
@@ -71,7 +74,7 @@ async def redact_name_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новое имя: '{message.text}'")
 
     try:
-        validated_name = Validators.validate_name(message.text)
+        validated_name = validate_name(message.text)
 
         async with async_session() as session:
             db_manager = DatabaseManager(session)
@@ -144,7 +147,7 @@ async def redact_surname_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новую фамилию: '{message.text}'")
 
     try:
-        validated_surname = Validators.validate_surname(message.text)
+        validated_surname = validate_surname(message.text)
 
         async with async_session() as session:
             db_manager = DatabaseManager(session)
@@ -220,7 +223,7 @@ async def redact_phone_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новый телефон: '{message.text}'")
 
     try:
-        validated_phone = Validators.validate_phone(message.text)
+        validated_phone = validate_phone(message.text)
         logger.debug(f"Телефон валидирован: {validated_phone[:3]}...{validated_phone[-3:]}")
 
         async with async_session() as session:
@@ -286,7 +289,7 @@ async def redact_birth_date_two(message: Message, state: FSMContext):
 
     try:
         async with async_session() as session:
-            validated_date_str = Validators.validate_birthdate(message.text)
+            validated_date_str = validate_birthdate(message.text)
             birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
 
             logger.debug(f"Дата рождения валидирована: {validated_date_str} -> {birth_date_for_save}")
@@ -351,7 +354,7 @@ async def redact_weight_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новый вес: '{message.text}'")
 
     try:
-        validated_weight = Validators.validate_weight(message.text)
+        validated_weight = validate_weight(message.text)
         logger.debug(f"Вес валидирован: {validated_weight} кг")
 
         async with async_session() as session:
@@ -413,7 +416,7 @@ async def redact_address_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новый адрес: '{message.text}'")
 
     try:
-        validated_address = Validators.validate_address(message.text)
+        validated_address = validate_address(message.text)
         logger.debug(f"Адрес валидирован (длина: {len(validated_address)} символов)")
 
         async with async_session() as session:
@@ -475,7 +478,7 @@ async def redact_email_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новый email: '{message.text}'")
 
     try:
-        validated_email = Validators.validate_email(message.text)
+        validated_email = validate_email(message.text)
         logger.debug(f"Email валидирован: {validated_email}")
 
         async with async_session() as session:
@@ -600,7 +603,7 @@ async def redact_child_name_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {user_telegram_id} ввел новое имя ребенка: '{message.text}'")
 
     try:
-        validated_name = Validators.validate_name(message.text)
+        validated_name = validate_name(message.text)
         data = await state.get_data()
         child_id = data.get('child_id')
 
@@ -691,7 +694,7 @@ async def redact_child_surname_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {user_telegram_id} ввел новую фамилию ребенка: '{message.text}'")
 
     try:
-        validated_surname = Validators.validate_surname(message.text)
+        validated_surname = validate_surname(message.text)
         data = await state.get_data()
         child_id = data.get('child_id')
 
@@ -790,7 +793,7 @@ async def redact_child_birth_date_two(message: Message, state: FSMContext):
             return
 
         async with async_session() as session:
-            validated_date_str = Validators.validate_birthdate(message.text)
+            validated_date_str = validate_birthdate(message.text)
             birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
 
             logger.debug(f"Дата рождения ребенка валидирована: {validated_date_str} -> {birth_date_for_save}")
@@ -859,7 +862,7 @@ async def redact_child_weight_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {user_telegram_id} ввел новый вес ребенка: '{message.text}'")
 
     try:
-        validated_weight = Validators.validate_weight(message.text)
+        validated_weight = validate_weight(message.text)
         data = await state.get_data()
         child_id = data.get('child_id')
 
@@ -936,7 +939,7 @@ async def redact_child_address_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {user_telegram_id} ввел новый адрес ребенка: '{message.text}'")
 
     try:
-        validated_address = Validators.validate_address(message.text)
+        validated_address = validate_address(message.text)
         data = await state.get_data()
         child_id = data.get('child_id')
 

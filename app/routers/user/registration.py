@@ -13,7 +13,10 @@ import app.user_panel.keyboards as kb
 from app.user_panel.states import Reg_user, Reg_token, Reg_child
 from app.database.requests import DatabaseManager
 from app.database.models import UserRole, RegistrationType, async_session
-from app.utils.validation import Validators
+from app.utils.validation import (validate_email, validate_phone, validate_name,
+                                  validate_surname, validate_birthdate,
+                                  validate_weight, validate_address
+                                  )
 from app.utils.logging_config import get_logger
 
 router = Router(name="registration")
@@ -383,7 +386,7 @@ async def reg_token_email(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел email: {message.text}")
 
     try:
-        validated_email = Validators.validate_email(message.text)
+        validated_email = validate_email(message.text)
         logger.debug(f"Email валидирован: {validated_email}")
 
         await state.update_data(email=validated_email)
@@ -402,7 +405,7 @@ async def reg_token_end(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел телефон: {message.text}")
 
     try:
-        validated_phone = Validators.validate_phone(message.text)
+        validated_phone = validate_phone(message.text)
         logger.debug(f"Телефон валидирован: {validated_phone[:3]}...{validated_phone[-3:]}")
 
         await state.update_data(phone=validated_phone)
@@ -518,7 +521,7 @@ async def reg_child_surname(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел имя ребенка: '{message.text}'")
 
     try:
-        validated_name = Validators.validate_name(message.text)
+        validated_name = validate_name(message.text)
         await state.update_data(name=validated_name)
         await state.update_data(parent_id=message.from_user.id)
         await state.set_state(Reg_child.surname)
@@ -535,7 +538,7 @@ async def reg_child_consest(message: Message, state: FSMContext):
     """Ввод фамилии ребенка. Согласие на обработку ПД ребенка"""
     logger.info(f"Пользователь {message.from_user.id} ввел фамилию ребенка: '{message.text}'")
     try:
-        validated_surname = Validators.validate_surname(message.text)
+        validated_surname = validate_surname(message.text)
         await state.update_data(surname=validated_surname)
         await state.set_state(Reg_child.pd_consent)
         logger.debug(f"Фамилия ребенка: {validated_surname}")
@@ -640,7 +643,7 @@ async def reg_child_age(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел дату рождения ребенка: '{message.text}'")
 
     try:
-        validated_date = Validators.validate_birthdate(message.text)
+        validated_date = validate_birthdate(message.text)
         age = get_age(validated_date)
 
         await state.update_data(date_of_birth=validated_date)
@@ -663,7 +666,7 @@ async def reg_child_weight(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел вес ребенка: '{message.text}'")
 
     try:
-        validated_weight = Validators.validate_weight(message.text)
+        validated_weight = validate_weight(message.text)
         await state.update_data(weight=validated_weight)
         await state.set_state(Reg_child.address)
 
@@ -680,7 +683,7 @@ async def reg_child_address(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел адрес ребенка: '{message.text}'")
 
     try:
-        validated_address = Validators.validate_address(message.text)
+        validated_address = validate_address(message.text)
         await state.update_data(address=validated_address)
         await state.set_state(Reg_child.end_reg)
 
@@ -825,7 +828,7 @@ async def reg_surname(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел имя: '{message.text}'")
 
     try:
-        validated_name = Validators.validate_name(message.text)
+        validated_name = validate_name(message.text)
         await state.update_data(name=validated_name)
         await state.set_state(Reg_user.surname)
 
@@ -842,7 +845,7 @@ async def reg_birth_date(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел фамилию: '{message.text}'")
 
     try:
-        validated_surname = Validators.validate_surname(message.text)
+        validated_surname = validate_surname(message.text)
         await state.update_data(surname=validated_surname)
         await state.set_state(Reg_user.date_of_birth)
 
@@ -862,7 +865,7 @@ async def reg_age(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел дату рождения: '{message.text}'")
 
     try:
-        validated_date = Validators.validate_birthdate(message.text)
+        validated_date = validate_birthdate(message.text)
         age = get_age(validated_date)
 
         await state.update_data(birth_date=validated_date)
@@ -885,7 +888,7 @@ async def reg_weight(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел вес: '{message.text}'")
 
     try:
-        validated_weight = Validators.validate_weight(message.text)
+        validated_weight = validate_weight(message.text)
         await state.update_data(weight=validated_weight)
         await state.set_state(Reg_user.address)
 
@@ -902,7 +905,7 @@ async def reg_address(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел адрес: '{message.text}'")
 
     try:
-        validated_address = Validators.validate_address(message.text)
+        validated_address = validate_address(message.text)
         await state.update_data(address=validated_address)
         await state.set_state(Reg_user.email)
 
@@ -919,7 +922,7 @@ async def reg_email(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел email: '{message.text}'")
 
     try:
-        validated_email = Validators.validate_email(message.text)
+        validated_email = validate_email(message.text)
         await state.update_data(email=validated_email)
         await state.set_state(Reg_user.phone)
 
@@ -936,7 +939,7 @@ async def reg_phone(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел телефон: '{message.text}'")
 
     try:
-        validated_phone = Validators.validate_phone(message.text)
+        validated_phone = validate_phone(message.text)
         await state.update_data(phone=validated_phone)
         await state.set_state(Reg_user.end_reg)
 

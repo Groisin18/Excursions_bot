@@ -10,7 +10,7 @@ from app.database.requests import DatabaseManager
 from app.database.models import async_session, SlotStatus
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_name
-from app.utils.validation import Validators
+from app.utils.validation import validate_slot_date
 from app.user_panel.states import UserScheduleStates
 
 
@@ -378,7 +378,7 @@ async def handle_public_schedule_date(message: Message, state: FSMContext):
             return
 
         try:
-            target_date = Validators.validate_slot_date(message.text)
+            target_date = validate_slot_date(message.text)
         except ValueError as e:
             await message.answer(str(e))
             return

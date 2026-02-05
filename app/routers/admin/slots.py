@@ -16,6 +16,7 @@ from app.admin_panel.keyboards_adm import (
 )
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
+from app.utils.validation import validate_slot_date, validate_slot_time
 
 
 logger = get_logger(__name__)
@@ -458,11 +459,9 @@ async def handle_reschedule_datetime(message: Message, state: FSMContext):
                 return
             date_str, time_str = parts
 
-            from app.utils.validation import Validators
-
             try:
-                date_obj = Validators.validate_slot_date(date_str)
-                time_obj = Validators.validate_slot_time(time_str)
+                date_obj = validate_slot_date(date_str)
+                time_obj = validate_slot_time(time_str)
             except ValueError as e:
                 await message.answer(str(e))
                 return

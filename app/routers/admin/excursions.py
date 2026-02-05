@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from app.utils.validation import Validators
+from app.utils.validation import validate_excursion_duration, validate_amount_rub
 from app.admin_panel.states_adm import (NewExcursion, RedactExcursion)
 from app.database.requests import DatabaseManager
 from app.database.models import async_session
@@ -213,7 +213,7 @@ async def reg_exc_base_duration(message: Message, state: FSMContext):
     logger.info(f"Администратор {message.from_user.id} ввел продолжительность: '{message.text}'")
 
     try:
-        exc_base_duration = Validators.validate_excursion_duration(message.text)
+        exc_base_duration = validate_excursion_duration(message.text)
         logger.debug(f"Продолжительность валидирована: {exc_base_duration} минут")
 
         await state.update_data(base_duration_minutes=exc_base_duration)
@@ -234,7 +234,7 @@ async def reg_exc_base_price(message: Message, state: FSMContext):
 
     try:
         # Валидация базовой цены
-        exc_base_price = Validators.validate_amount_rub(message.text)
+        exc_base_price = validate_amount_rub(message.text)
         logger.debug(f"Стоимость валидирована: {exc_base_price} руб.")
 
         await state.update_data(base_price=exc_base_price)
@@ -495,7 +495,7 @@ async def redact_duration_two(message: Message, state: FSMContext):
     logger.info(f"Администратор {message.from_user.id} ввел новую продолжительность: '{message.text}'")
 
     try:
-        new_duration = Validators.validate_excursion_duration(message.text)
+        new_duration = validate_excursion_duration(message.text)
         logger.debug(f"Новая продолжительность валидирована: {new_duration} минут")
 
         data = await state.get_data()
@@ -560,7 +560,7 @@ async def redact_price_two(message: Message, state: FSMContext):
     logger.info(f"Администратор {message.from_user.id} ввел новую стоимость: '{message.text}'")
 
     try:
-        new_price = Validators.validate_amount_rub(message.text)
+        new_price = validate_amount_rub(message.text)
         logger.debug(f"Новая стоимость валидирована: {new_price} руб.")
 
         data = await state.get_data()

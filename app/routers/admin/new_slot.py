@@ -8,7 +8,7 @@ from typing import Optional
 from app.admin_panel.states_adm import AddToSchedule
 from app.database.requests import DatabaseManager
 from app.database.models import async_session
-from app.utils.validation import Validators
+from app.utils.validation import validate_slot_date, validate_slot_time
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_back_menu,
     captains_selection_menu, time_slot_menu, schedule_captains_management_menu,
@@ -134,7 +134,7 @@ async def handle_schedule_date(message: Message, state: FSMContext):
             await message.answer("Ввод даты отменен.", reply_markup=schedule_exc_management_menu())
             return
 
-        slot_date = Validators.validate_slot_date(message.text)
+        slot_date = validate_slot_date(message.text)
 
         await state.update_data(slot_date=slot_date)
         data = await state.get_data()
@@ -172,7 +172,7 @@ async def handle_time_selection(callback: CallbackQuery, state: FSMContext):
 
         data = await state.get_data()
         slot_date = data.get('slot_date')
-        validated_time = Validators.validate_slot_time(time_str)
+        validated_time = validate_slot_time(time_str)
         start_datetime = datetime.combine(slot_date, validated_time)
 
         # Проверяем, что время не в прошлом
@@ -235,7 +235,7 @@ async def handle_schedule_time(message: Message, state: FSMContext):
         return
 
     try:
-        validated_time = Validators.validate_slot_time(message.text)
+        validated_time = validate_slot_time(message.text)
 
         data = await state.get_data()
         slot_date = data.get('slot_date')
