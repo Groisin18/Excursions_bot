@@ -51,12 +51,11 @@ async def show_promocodes(message: Message):
             response = "Список активных промокодов:\n\n"
             for promo in promocodes:
                 # Определяем тип скидки
-                if promo.discount_type == DiscountType.PERCENTAGE:
+                if promo.discount_type == DiscountType.percent:
                     discount_text = f"{promo.discount_value}%"
-                else:
+                elif promo.discount_type == DiscountType.fixed:
                     discount_text = f"{promo.discount_value} руб."
 
-                # Проверяем статус
                 current_time = datetime.now()
                 is_expired = promo.valid_until < current_time
                 is_limit_reached = promo.used_count >= promo.usage_limit if promo.usage_limit else False
@@ -141,7 +140,7 @@ async def create_promocode_start(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             "Создание нового промокода\n\n"
             "Введите код промокода:\n"
-            "• Только латинские буквы и цифры\n"
+            "• Только большие латинские буквы и цифры\n"
             "• Длина от 4 до 20 символов\n"
             "• Например: SUMMER2024, WELCOME10, BLACKFRIDAY\n\n"
             "Или введите /cancel для отмены"

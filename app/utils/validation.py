@@ -478,3 +478,40 @@ class Validators:
 
         logger.debug(f"Результат проверки формата токена: {result}")
         return result
+
+    @staticmethod
+    def validate_promo_code(code: str) -> str:
+        """
+        Валидация промокода
+        """
+        logger.debug(f"Валидация промокода | входное значение: '{code}'")
+
+        cleaned_code = code.strip().upper()
+
+        logger.debug(f"Очищенный промокод: '{cleaned_code}'")
+
+        if len(cleaned_code) < 4:
+            logger.warning(f"Промокод слишком короткий: {len(cleaned_code)} символов")
+            raise ValueError('Код промокода должен содержать минимум 4 символа')
+
+        if len(cleaned_code) > 20:
+            logger.warning(f"Промокод слишком длинный: {len(cleaned_code)} символов")
+            raise ValueError('Код промокода должен содержать максимум 20 символов')
+
+        pattern = r'^[A-Z0-9]+$'
+
+        if not re.match(pattern, cleaned_code):
+            logger.warning(f"Промокод содержит недопустимые символы: '{cleaned_code}'")
+            raise ValueError(
+                'Код промокода может содержать только:\n'
+                '• Большие латинские буквы (A-Z)\n'
+                '• Цифры (0-9)\n\n'
+                'Примеры: SUMMER2024, WELCOME10, BLACKFRIDAY'
+            )
+
+        if cleaned_code.isdigit():
+            logger.warning(f"Промокод состоит только из цифр: '{cleaned_code}'")
+            raise ValueError('Промокод не может состоять только из цифр')
+
+        logger.info(f"Промокод успешно валидирован: '{cleaned_code}'")
+        return cleaned_code
