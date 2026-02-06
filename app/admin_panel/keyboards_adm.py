@@ -1,3 +1,4 @@
+from typing import Optional
 from aiogram.types import (
     ReplyKeyboardMarkup,
     KeyboardButton,
@@ -6,7 +7,8 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from datetime import date
-from app.database.models import SlotStatus
+
+from app.database.models import SlotStatus, TelegramFile, FileType
 
 
 # ===== ГЛАВНОЕ МЕНЮ =====
@@ -176,13 +178,14 @@ def settings_submenu():
     buttons = [
         "Управление администраторами",
         "Настройки базы данных",
+        "Файлы согласия на обработку ПД",
         "Назад"
     ]
 
     for button in buttons:
         builder.add(KeyboardButton(text=button))
 
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -927,4 +930,119 @@ def promo_edit_field_menu() -> InlineKeyboardMarkup:
     )
 
     builder.adjust(1)
+    return builder.as_markup()
+
+
+# ===== МЕНЮ НАСТРОЕК =====
+
+def concent_files_menu() -> InlineKeyboardMarkup:
+    """Меню для управления файлами согласия"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Смотреть имеющиеся файлы",
+        callback_data="concent_view_files"
+    )
+    builder.button(
+        text="Информация о всех файлах в БД",
+        callback_data="concent_view_all_files"
+    )
+    builder.button(
+        text="Загрузить/заменить файл",
+        callback_data="concent_upload_menu"
+    )
+    builder.button(
+        text="Назад в настройки",
+        callback_data="admin_settings"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def concent_upload_menu() -> InlineKeyboardMarkup:
+    """Меню выбора типа файла для загрузки"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Согласие для взрослых",
+        callback_data="concent_upload_adult"
+    )
+    builder.button(
+        text="Согласие для несовершеннолетних",
+        callback_data="concent_upload_minor"
+    )
+    builder.button(
+        text="Другой файл (OTHER)",
+        callback_data="concent_upload_other"
+    )
+    builder.button(
+        text="Назад",
+        callback_data="concent_files"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def concent_back_menu() -> InlineKeyboardMarkup:
+    """Кнопка назад в меню файлов"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад", callback_data="concent_files")
+    return builder.as_markup()
+
+
+def concent_cancel_menu() -> InlineKeyboardMarkup:
+    """Кнопка отмены загрузки файла"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Отмена", callback_data="concent_files")
+    return builder.as_markup()
+
+def concent_file_selection_menu(
+    adult_file: Optional[TelegramFile] = None,
+    minor_file: Optional[TelegramFile] = None,
+    other_files_count: int = 0
+) -> InlineKeyboardMarkup:
+    """Меню выбора файла для просмотра"""
+    builder = InlineKeyboardBuilder()
+
+    if adult_file:
+        # Обрезаем длинное имя файла
+        adult_name = adult_file.file_name
+        if len(adult_name) > 20:
+            adult_name = adult_name[:17] + "..."
+        builder.button(
+            text=f"Согласие для взрослых ({adult_name})",
+            callback_data=f"concent_send_{FileType.CPD.value}"
+        )
+    else:
+        builder.button(
+            text="Согласие для взрослых (не загружено)",
+            callback_data="concent_no_file_adult"
+        )
+
+    if minor_file:
+        # Обрезаем длинное имя файла
+        minor_name = minor_file.file_name
+        if len(minor_name) > 20:
+            minor_name = minor_name[:17] + "..."
+        builder.button(
+            text=f"Согласие для несовершеннолетних ({minor_name})",
+            callback_data=f"concent_send_{FileType.CPD_MINOR.value}"
+        )
+    else:
+        builder.button(
+            text="Согласие для несовершеннолетних (не загружено)",
+            callback_data="concent_no_file_minor"
+        )
+
+    # Добавляем другие файлы если есть
+    if other_files_count > 0:
+        builder.button(
+            text=f"Другие файлы ({other_files_count} шт.)",
+            callback_data="concent_view_other_files"
+        )
+
+    builder.button(text="Назад", callback_data="concent_files")
+    builder.adjust(1)
+
     return builder.as_markup()

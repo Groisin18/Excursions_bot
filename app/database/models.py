@@ -122,6 +122,12 @@ class RegistrationType(enum.Enum):
     ADMIN = "admin"
     PARENT = "parent"
 
+class FileType(enum.Enum):
+    """Типы файлов в таблице с file_id"""
+    CPD = "concent_personal_data"
+    CPD_MINOR = "concent_personal_data_minor"
+    OTHER = "other"
+
 # Логирование создания enum классов
 logger.debug("Созданы enum классы для статусов и типов")
 
@@ -210,6 +216,12 @@ class User(Base):
         "User",
         foreign_keys=[linked_to_parent_id],
         back_populates="parent",
+        cascade="all, delete-orphan"
+    )
+    uploaded_files: Mapped[List["TelegramFile"]] = relationship(
+        "TelegramFile",
+        foreign_keys="[TelegramFile.uploaded_by]",
+        back_populates="user",
         cascade="all, delete-orphan"
     )
 
@@ -639,6 +651,38 @@ class Notification(Base):
             'sent_at': self.sent_at.isoformat() if self.sent_at else None,
             'is_delivered': self.is_delivered
         }
+
+class TelegramFile(Base):
+    """Модель для хранения file_id файлов из Telegram"""
+    __tablename__ = 'telegram_files'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    file_type: Mapped[FileType] = mapped_column(Enum(FileType), nullable=False, index=True)
+    file_telegram_id: Mapped[str] = mapped_column(String(255), nullable=False, unique=True)
+    file_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    file_size: Mapped[int] = mapped_column(Integer, nullable=False)
+    uploaded_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False, index=True)
+
+    # Relationships
+    user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[uploaded_by], back_populates="uploaded_files")
+
+    def __repr__(self) -> str:
+        """Строковое представление для отладки"""
+        return f"TelegramFile(id={self.id}, type='{self.file_type}', file_id='{self.file_telegram_id[:20]}...')"
+
+    def to_dict(self) -> dict:
+        """Преобразование в словарь (для логирования/API)"""
+        return {
+            'id': self.id,
+            'file_type': self.file_type,
+            'file_telegram_id': self.file_telegram_id,
+            'file_name': self.file_name,
+            'file_size': self.file_size,
+            'uploaded_by': self.uploaded_by,
+            'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None
+        }
+
 
 # Функция для создания всех таблиц
 async def init_models():

@@ -1,27 +1,26 @@
-import os
-
 from datetime import datetime, date
 
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery, FSInputFile
+from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from pydantic import BaseModel, Field, EmailStr
-from pathlib import Path
 
 import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_user, Reg_token, Reg_child
-from app.database.requests import DatabaseManager
-from app.database.models import UserRole, RegistrationType, async_session
+from app.database.requests import DatabaseManager, FileManager
+from app.database.models import UserRole, RegistrationType, async_session, FileType
 from app.utils.validation import (validate_email, validate_phone, validate_name,
                                   validate_surname, validate_birthdate,
                                   validate_weight, validate_address
                                   )
 from app.utils.logging_config import get_logger
 
+
 router = Router(name="registration")
 
 logger = get_logger(__name__)
+
 
 class User(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, description="Имя")
@@ -321,38 +320,46 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.answer('')
         await state.set_state(Reg_token.pd_consent)
-        file_path = Path("soglasie na obrabotku PD.pdf")
-        if not file_path.exists():
-            logger.error(f"Файл согласия не найден: {file_path}")
-            await callback.message.answer(
-                'Прекрасно!\n'
-                'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
-                'Для продолжения регистрации необходимо принять условия.\n\n'
-                "Извините, произошла ошибка: файл с согласием временно недоступен.\n\n"
-                "Основные положения согласия на обработку данных:\n"
-                "1. Мы обрабатываем ваши данные в целях оказания услуг\n"
-                "2. Данные хранятся в соответствии с законодательством РФ\n"
-                "3. Вы можете отозвать согласие, обратившись к администратору\n\n"
-                "Для получения полной версии документа обратитесь к администратору.",
-            reply_markup=kb.inline_pd_consent_token
+
+        async with async_session() as session:
+            file_manager = FileManager(session)
+            file_id = await file_manager.get_file_id(FileType.CPD)
+
+            if not file_id:
+                logger.error(f"File_id для согласия (CPD) не найден в базе данных для пользователя {callback.from_user.id}")
+                await callback.message.answer(
+                    'Прекрасно!\n'
+                    'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
+                    'Для продолжения регистрации необходимо принять условия.\n\n'
+                    "Извините, произошла ошибка: файл с согласием временно недоступен.\n\n"
+                    "Основные положения согласия на обработку данных:\n"
+                    "1. Мы обрабатываем ваши данные в целях оказания услуг\n"
+                    "2. Данные хранятся в соответствии с законодательством РФ\n"
+                    "3. Вы можете отозвать согласие, обратившись к администратору\n\n"
+                    "Для получения полной версии документа обратитесь к администратору.",
+                    reply_markup=kb.inline_pd_consent_token
+                )
+                return
+
+            # Получаем полную запись для логирования
+            file_record = await file_manager.get_file_record(FileType.CPD)
+            file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
+
+            await callback.message.answer_document(
+                document=file_id,
+                caption=(
+                    'Прекрасно!\n'
+                    'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
+                    'Для продолжения регистрации необходимо принять условия.'
+                ),
+                reply_markup=kb.inline_pd_consent_token
             )
-            return
-        pdf_file = FSInputFile(
-            path=file_path,
-            filename="Согласие на обработку персональных данных.pdf"
-        )
-        file_size_mb = os.path.getsize(pdf_file) / (1024 * 1024)
-        logger.debug(f"Размер PDF файла согласия на обработку персональных данных: {file_size_mb:.2f} МБ")
-        await callback.message.answer_document(
-            document=pdf_file,
-            caption=(
-                'Прекрасно!\n'
-                'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
-                'Для продолжения регистрации необходимо принять условия.\n',
-                f'Размер файла: {file_size_mb:.2f} МБ'
-            ), reply_markup=kb.inline_pd_consent_token
+
+            logger.info(
+                f"PDF согласия на обработку персональных данных успешно отправлен "
+                f"пользователю {callback.from_user.id}. Файл: {file_info}"
             )
-        logger.info(f"PDF согласия на обработку персональных данных успешно отправлен пользователю {callback.from_user.id}")
+
     except Exception as e:
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
 
@@ -534,7 +541,7 @@ async def reg_child_surname(message: Message, state: FSMContext):
         await message.answer(str(e))
 
 @router.message(Reg_child.surname)
-async def reg_child_consest(message: Message, state: FSMContext):
+async def reg_child_consent(message: Message, state: FSMContext):
     """Ввод фамилии ребенка. Согласие на обработку ПД ребенка"""
     logger.info(f"Пользователь {message.from_user.id} ввел фамилию ребенка: '{message.text}'")
     try:
@@ -546,18 +553,22 @@ async def reg_child_consest(message: Message, state: FSMContext):
         logger.warning(f"Невалидная фамилия ребенка от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
         return
+
     logger.info(f"Пользователь {message.from_user.id} перешел к согласию на обработку персональных данных ребенка")
+
     try:
-        await state.set_state(Reg_token.pd_consent)
-        file_path = Path("soglasie na obrabotku PD nesoversh.pdf")
-        if not file_path.exists():
-            logger.error(f"Файл согласия не найден: {file_path}")
-            async with async_session() as session:
-                db = DatabaseManager(session)
-                user = await db.get_user_by_telegram_id(message.from_user.id)
-                data = await state.get_data()
-                child_name = data.get('name')
-                child_surname = data.get('surname')
+        async with async_session() as session:
+            file_manager = FileManager(session)
+            file_id = await file_manager.get_file_id(FileType.CPD_MINOR)
+
+            db = DatabaseManager(session)
+            user = await db.get_user_by_telegram_id(message.from_user.id)
+            data = await state.get_data()
+            child_name = data.get('name')
+            child_surname = data.get('surname')
+
+            if not file_id:
+                logger.error(f"File_id для согласия несовершеннолетних (CPD_MINOR) не найден в базе данных для пользователя {message.from_user.id}")
                 await message.answer(
                     'Прекрасно!\n'
                     'Пожалуйста, ознакомьтесь с формой согласия на обработку персональных данных подопечного (ребёнка).\n'
@@ -568,35 +579,33 @@ async def reg_child_consest(message: Message, state: FSMContext):
                     f'на обработку персональных данных моего ребенка (подопечного) {child_surname} {child_name}, '
                     'в целях регистрации и участия в экскурсиях, в соответствии с предоставленной мне администратором '
                     'формой согласия на обработку персональных данных несовершеннолетних.',
-                reply_markup=kb.inline_pd_consent_child
+                    reply_markup=kb.inline_pd_consent_child
                 )
-            return
-        file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
-        logger.debug(f"Размер PDF файла согласия на обработку персональных данных: {file_size_mb:.2f} МБ")
-        pdf_file = FSInputFile(
-            path=file_path,
-            filename="Согласие на обработку персональных данных.pdf"
-        )
-        async with async_session() as session:
-            db = DatabaseManager(session)
-            user = await db.get_user_by_telegram_id(message.from_user.id)
-            data = await state.get_data()
-            child_name = data.get('name')
-            child_surname = data.get('surname')
+                return
+
+            # Получаем информацию о файле для логирования
+            file_record = await file_manager.get_file_record(FileType.CPD_MINOR)
+            file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
+
             await message.answer_document(
-                document=pdf_file,
+                document=file_id,
                 caption=(
                     'Прекрасно!\n'
                     'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных подопечного (ребёнка).\n'
-                    'Для продолжения регистрации необходимо принять условия.\n'
-                    f'Размер файла: {file_size_mb:.2f} МБ\n\n'
+                    'Для продолжения регистрации необходимо принять условия:\n\n'
                     f'Я, {user.full_name}, как законный представитель, даю согласие '
                     f'на обработку персональных данных моего ребенка (подопечного) {child_surname} {child_name}, '
                     'в целях регистрации и участия в экскурсиях, в соответствии с предоставленной '
                     'формой согласия на обработку персональных данных несовершеннолетних.'
-                ), reply_markup=kb.inline_pd_consent_child
-                )
-            logger.info(f"PDF согласия на обработку персональных данных ребенка успешно отправлен пользователю {message.from_user.id}")
+                ),
+                reply_markup=kb.inline_pd_consent_child
+            )
+
+            logger.info(
+                f"PDF согласия на обработку персональных данных ребенка успешно отправлен "
+                f"пользователю {message.from_user.id}. Файл: {file_info}"
+            )
+
     except Exception as e:
         logger.error(f"Ошибка в моменте согласия на обработку персональных данных ребенка: {e}", exc_info=True)
 
@@ -765,38 +774,47 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.answer('')
         await state.set_state(Reg_token.pd_consent)
-        file_path = Path("soglasie na obrabotku PD.pdf")
-        if not file_path.exists():
-            logger.error(f"Файл согласия не найден: {file_path}")
-            await callback.message.answer(
-                'Прекрасно!\n'
-                'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
-                'Для продолжения регистрации необходимо принять условия.\n\n'
-                "Извините, произошла ошибка: файл с согласием временно недоступен.\n\n"
-                "Основные положения согласия на обработку данных:\n"
-                "1. Мы обрабатываем ваши данные в целях оказания услуг\n"
-                "2. Данные хранятся в соответствии с законодательством РФ\n"
-                "3. Вы можете отозвать согласие, обратившись к администратору\n\n"
-                "Для получения полной версии документа обратитесь к администратору.",
-            reply_markup=kb.inline_pd_consent
+
+        # Получаем file_id из базы данных
+        async with async_session() as session:
+            file_manager = FileManager(session)
+            file_id = await file_manager.get_file_id(FileType.CPD)
+
+            if not file_id:
+                logger.error(f"File_id для согласия (CPD) не найден в базе данных для пользователя {callback.from_user.id}")
+                await callback.message.answer(
+                    'Прекрасно!\n'
+                    'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
+                    'Для продолжения регистрации необходимо принять условия.\n\n'
+                    "Извините, произошла ошибка: файл с согласием временно недоступен.\n\n"
+                    "Основные положения согласия на обработку данных:\n"
+                    "1. Мы обрабатываем ваши данные в целях оказания услуг\n"
+                    "2. Данные хранятся в соответствии с законодательством РФ\n"
+                    "3. Вы можете отозвать согласие, обратившись к администратору\n\n"
+                    "Для получения полной версии документа обратитесь к администратору.",
+                    reply_markup=kb.inline_pd_consent
+                )
+                return
+
+            # Получаем информацию о файле для логирования
+            file_record = await file_manager.get_file_record(FileType.CPD)
+            file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
+
+            await callback.message.answer_document(
+                document=file_id,
+                caption=(
+                    'Прекрасно!\n'
+                    'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
+                    'Для продолжения регистрации необходимо принять условия.'
+                ),
+                reply_markup=kb.inline_pd_consent
             )
-            return
-        pdf_file = FSInputFile(
-            path=file_path,
-            filename="Согласие на обработку персональных данных.pdf"
-        )
-        file_size_mb = os.path.getsize(pdf_file) / (1024 * 1024)
-        logger.debug(f"Размер PDF файла согласия на обработку персональных данных: {file_size_mb:.2f} МБ")
-        await callback.message.answer_document(
-            document=pdf_file,
-            caption=(
-                'Прекрасно!\n'
-                'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
-                'Для продолжения регистрации необходимо принять условия.\n',
-                f'Размер файла: {file_size_mb:.2f} МБ'
-            ), reply_markup=kb.inline_pd_consent
+
+            logger.info(
+                f"PDF согласия на обработку персональных данных успешно отправлен "
+                f"пользователю {callback.from_user.id}. Файл: {file_info}"
             )
-        logger.info(f"PDF согласия на обработку персональных данных успешно отправлен пользователю {callback.from_user.id}")
+
     except Exception as e:
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
 

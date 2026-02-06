@@ -1,16 +1,17 @@
 import secrets
 from datetime import datetime, date, timedelta
 from typing import List, Optional
-from sqlalchemy import select, update, and_, or_, func, case, exists
+from sqlalchemy import select, update, and_, or_, func, case, exists, delete
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.utils.logging_config import get_logger
 from app.database.models import (
-    User, UserRole, Excursion, ExcursionSlot, SlotStatus,
+    User, UserRole, Excursion, ExcursionSlot, SlotStatus, TelegramFile,
     Booking, BookingStatus, ClientStatus, PaymentStatus, DiscountType,
     Payment, PromoCode, Salary, Expense, Notification, NotificationType,
-    PaymentMethod, YooKassaStatus, RegistrationType, BookingChild
+    PaymentMethod, YooKassaStatus, RegistrationType, BookingChild,
+    FileType
 )
 
 
@@ -2427,7 +2428,7 @@ class DatabaseManager:
                 excursion_slot_id=excursion_slot_id,
                 booking_token=token,
                 booked_by_id=booked_by_id,
-                status=BookingStatus.CONFIRMED
+                status=BookingStatus.active
             )
 
             self.session.add(booking)
@@ -2441,3 +2442,136 @@ class DatabaseManager:
             logger.error(f"Ошибка создания бронирования с токеном: {e}", exc_info=True)
             await self.session.rollback()
             return None
+
+
+class FileManager:
+    """Менеджер для работы с file_id в базе данных"""
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+        logger.debug(f"Инициализирован FileManager с сессией ID: {id(session)}")
+
+    async def save_file_id(
+        self,
+        file_type: FileType,
+        file_telegram_id: str,
+        file_name: str,
+        file_size: int,
+        uploaded_by: int
+    ) -> TelegramFile:
+        """
+        Сохранить новый file_id в базу данных, удалив старый, если был
+
+        Args:
+            file_type: Тип файла (FileType enum)
+            file_telegram_id: file_id из Telegram
+            file_name: Название файла
+            file_size: Размер файла в байтах
+            uploaded_by: ID пользователя, загрузившего файл
+
+        Returns:
+            Созданный объект TelegramFile
+        """
+        # Проверяем, есть ли старый файл
+        stmt_check = select(TelegramFile).where(TelegramFile.file_type == file_type)
+        result = await self.session.execute(stmt_check)
+        old_file = result.scalar_one_or_none()
+
+        if old_file:
+            # Удаляем старый файл того же типа
+            stmt_delete = delete(TelegramFile).where(TelegramFile.file_type == file_type)
+            await self.session.execute(stmt_delete)
+            logger.info(
+                f"Заменен файл типа {file_type.value}: "
+                f"старый file_id {old_file.file_telegram_id[:20]}..., "
+                f"новый file_id {file_telegram_id[:20]}..., "
+                f"загрузил пользователь {uploaded_by}"
+            )
+        else:
+            logger.info(
+                f"Добавлен новый файл типа {file_type.value}: "
+                f"file_id {file_telegram_id[:20]}..., "
+                f"загрузил пользователь {uploaded_by}"
+            )
+
+        # Создаем новый файл
+        new_file = TelegramFile(
+            file_type=file_type,
+            file_telegram_id=file_telegram_id,
+            file_name=file_name,
+            file_size=file_size,
+            uploaded_by=uploaded_by
+        )
+
+        self.session.add(new_file)
+        await self.session.commit()
+        await self.session.refresh(new_file)
+
+        return new_file
+
+    async def get_file_id(self, file_type: FileType) -> Optional[str]:
+        """
+        Получить последний активный file_id по типу файла
+
+        Args:
+            file_type: Тип файла ('personal_data', 'personal_data_minor')
+
+        Returns:
+            file_id или None, если файл не найден
+        """
+        stmt = (
+            select(TelegramFile)
+            .where(TelegramFile.file_type == file_type)
+            .order_by(TelegramFile.uploaded_at.desc())
+            .limit(1)
+        )
+
+        result = await self.session.execute(stmt)
+        file_record = result.scalar_one_or_none()
+
+        return file_record.file_id if file_record else None
+
+    async def get_file_record(self, file_type: FileType) -> Optional[TelegramFile]:
+        """
+        Получить полную запись о файле по типу
+
+        Args:
+            file_type: Тип файла ('personal_data', 'personal_data_minor')
+
+        Returns:
+            Объект TelegramFile или None
+        """
+        stmt = (
+            select(TelegramFile)
+            .where(TelegramFile.file_type == file_type)
+            .order_by(TelegramFile.uploaded_at.desc())
+            .limit(1)
+        )
+
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def file_exists(self, file_type: FileType) -> bool:
+        """
+        Проверить, существует ли файл в базе
+
+        Args:
+            file_type: Тип файла (FileType enum)
+
+        Returns:
+            True если файл существует, иначе False
+        """
+        stmt = select(exists().where(TelegramFile.file_type == file_type))
+        result = await self.session.execute(stmt)
+        return result.scalar()
+
+    async def get_all_file_records(self) -> List[TelegramFile]:
+        """
+        Получить все записи о файлах из базы данных
+
+        Returns:
+            Список объектов TelegramFile
+        """
+        stmt = select(TelegramFile).order_by(TelegramFile.uploaded_at.desc())
+        result = await self.session.execute(stmt)
+        return list(result.scalars().all())
