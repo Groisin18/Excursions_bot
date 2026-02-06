@@ -20,8 +20,7 @@ from .user.user_main import router as user_main_router
 from .user.user_excursions import router as user_excursions_router
 from .user.user_booking import router as user_bookings_router
 from .user.test_payment import router as test_payment_router
-from .user.registration import router as registration_router
-from .user.redaction_userdata import router as redaction_userdata_router
+from .user.account.main_router import router as account_main_router
 
 from .fallback import router as fallback_router
 
@@ -44,8 +43,7 @@ __all__ = [
     'user_excursions_router',
     'user_bookings_router',
     'test_payment_router',
-    'registration_router',
-    'redaction_userdata_router',
+    'account_main_router',
     'fallback_router',
 ]
 
@@ -73,8 +71,7 @@ def setup_routers(dp):
     dp.include_router(user_excursions_router)
     dp.include_router(user_bookings_router)
     dp.include_router(test_payment_router)
-    dp.include_router(registration_router)
-    dp.include_router(redaction_userdata_router)
+    dp.include_router(account_main_router)
     dp.include_router(user_main_router)
 
     # Фолбэк роутер (всегда последний)
