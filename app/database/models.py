@@ -2,7 +2,10 @@ import enum
 from typing import Optional, List
 from datetime import datetime, date
 
-from sqlalchemy import BigInteger, String, Integer, Boolean, Text, Date, DateTime, Enum, ForeignKey, text
+from sqlalchemy import (
+    BigInteger, String, Integer, Boolean, Text, Date, DateTime, Enum,
+    ForeignKey, text
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.sql import func
@@ -655,14 +658,6 @@ async def init_models():
     try:
         # Открываем транзакцию для инициализации
         async with engine.begin() as conn:
-            # Применяем WAL настройки и оптимизации
-            for sql_setting, description in DatabaseConfig.WAL_SETTINGS:
-                try:
-                    await conn.execute(text(sql_setting))
-                    logger.debug(f"Применено: {description}")
-                except Exception as e:
-                    logger.warning(f"Не удалось применить {description}: {e}")
-
             # Создаем таблицы
             await conn.run_sync(Base.metadata.create_all)
             logger.info("Таблицы созданы/проверены")
