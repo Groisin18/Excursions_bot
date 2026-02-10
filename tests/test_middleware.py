@@ -5,6 +5,7 @@ from datetime import datetime
 
 from app.middlewares.admin_middleware import AdminMiddleware, is_user_admin
 from app.database.models import UserRole
+from app.database.repositories.user_repository import UserRepository
 
 
 # ==================== Фикстуры ====================
@@ -27,18 +28,18 @@ class TestIsUserAdmin:
             session_mock = AsyncMock()
             mock_session.return_value.__aenter__.return_value = session_mock
 
-            with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-                mock_db = AsyncMock()
+            with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+                mock_repo = AsyncMock()
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.admin
                 mock_user.full_name = "Admin User"
-                mock_db.get_user_by_telegram_id.return_value = mock_user
-                MockDBManager.return_value = mock_db
+                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is True
-                mock_db.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_false_client(self):
@@ -49,18 +50,18 @@ class TestIsUserAdmin:
             session_mock = AsyncMock()
             mock_session.return_value.__aenter__.return_value = session_mock
 
-            with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-                mock_db = AsyncMock()
+            with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+                mock_repo = AsyncMock()
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.client
                 mock_user.full_name = "Client User"
-                mock_db.get_user_by_telegram_id.return_value = mock_user
-                MockDBManager.return_value = mock_db
+                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_db.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_false_captain(self):
@@ -71,18 +72,18 @@ class TestIsUserAdmin:
             session_mock = AsyncMock()
             mock_session.return_value.__aenter__.return_value = session_mock
 
-            with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-                mock_db = AsyncMock()
+            with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+                mock_repo = AsyncMock()
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.captain
                 mock_user.full_name = "Captain User"
-                mock_db.get_user_by_telegram_id.return_value = mock_user
-                MockDBManager.return_value = mock_db
+                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_db.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_user_not_found(self):
@@ -93,17 +94,16 @@ class TestIsUserAdmin:
             session_mock = AsyncMock()
             mock_session.return_value.__aenter__.return_value = session_mock
 
-            with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-                mock_db = AsyncMock()
+            with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+                mock_repo = AsyncMock()
                 # Возвращаем None - пользователь не найден
-                mock_db.get_user_by_telegram_id.return_value = None
-                MockDBManager.return_value = mock_db
+                mock_repo.get_user_by_telegram_id.return_value = None
+                MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
-                # После исправления middleware должен возвращать False
                 assert result is False
-                mock_db.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_database_error(self):
@@ -114,15 +114,15 @@ class TestIsUserAdmin:
             session_mock = AsyncMock()
             mock_session.return_value.__aenter__.return_value = session_mock
 
-            with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-                mock_db = AsyncMock()
-                mock_db.get_user_by_telegram_id.side_effect = Exception("DB Connection Error")
-                MockDBManager.return_value = mock_db
+            with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+                mock_repo = AsyncMock()
+                mock_repo.get_user_by_telegram_id.side_effect = Exception("DB Connection Error")
+                MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_db.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_session_error(self):
@@ -233,7 +233,6 @@ class TestAdminMiddleware:
             handler.assert_called_once_with(admin_message, {})
 
             assert result == "handler_result"
-            # Не должно быть ответного сообщения
             assert not admin_message.answer.called
 
     @pytest.mark.asyncio
@@ -250,7 +249,6 @@ class TestAdminMiddleware:
             mock_is_admin.assert_called_once_with(admin_callback_query.from_user.id)
             handler.assert_called_once_with(admin_callback_query, {})
             assert result == "handler_result"
-            # Не должно быть ответа на callback
             assert not admin_callback_query.answer.called
 
     @pytest.mark.asyncio
@@ -261,26 +259,18 @@ class TestAdminMiddleware:
         with patch('app.middlewares.admin_middleware.is_user_admin') as mock_is_admin:
             mock_is_admin.return_value = False
 
-            # Мокаем клавиатуру
             mock_keyboard = MagicMock()
             with patch('app.middlewares.admin_middleware.main_kb', mock_keyboard):
                 result = await middleware.__call__(handler, regular_message, {})
 
                 mock_is_admin.assert_called_once_with(regular_message.from_user.id)
-
-                # Handler не должен быть вызван
                 assert not handler.called
-
-                # Должно быть отправлено сообщение с клавиатурой
                 assert regular_message.answer.called
 
-                # Проверяем аргументы вызова
                 regular_message.answer.assert_called_once_with(
                     "У вас нет прав доступа к админ-панели",
                     reply_markup=mock_keyboard
                 )
-
-                # Результат должен быть None
                 assert result is None
 
     @pytest.mark.asyncio
@@ -294,36 +284,25 @@ class TestAdminMiddleware:
             result = await middleware.__call__(handler, regular_callback_query, {})
 
             mock_is_admin.assert_called_once_with(regular_callback_query.from_user.id)
-
-            # Handler не должен быть вызван
             assert not handler.called
-
-            # Должен быть ответ на callback
             assert regular_callback_query.answer.called
+
             regular_callback_query.answer.assert_called_once_with(
                 "У вас нет прав доступа",
                 show_alert=True
             )
-
-            # Результат должен быть None
             assert result is None
 
     @pytest.mark.asyncio
     async def test_middleware_with_data(self, middleware, admin_message):
         """Тест middleware с дополнительными данными."""
         handler = AsyncMock()
-        data = {
-            'state': 'some_state',
-            'key': 'value'
-        }
+        data = {'state': 'some_state', 'key': 'value'}
 
         with patch('app.middlewares.admin_middleware.is_user_admin') as mock_is_admin:
             mock_is_admin.return_value = True
-
             await middleware.__call__(handler, admin_message, data)
-
             handler.assert_called_once_with(admin_message, data)
-            # Данные не должны быть изменены
             assert data == {'state': 'some_state', 'key': 'value'}
 
     @pytest.mark.asyncio
@@ -334,13 +313,10 @@ class TestAdminMiddleware:
         with patch('app.middlewares.admin_middleware.is_user_admin') as mock_is_admin:
             mock_is_admin.side_effect = Exception("Unexpected error")
 
-            # Мокаем клавиатуру
             mock_keyboard = MagicMock()
             with patch('app.middlewares.admin_middleware.main_kb', mock_keyboard):
-                # Middleware должен ловить исключение
                 result = await middleware.__call__(handler, admin_message, {})
 
-                # При ошибке доступ должен быть запрещен
                 assert not handler.called
                 assert admin_message.answer.called
                 assert result is None
@@ -348,17 +324,15 @@ class TestAdminMiddleware:
 
 # ==================== Параметризованные тесты ====================
 @pytest.mark.parametrize("is_admin,expected_handler_called", [
-    (True, True),   # Админ - handler вызывается
-    (False, False), # Не админ - handler не вызывается
+    (True, True),
+    (False, False),
 ])
 @pytest.mark.asyncio
 async def test_middleware_admin_check(is_admin, expected_handler_called):
     """Параметризованный тест проверки администратора."""
-    # Создаем middleware внутри теста
     middleware = AdminMiddleware()
     handler = AsyncMock()
 
-    # Создаем mock пользователя и сообщения
     user = AsyncMock(spec=User)
     user.id = 123456
 
@@ -369,7 +343,6 @@ async def test_middleware_admin_check(is_admin, expected_handler_called):
     with patch('app.middlewares.admin_middleware.is_user_admin') as mock_is_admin:
         mock_is_admin.return_value = is_admin
 
-        # Мокаем клавиатуру
         mock_keyboard = MagicMock()
         with patch('app.middlewares.admin_middleware.main_kb', mock_keyboard):
             result = await middleware.__call__(handler, message, {})
@@ -396,9 +369,7 @@ class TestEventTypes:
 
         with patch('app.middlewares.admin_middleware.is_user_admin') as mock_is_admin:
             mock_is_admin.return_value = True
-
             await middleware.__call__(handler, message, {})
-
             assert isinstance(message, Message)
             mock_is_admin.assert_called_once_with(user.id)
 
@@ -416,9 +387,7 @@ class TestEventTypes:
 
         with patch('app.middlewares.admin_middleware.is_user_admin') as mock_is_admin:
             mock_is_admin.return_value = True
-
             await middleware.__call__(handler, callback, {})
-
             assert isinstance(callback, CallbackQuery)
             mock_is_admin.assert_called_once_with(user.id)
 
@@ -452,12 +421,10 @@ class TestLogging:
             with patch('app.middlewares.admin_middleware.logger') as mock_logger:
                 mock_logger.warning = MagicMock()
 
-                # Мокаем клавиатуру
                 mock_keyboard = MagicMock()
                 with patch('app.middlewares.admin_middleware.main_kb', mock_keyboard):
                     await middleware.__call__(handler, regular_message, {})
 
-                    # Проверяем, что было залогировано предупреждение
                     assert mock_logger.warning.called
                     warning_call = mock_logger.warning.call_args[0][0]
                     assert "Попытка доступа к админ-панели без прав" in warning_call
@@ -472,13 +439,13 @@ class TestLogging:
             session_mock = AsyncMock()
             mock_session.return_value.__aenter__.return_value = session_mock
 
-            with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-                mock_db = AsyncMock()
+            with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+                mock_repo = AsyncMock()
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.admin
                 mock_user.full_name = "Admin User"
-                mock_db.get_user_by_telegram_id.return_value = mock_user
-                MockDBManager.return_value = mock_db
+                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                MockUserRepo.return_value = mock_repo
 
                 with patch('app.middlewares.admin_middleware.logger') as mock_logger:
                     mock_logger.debug = MagicMock()
@@ -486,14 +453,9 @@ class TestLogging:
 
                     result = await is_user_admin(telegram_id)
 
-                    # Проверяем debug логи
                     assert mock_logger.debug.called
                     debug_calls = mock_logger.debug.call_args_list
-
-                    # Должно быть минимум 1 debug вызов
                     assert len(debug_calls) >= 1
-
-                    # Первый вызов - начало проверки
                     first_call = debug_calls[0][0][0]
                     assert f"Проверка прав администратора для пользователя {telegram_id}" in first_call
 
@@ -502,26 +464,24 @@ class TestLogging:
 @pytest.mark.asyncio
 async def test_is_user_admin_simple():
     """Упрощенный тест для is_user_admin."""
-    # Проверяем что функция вообще работает
     telegram_id = 123456
 
     with patch('app.middlewares.admin_middleware.async_session') as mock_session:
         session_mock = AsyncMock()
         mock_session.return_value.__aenter__.return_value = session_mock
 
-        with patch('app.middlewares.admin_middleware.DatabaseManager') as MockDBManager:
-            mock_db = AsyncMock()
+        with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
+            mock_repo = AsyncMock()
             mock_user = AsyncMock()
             mock_user.role = UserRole.admin
-            mock_db.get_user_by_telegram_id.return_value = mock_user
-            MockDBManager.return_value = mock_db
+            mock_repo.get_user_by_telegram_id.return_value = mock_user
+            MockUserRepo.return_value = mock_repo
 
             result = await is_user_admin(telegram_id)
 
-            # Проверяем что функция что-то возвращает
             assert result is not None
             assert result is True
-            mock_db.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+            mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
 
 
 if __name__ == "__main__":

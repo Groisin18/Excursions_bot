@@ -1,12 +1,12 @@
 """Репозиторий для статистических SQL-запросов"""
 
 from datetime import date, datetime
-from typing import Dict, List, Tuple
-from sqlalchemy import select, func, and_, case
+from typing import Tuple
+from sqlalchemy import select, func, and_
 
 from .base import BaseRepository
 from app.database.models import (
-    Booking, BookingStatus, Payment, YooKassaStatus,
+    Booking, Payment, YooKassaStatus,
     User, Excursion, ExcursionSlot, SlotStatus
 )
 

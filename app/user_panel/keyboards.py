@@ -6,7 +6,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.database.requests import DatabaseManager
+from app.database.repositories.excursion_repository import ExcursionRepository
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_short_name
@@ -182,8 +182,11 @@ async def all_excursions_inline() -> InlineKeyboardMarkup:
     """Создать инлайн-клавиатуру со списком экскурсий и общим расписанием"""
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
-            excursions = await db.get_all_excursions(active_only=True)
+            # Создаем репозиторий
+            excursion_repo = ExcursionRepository(session)
+
+            # Получаем экскурсии
+            excursions = await excursion_repo.get_all_excursions(active_only=True)
 
             if not excursions:
                 return None

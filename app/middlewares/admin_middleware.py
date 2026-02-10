@@ -2,7 +2,7 @@ from aiogram import BaseMiddleware
 from aiogram.types import Message, CallbackQuery
 from typing import Callable, Dict, Any, Awaitable
 
-from app.database.requests import DatabaseManager
+from app.database.repositories.user_repository import UserRepository
 from app.database.models import UserRole
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
@@ -13,26 +13,24 @@ logger = get_logger(__name__)
 
 
 async def is_user_admin(telegram_id: int) -> bool:
-    """Проверка, является ли пользователь администратором"""
+    """Проверка, является ли пользователь администратором (только чтение)"""
     logger.debug(f"Проверка прав администратора для пользователя {telegram_id}")
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(telegram_id)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_user_by_telegram_id(telegram_id)
 
-            # Явно проверяем все условия
             if user is None:
                 logger.debug(f"Пользователь {telegram_id} не найден в базе")
                 return False
 
             is_admin = user.role == UserRole.admin
-
-            logger.debug(f"Пользователь {telegram_id}: {user.full_name}, роль: {user.role.value}, is_admin: {is_admin}")
+            logger.debug(f"Пользователь {telegram_id}: роль={user.role.value}, is_admin={is_admin}")
             return is_admin
 
     except Exception as e:
-        logger.error(f"Ошибка при проверке прав администратора для пользователя {telegram_id}: {e}", exc_info=True)
+        logger.error(f"Ошибка при проверке прав администратора: {e}", exc_info=True)
         return False
 
 class AdminMiddleware(BaseMiddleware):

@@ -13,7 +13,10 @@ sys.path.insert(0, str(project_root))
 
 try:
     from app.database.models import Base, DatabaseConfig, User, UserRole
-    from app.database.requests import DatabaseManager
+    from app.database.unit_of_work import UnitOfWork
+    from app.database.repositories.user_repository import UserRepository
+    from app.database.managers.user_manager import UserManager
+
     from app.middlewares.admin_middleware import AdminMiddleware
 except ImportError as e:
     print(f"Ошибка импорта: {e}")
@@ -170,12 +173,44 @@ def mock_callback_query():
     return callback
 
 
-# ========== Фикстура для DatabaseManager ==========
+# ========== Фикстура для Database ==========
 
 @pytest.fixture
-async def db_manager(db_session):
-    """Создает экземпляр DatabaseManager с тестовой сессией."""
-    return DatabaseManager(db_session)
+async def repos(db_session):
+    """Создает все репозитории и менеджеры с тестовой сессией."""
+    class DatabaseFixtures:
+        def __init__(self, session):
+            from app.database.repositories import (
+                UserRepository, ExcursionRepository, SlotRepository,
+                BookingRepository, PromoCodeRepository, PaymentRepository,
+                NotificationRepository
+            )
+            from app.database.managers import (
+                UserManager, SlotManager, BookingManager,
+                SalaryManager, StatisticsManager
+            )
+            from app.database.unit_of_work import UnitOfWork
+
+            # Репозитории
+            self.users = UserRepository(session)
+            self.excursions = ExcursionRepository(session)
+            self.slots = SlotRepository(session)
+            self.bookings = BookingRepository(session)
+            self.promocodes = PromoCodeRepository(session)
+            self.payments = PaymentRepository(session)
+            self.notifications = NotificationRepository(session)
+
+            # Менеджеры
+            self.user_manager = UserManager(session)
+            self.slot_manager = SlotManager(session)
+            self.booking_manager = BookingManager(session)
+            self.salary_manager = SalaryManager(session)
+            self.statistics_manager = StatisticsManager(session)
+
+            # Unit of Work
+            self.uow = UnitOfWork(session)
+
+    return DatabaseFixtures(db_session)
 
 
 # Фикстура для заполнения тестовыми данными
