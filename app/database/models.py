@@ -2,7 +2,9 @@ import enum
 from typing import Optional, List
 from datetime import datetime, date
 
-from sqlalchemy import BigInteger, String, Integer, Boolean, Text, Date, DateTime, Enum, ForeignKey, text
+from sqlalchemy import (
+    BigInteger, String, Integer, Boolean, Text, Date, DateTime, Enum, ForeignKey
+)
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.sql import func
