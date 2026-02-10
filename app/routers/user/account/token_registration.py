@@ -9,7 +9,8 @@ import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_token
 from app.database.requests import DatabaseManager, FileManager
-from app.database.models import RegistrationType, async_session, FileType
+from app.database.models import RegistrationType, FileType
+from app.database.session import async_session
 from app.utils.validation import validate_email, validate_phone
 from app.utils.logging_config import get_logger
 

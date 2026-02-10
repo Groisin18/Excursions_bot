@@ -4,7 +4,9 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 from app.database.requests import DatabaseManager
-from app.database.models import async_session, SlotStatus, BookingStatus
+from app.database.models import SlotStatus
+from app.database.session import async_session
+
 from app.utils.logging_config import get_logger
 from app.user_panel.states import UserBookingStates
 from app.utils.datetime_utils import get_weekday_name

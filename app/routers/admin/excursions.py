@@ -7,7 +7,7 @@ from typing import Optional
 from app.utils.validation import validate_excursion_duration, validate_amount_rub
 from app.admin_panel.states_adm import (NewExcursion, RedactExcursion)
 from app.database.requests import DatabaseManager
-from app.database.models import async_session
+from app.database.session import async_session
 from app.admin_panel.keyboards_adm import (
     excursions_submenu, err_add_exc, exc_redaction_builder,
     excursions_list_keyboard, excursion_actions_menu, inline_end_add_exc,

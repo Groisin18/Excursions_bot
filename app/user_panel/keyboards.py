@@ -7,7 +7,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.database.requests import DatabaseManager
-from app.database.models import async_session
+from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_short_name
 

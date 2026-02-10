@@ -1,5 +1,5 @@
 from datetime import date
-from typing import Dict, Tuple
+from typing import Tuple
 
 class AgeCategories:
     """Константы возрастных категорий для детских билетов"""

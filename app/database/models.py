@@ -4,53 +4,16 @@ from datetime import datetime, date
 
 from sqlalchemy import BigInteger, String, Integer, Boolean, Text, Date, DateTime, Enum, ForeignKey, text
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncAttrs, AsyncSession
-from sqlalchemy.pool import NullPool
+from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.sql import func
+
+from app.database.session import DatabaseConfig, engine
 
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import calculate_age
 
 logger = get_logger(__name__)
 
-
-class DatabaseConfig:
-    """Конфигурация базы данных для телеграм-бота"""
-
-    DB_URL = 'sqlite+aiosqlite:///database.db'
-    CONNECT_ARGS = {
-        'check_same_thread': False,
-        'timeout': 15,
-    }
-
-    # WAL настройки
-    WAL_SETTINGS = [
-        ("PRAGMA journal_mode=WAL", "WAL режим"),
-        ("PRAGMA synchronous=NORMAL", "Баланс скорость/безопасность"),
-        ("PRAGMA wal_autocheckpoint=15", "Авто checkpoint"),
-        ("PRAGMA cache_size=-2000", "Кэш 2MB"),
-        ("PRAGMA mmap_size=268435456", "MMAP 256MB"),
-        ("PRAGMA foreign_keys=ON", "Внешние ключи"),
-        ("PRAGMA busy_timeout=5000", "Таймаут блокировки"),
-    ]
-
-
-engine = create_async_engine(
-    url=DatabaseConfig.DB_URL,
-    echo=False,  # True только для отладки SQL
-    poolclass=NullPool,
-    connect_args=DatabaseConfig.CONNECT_ARGS,
-    execution_options={
-        "timeout": 15
-    }
-)
-
-async_session = async_sessionmaker(
-    engine,
-    class_=AsyncSession,
-    expire_on_commit=False,
-    autoflush=False
-)
 
 class Base(AsyncAttrs, DeclarativeBase):
     """Базовый класс для всех моделей SQLAlchemy"""

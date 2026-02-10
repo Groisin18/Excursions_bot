@@ -5,9 +5,10 @@ from sqlalchemy.orm import selectinload
 
 from app.database.requests import DatabaseManager
 from app.database.models import (
-    async_session, Booking, ExcursionSlot,
+    Booking, ExcursionSlot,
     BookingStatus, PaymentStatus
 )
+from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger

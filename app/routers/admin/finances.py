@@ -7,9 +7,11 @@ from sqlalchemy.orm import selectinload
 
 from app.database.requests import DatabaseManager
 from app.database.models import (
-    engine, async_session, UserRole, User, Booking, Payment,
+    Booking, Payment,
     PaymentStatus, PaymentMethod, YooKassaStatus
 )
+from app.database.session import async_session
+
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 

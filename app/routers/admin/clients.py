@@ -9,9 +9,8 @@ from app.admin_panel.keyboards_adm import (
     admin_main_menu, clients_submenu, cancel_button
 )
 from app.database.requests import DatabaseManager
-from app.database.models import (
-    engine, async_session, UserRole, User, ClientStatus
-)
+from app.database.models import UserRole, User, ClientStatus
+from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger

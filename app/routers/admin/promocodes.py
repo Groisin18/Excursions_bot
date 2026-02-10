@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 
 from app.admin_panel.states_adm import CreatePromocode
 from app.database.requests import DatabaseManager
-from app.database.models import async_session, DiscountType
+from app.database.models import DiscountType
+from app.database.session import async_session
 from app.admin_panel.keyboards_adm import (
     promocodes_menu,
     promo_edit_field_menu, promo_type_selection_menu,

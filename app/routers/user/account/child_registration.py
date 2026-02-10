@@ -13,11 +13,12 @@ import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_child
 from app.database.requests import DatabaseManager, FileManager
-from app.database.models import async_session, FileType
+from app.database.models import FileType
 from app.utils.validation import (validate_name,
                                   validate_surname, validate_birthdate,
                                   validate_weight, validate_address
                                   )
+from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import calculate_age
 

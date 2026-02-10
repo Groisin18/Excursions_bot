@@ -7,7 +7,7 @@ from typing import Optional
 
 from app.admin_panel.states_adm import AddToSchedule
 from app.database.requests import DatabaseManager
-from app.database.models import async_session
+from app.database.session import async_session
 from app.utils.validation import validate_slot_date, validate_slot_time
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_back_menu,

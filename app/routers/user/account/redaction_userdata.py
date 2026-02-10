@@ -10,7 +10,7 @@ from datetime import datetime
 
 import app.user_panel.keyboards as kb
 from app.database.requests import DatabaseManager
-from app.database.models import async_session
+from app.database.session import async_session
 from app.utils.logging_config import get_logger
 
 router = Router(name="user_redaction")

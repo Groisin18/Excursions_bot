@@ -9,7 +9,7 @@ import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_user
 from app.database.requests import DatabaseManager
-from app.database.models import async_session
+from app.database.session import async_session
 from app.utils.logging_config import get_logger
 
 

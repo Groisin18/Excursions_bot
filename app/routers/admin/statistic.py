@@ -12,9 +12,9 @@ from app.admin_panel.keyboards_adm import (
 )
 from app.admin_panel.services.statistics_service import StatisticsService
 from app.database.requests import DatabaseManager
-from app.database.models import (
-    engine, async_session, User, Booking, ExcursionSlot, Excursion
-)
+from app.database.models import User, Booking, ExcursionSlot, Excursion
+from app.database.session import async_session
+
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 

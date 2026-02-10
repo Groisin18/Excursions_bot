@@ -1,6 +1,6 @@
 import pytest
-from datetime import date, timedelta
-from unittest.mock import patch, MagicMock
+from datetime import date
+from unittest.mock import patch
 from app.utils.price_calculator import PriceCalculator, AgeCategories
 
 

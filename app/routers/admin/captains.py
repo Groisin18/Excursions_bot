@@ -3,13 +3,9 @@ from aiogram.types import Message
 from datetime import date
 from sqlalchemy import select
 
-from app.admin_panel.keyboards_adm import (
-    admin_main_menu, captains_submenu
-)
 from app.database.requests import DatabaseManager
-from app.database.models import (
-    engine, async_session, UserRole, User
-)
+from app.database.models import UserRole, User
+from app.database.session import async_session
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 

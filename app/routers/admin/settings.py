@@ -5,9 +5,9 @@ from sqlalchemy import select
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.database.requests import DatabaseManager, FileManager, FileType
-from app.database.models import (
-    engine, async_session, UserRole, User, TelegramFile
-)
+from app.database.models import UserRole, User, TelegramFile
+from app.database.session import async_session
+
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 from app.admin_panel.states_adm import UploadConcent

@@ -15,7 +15,9 @@ from app.admin_panel.keyboards_adm import (
     settings_submenu
 )
 from app.database.requests import DatabaseManager
-from app.database.models import engine, async_session, User
+from app.database.models import User
+from app.database.session import engine, async_session
+
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 

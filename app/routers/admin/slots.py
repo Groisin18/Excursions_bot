@@ -6,7 +6,9 @@ from datetime import datetime, timedelta
 
 from app.admin_panel.states_adm import RescheduleSlot
 from app.database.requests import DatabaseManager
-from app.database.models import async_session, SlotStatus, BookingStatus
+from app.database.models import SlotStatus, BookingStatus
+from app.database.session import async_session
+
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu,
     slot_actions_menu, slots_conflict_keyboard,

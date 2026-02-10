@@ -7,7 +7,8 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 import app.user_panel.keyboards as kb
 
 from app.database.requests import DatabaseManager
-from app.database.models import async_session, SlotStatus
+from app.database.models import SlotStatus
+from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_name
 from app.utils.validation import validate_slot_date

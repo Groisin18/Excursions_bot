@@ -5,7 +5,6 @@ from datetime import datetime
 
 from app.middlewares.admin_middleware import AdminMiddleware, is_user_admin
 from app.database.models import UserRole
-from app.database.requests import DatabaseManager
 
 
 # ==================== Фикстуры ====================
