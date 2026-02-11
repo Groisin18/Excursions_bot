@@ -1,9 +1,14 @@
 """Репозиторий для работы с платежами (CRUD операции)"""
 
 from typing import Optional, List
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select
+from datetime import datetime
 
 from .base import BaseRepository
-from app.database.models import Payment, PaymentMethod, YooKassaStatus, PaymentStatus
+from app.database.models import (
+    Payment, PaymentMethod, YooKassaStatus, PaymentStatus, Booking
+)
 from app.database.repositories.booking_repository import BookingRepository
 
 
@@ -82,3 +87,17 @@ class PaymentRepository(BaseRepository):
     async def get_payment_by_id(self, payment_id: int) -> Optional[Payment]:
         """Получить платеж по ID"""
         return await self._get_one(Payment, Payment.id == payment_id)
+
+    async def get_today_online_payments(self):
+        """Получить сегодняшние онлайн-платежи"""
+
+        today = datetime.now().date()
+
+        result = await self.session.execute(
+            select(Payment)
+            .options(selectinload(Payment.booking).selectinload(Booking.client))
+            .where(Payment.payment_method == PaymentMethod.online)
+            .where(Payment.created_at >= today)
+            .order_by(Payment.created_at.desc())
+        )
+        return result.scalars().all()

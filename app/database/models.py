@@ -10,7 +10,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
 from sqlalchemy.sql import func
 
-from app.database.session import DatabaseConfig, engine
+from app.database.session import engine
 
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import calculate_age

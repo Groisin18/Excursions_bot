@@ -1,15 +1,17 @@
 """Менеджер для бизнес-логики слотов"""
 
-from typing import Tuple, Optional, Dict
-from datetime import datetime, timedelta
+from typing import Tuple, Optional, Dict, List
+from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
+from sqlalchemy import select
 
 from .base import BaseManager
-from ..repositories.slot_repository import SlotRepository
-from ..repositories.excursion_repository import ExcursionRepository
-from ..repositories.user_repository import UserRepository
+from app.database.repositories import (
+    SlotRepository, ExcursionRepository, UserRepository
+)
 from app.database.models import (
-    ExcursionSlot, SlotStatus, BookingStatus
+    ExcursionSlot, SlotStatus, BookingStatus, Booking, PaymentStatus
 )
 
 
@@ -63,7 +65,7 @@ class SlotManager(BaseManager):
                     captain_id, start_datetime, end_datetime
                 )
                 if captain_busy:
-                    captain = await self.user_repo.get_user_by_id(captain_id)
+                    captain = await self.user_repo.get_by_id(captain_id)
                     captain_name = captain.full_name if captain else f"ID {captain_id}"
                     error_msg = f"Капитан {captain_name} занят в это время"
                     self.logger.warning(error_msg)
@@ -145,7 +147,7 @@ class SlotManager(BaseManager):
                 )
 
                 if captain_busy:
-                    captain = await self.user_repo.get_user_by_id(slot.captain_id)
+                    captain = await self.user_repo.get_by_id(slot.captain_id)
                     captain_name = captain.full_name if captain else f"ID {slot.captain_id}"
                     error_msg = f"Капитан {captain_name} занят в это время"
                     self.logger.warning(error_msg)
@@ -171,6 +173,24 @@ class SlotManager(BaseManager):
             error_msg = f"Ошибка переноса слота: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             return False, error_msg
+
+    async def cancel_slot(self, slot_id: int) -> Tuple[bool, Optional[ExcursionSlot]]:
+        """Отменить слот и все связанные бронирования"""
+
+        slot = await self.slot_repo.get_by_id(slot_id)
+        if not slot:
+            return False, None
+
+        slot.status = SlotStatus.cancelled
+
+        # Отменяем все связанные бронирования
+        if slot.bookings:
+            for booking in slot.bookings:
+                if booking.booking_status == BookingStatus.active:
+                    booking.booking_status = BookingStatus.cancelled
+
+        await self.slot_repo.update(slot)
+        return True, slot
 
     async def get_booked_places(self, slot_id: int) -> int:
         """Получить количество забронированных мест для слота"""
@@ -229,6 +249,11 @@ class SlotManager(BaseManager):
             booked_places = await self.get_booked_places(slot_id)
             current_weight = await self.get_current_weight(slot_id)
 
+            # Используем свойства Booking
+            active_bookings = []
+            if hasattr(slot, 'bookings'):
+                active_bookings = [b for b in slot.bookings if b.is_active]
+
             return {
                 'slot': slot,
                 'available_places': max(0, slot.max_people - booked_places),
@@ -238,12 +263,144 @@ class SlotManager(BaseManager):
                 'is_available': (
                     slot.status == SlotStatus.scheduled and
                     slot.start_datetime > datetime.now()
-                )
+                ),
+                'active_bookings': active_bookings,
+                'active_booking_count': len(active_bookings)
             }
 
         except Exception as e:
             self.logger.error(f"Ошибка получения полной информации о слоте {slot_id}: {e}")
             return None
+
+    async def get_active_bookings(self):
+        """Получить все активные бронирования с джойнами"""
+        result = await self.session.execute(
+            select(Booking)
+            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
+            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.captain))
+            .options(selectinload(Booking.adult_user))
+            .where(Booking.booking_status == BookingStatus.active)
+            .order_by(Booking.created_at.desc())
+        )
+        return result.scalars().all()
+
+    async def get_unpaid_bookings(self):
+        """Получить все неоплаченные активные бронирования"""
+
+        result = await self.session.execute(
+            select(Booking)
+            .options(selectinload(Booking.adult_user))
+            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
+            .where(Booking.payment_status != PaymentStatus.paid)
+            .where(Booking.booking_status == BookingStatus.active)
+        )
+        return result.scalars().all()
+
+    async def get_detailed_schedule_for_date(self, target_date: date) -> str:
+        """Получить детальное расписание на дату с полной информацией"""
+
+        date_from = datetime.combine(target_date, datetime.min.time())
+        date_to = datetime.combine(target_date, datetime.max.time())
+
+        # Получаем слоты с расписанием
+        slots = await self.slot_repo.get_schedule(
+            date_from=date_from,
+            date_to=date_to,
+            include_cancelled=False
+        )
+
+        if not slots:
+            return ""
+
+        response = f"Расписание на {target_date.strftime('%d.%m.%Y (%A)')}:\n\n"
+
+        for slot in slots:
+            excursion_name = slot.excursion.name if slot.excursion else "Неизвестная экскурсия"
+
+            # Статус слота
+            status_text = {
+                SlotStatus.scheduled: "Запланирована",
+                SlotStatus.in_progress: "В процессе",
+                SlotStatus.completed: "Завершена",
+                SlotStatus.cancelled: "Отменена"
+            }.get(slot.status, "Неизвестно")
+
+            # Получаем информацию о занятости
+            booked_places = await self.get_booked_places(slot.id)
+            current_weight = await self.get_current_weight(slot.id)
+
+            # Форматируем время
+            start_time = slot.start_datetime.strftime("%H:%M")
+            end_time = slot.end_datetime.strftime("%H:%M") if slot.end_datetime else "?"
+
+            response += (
+                f"• {start_time}-{end_time} "
+                f"({excursion_name})\n"
+                f"  ID слота: {slot.id}\n"
+                f"Свободно мест: {slot.max_people - booked_places}/{slot.max_people}\n"
+                f"Занято веса: {current_weight}/{slot.max_weight} кг\n"
+                f"({status_text})\n"
+            )
+
+            # Информация о капитане, если есть
+            if slot.captain_id:
+                captain = await self.user_repo.get_by_id(slot.captain_id)
+                if captain:
+                    response += f"  Капитан: {captain.full_name}\n"
+
+            response += "\n"
+
+        return response
+
+    async def get_weekly_schedule(self, days_ahead: int = 7) -> Tuple[str, Dict[date, List]]:
+        """Получить расписание на неделю вперед
+        (либо другое количество дней через явное days_ahead)"""
+
+        date_from = datetime.now()
+        date_to = date_from + timedelta(days=days_ahead)
+
+        # Получаем слоты с расписанием
+        slots = await self.slot_repo.get_schedule(
+            date_from=date_from,
+            date_to=date_to,
+            include_cancelled=False
+        )
+
+        if not slots:
+            return "", {}
+
+        # Группируем по датам
+        slots_by_date = {}
+        for slot in slots:
+            date_key = slot.start_datetime.date()
+            if date_key not in slots_by_date:
+                slots_by_date[date_key] = []
+            slots_by_date[date_key].append(slot)
+
+        # Формируем текст
+        response = f"Расписание на ближайшие {days_ahead} дней:\n\n"
+
+        for slot_date, date_slots in sorted(slots_by_date.items()):
+            response += f"{slot_date.strftime('%d.%m.%Y (%A)')}:\n"
+
+            for slot in date_slots:
+                excursion_name = slot.excursion.name if slot.excursion else "Неизвестная экскурсия"
+
+                status_text = {
+                    SlotStatus.scheduled: "Запланирована",
+                    SlotStatus.in_progress: "В процессе",
+                    SlotStatus.completed: "Завершена",
+                    SlotStatus.cancelled: "Отменена"
+                }.get(slot.status, "Неизвестно")
+
+                start_time = slot.start_datetime.strftime("%H:%M")
+                end_time = slot.end_datetime.strftime("%H:%M") if slot.end_datetime else "?"
+
+                response += f"  • {start_time}-{end_time} ({excursion_name}) - {status_text}\n"
+
+            response += "\n"
+
+        return response, slots_by_date
 
     async def check_availability(
         self,

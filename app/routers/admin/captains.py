@@ -1,10 +1,7 @@
 from aiogram import F, Router
 from aiogram.types import Message
-from datetime import date
-from sqlalchemy import select
 
-from app.database.requests import DatabaseManager
-from app.database.models import UserRole, User
+from app.database.managers import UserManager
 from app.database.session import async_session
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
@@ -27,33 +24,24 @@ async def show_captains_list(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            user_manager = UserManager(session)
+            captains_data = await user_manager.get_captains_with_stats()
 
-            result = await session.execute(
-                select(User)
-                .where(User.role == UserRole.captain)
-                .where(User.telegram_id.isnot(None))
-            )
-            captains = result.scalars().all()
-
-            if not captains:
+            if not captains_data:
                 logger.debug("Капитаны не найдены")
                 await message.answer("Капитаны не найдены")
                 return
 
-            logger.info(f"Найдено капитанов: {len(captains)}")
+            logger.info(f"Найдено капитанов: {len(captains_data)}")
             response = "Список капитанов:\n\n"
-            for captain in captains:
-                # Получаем статистику капитана
-                captain_stats = await db_manager.calculate_captain_salary(
-                    captain.id,
-                    date.today().replace(day=1)  # С начала месяца
-                )
+            for data in captains_data:
+                captain = data['captain']
+                stats = data['stats']
 
                 response += (
                     f"Имя: {captain.full_name}\n"
                     f"Телефон: {captain.phone_number}\n"
-                    f"Рейсов: {captain_stats.get('total_bookings', 0)}\n"
+                    f"Рейсов: {stats.get('total_bookings', 0)}\n"
                     f"---\n"
                 )
 

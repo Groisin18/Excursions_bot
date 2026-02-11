@@ -7,8 +7,9 @@ from typing import Dict, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseManager
-from ..repositories.slot_repository import SlotRepository
-from ..repositories.salary_repository import SalaryRepository
+from app.database.repositories import (
+    SalaryRepository, SlotRepository
+)
 from app.database.models import BookingStatus, Salary
 
 

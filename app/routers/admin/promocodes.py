@@ -3,10 +3,12 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta
 
-from app.admin_panel.states_adm import CreatePromocode
-from app.database.requests import DatabaseManager
+from app.database.repositories import PromoCodeRepository
+from app.database.unit_of_work import UnitOfWork
 from app.database.models import DiscountType
 from app.database.session import async_session
+
+from app.admin_panel.states_adm import CreatePromocode
 from app.admin_panel.keyboards_adm import (
     promocodes_menu,
     promo_edit_field_menu, promo_type_selection_menu,
@@ -34,9 +36,8 @@ async def show_promocodes(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            # Получаем все активные промокоды
-            promocodes = await db_manager.get_all_promocodes()
+            promo_repo = PromoCodeRepository(session)
+            promocodes = await promo_repo.get_all()
 
             if not promocodes:
                 await message.answer(
@@ -145,8 +146,8 @@ async def handle_promocode_code(message: Message, state: FSMContext):
 
         # Проверяем, не существует ли уже такой промокод
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            existing_promo = await db_manager.get_promocode(code)
+            promo_repo = PromoCodeRepository(session)
+            existing_promo = await promo_repo.get_by_code(code)
 
             if existing_promo:
                 await message.answer(
@@ -480,58 +481,58 @@ async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
         valid_from = datetime.now()
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                promo_repo = PromoCodeRepository(uow.session)
 
-            try:
-                promocode = await db_manager.create_promo_code(
-                    code=code,
-                    discount_type=discount_type,
-                    discount_value=discount_value,
-                    valid_from=valid_from,
-                    valid_until=valid_until,
-                    usage_limit=usage_limit
-                )
+                try:
+                    promocode = await promo_repo.create(
+                        code=code,
+                        discount_type=discount_type,
+                        discount_value=discount_value,
+                        valid_from=valid_from,
+                        valid_until=valid_until,
+                        usage_limit=usage_limit
+                    )
 
-                # Формируем сообщение об успехе
-                success_message = "Промокод успешно создан!\n\n"
-                success_message += f"Код: {promocode.code}\n"
+                    # Формируем сообщение об успехе
+                    success_message = "Промокод успешно создан!\n\n"
+                    success_message += f"Код: {promocode.code}\n"
 
-                if promocode.discount_type == DiscountType.percent:
-                    success_message += f"Скидка: {promocode.discount_value}%\n"
-                else:
-                    success_message += f"Скидка: {promocode.discount_value} руб.\n"
+                    if promocode.discount_type == DiscountType.percent:
+                        success_message += f"Скидка: {promocode.discount_value}%\n"
+                    else:
+                        success_message += f"Скидка: {promocode.discount_value} руб.\n"
 
-                if promocode.usage_limit == 0:
-                    success_message += "Лимит использований: неограниченно\n"
-                else:
-                    success_message += f"Лимит использований: {promocode.usage_limit}\n"
+                    if promocode.usage_limit == 0:
+                        success_message += "Лимит использований: неограниченно\n"
+                    else:
+                        success_message += f"Лимит использований: {promocode.usage_limit}\n"
 
-                if promocode.valid_until:
-                    success_message += f"Действует с: {promocode.valid_from.strftime('%d.%m.%Y')}\n"
-                    success_message += f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}\n"
-                else:
-                    success_message += "Срок действия: бессрочно\n"
+                    if promocode.valid_until:
+                        success_message += f"Действует с: {promocode.valid_from.strftime('%d.%m.%Y')}\n"
+                        success_message += f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}\n"
+                    else:
+                        success_message += "Срок действия: бессрочно\n"
 
-                success_message += f"\nID промокода: {promocode.id}"
-                success_message += f"\n\nСтатус: {'Активен' if promocode.is_valid else 'Неактивен'}"
+                    success_message += f"\nID промокода: {promocode.id}"
+                    success_message += f"\n\nСтатус: {'Активен' if promocode.is_valid else 'Неактивен'}"
 
-                await callback.message.answer(success_message)
+                    await callback.message.answer(success_message)
 
-            except ValueError as e:
-                # Ошибка валидации (дублирование кода)
-                logger.warning(f"Попытка создания дубликата промокода администратором {admin_id}: {e}")
-                await callback.message.answer(
-                    f"Не удалось создать промокод:\n\n"
-                    f"{str(e)}\n\n"
-                    f"Пожалуйста, попробуйте заново."
-                )
-                # Очищаем только код из state, чтобы администратор мог исправить
-                await state.clear()
-                await callback.message.answer(
-                    "Выберите пункт меню:",
-                    reply_markup=promocodes_menu()
-                )
-                return
+                except ValueError as e:
+                    # Ошибка валидации (дублирование кода)
+                    logger.warning(f"Попытка создания дубликата промокода администратором {admin_id}: {e}")
+                    await callback.message.answer(
+                        f"Не удалось создать промокод:\n\n"
+                        f"{str(e)}\n\n"
+                        f"Пожалуйста, попробуйте заново."
+                    )
+                    await state.clear()
+                    await callback.message.answer(
+                        "Выберите пункт меню:",
+                        reply_markup=promocodes_menu()
+                    )
+                    return
 
         await state.clear()
         await callback.message.answer(
@@ -678,9 +679,9 @@ async def archive_promocodes_callback(callback: CallbackQuery):
         await callback.answer()
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            promo_repo = PromoCodeRepository(session)
             # Получаем неактивные промокоды
-            promocodes = await db_manager.get_all_promocodes(include_inactive=True)
+            promocodes = await promo_repo.get_all(include_inactive=True)
 
             # Фильтруем истекшие промокоды
             expired_promocodes = [p for p in promocodes if p.valid_until < datetime.now()]
@@ -729,8 +730,8 @@ async def promocodes_stats_callback(callback: CallbackQuery):
         await callback.answer()
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            promocodes = await db_manager.get_all_promocodes(include_inactive=True)
+            promo_repo = PromoCodeRepository(session)
+            promocodes = await promo_repo.get_all(include_inactive=True)
 
             if not promocodes:
                 await callback.message.answer("Нет данных о промокодах.")

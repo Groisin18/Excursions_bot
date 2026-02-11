@@ -1,18 +1,18 @@
 from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from sqlalchemy import select
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.database.requests import DatabaseManager, FileManager, FileType
-from app.database.models import UserRole, User, TelegramFile
+from app.database.unit_of_work import UnitOfWork
+from app.database.repositories import UserRepository, FileRepository
+from app.database.models import UserRole, FileType
 from app.database.session import async_session
 
+from app.admin_panel.states_adm import UploadConcent
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
-from app.admin_panel.states_adm import UploadConcent
-import app.admin_panel.keyboards_adm as kb
 
+import app.admin_panel.keyboards_adm as kb
 
 
 logger = get_logger(__name__)
@@ -31,12 +31,9 @@ async def manage_admins(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            user_repo = UserRepository(session)
 
-            result = await session.execute(
-                select(User).where(User.role == UserRole.admin)
-            )
-            admins = result.scalars().all()
+            admins = await user_repo.get_users_by_role(UserRole.admin)
 
             logger.info(f"Найдено администраторов: {len(admins)}")
             response = "Текущие администраторы:\n\n"
@@ -55,7 +52,6 @@ async def manage_admins(message: Message):
     except Exception as e:
         logger.error(f"Ошибка получения списка администраторов: {e}", exc_info=True)
         await message.answer("Ошибка при получении списка администраторов")
-
 
 @router.message(F.text == "Настройки базы данных")
 async def settings_database(message: Message):
@@ -84,14 +80,14 @@ async def settings_concents(message: Message):
 
     # Получаем информацию о текущих файлах
     async with async_session() as session:
-        file_manager = FileManager(session)
+        file_repo = FileRepository(session)
 
         # Получаем все типы файлов
-        adult_file = await file_manager.get_file_record(FileType.CPD)
-        minor_file = await file_manager.get_file_record(FileType.CPD_MINOR)
+        adult_file = await file_repo.get_file_record(FileType.CPD)
+        minor_file = await file_repo.get_file_record(FileType.CPD_MINOR)
 
         # Считаем все файлы в базе
-        all_files = await file_manager.get_all_file_records()
+        all_files = await file_repo.get_all_file_records()
         other_files_count = len([f for f in all_files if f.file_type == FileType.OTHER])
 
         adult_info = f"Есть ({adult_file.file_name})" if adult_file else "Нет"
@@ -108,15 +104,14 @@ async def settings_concents(message: Message):
 
     await message.answer(text, reply_markup=kb.concent_files_menu())
 
-
 @router.callback_query(F.data == "concent_view_all_files")
 async def concent_view_all_files(callback: CallbackQuery):
     """Просмотр всех файлов в базе"""
     await callback.answer()
 
     async with async_session() as session:
-        file_manager = FileManager(session)
-        all_files = await file_manager.get_all_file_records()
+        file_repo = FileRepository(session)
+        all_files = await file_repo.get_all_file_records()
 
         if not all_files:
             text = "В базе данных нет файлов."
@@ -178,19 +173,18 @@ async def concent_view_all_files(callback: CallbackQuery):
         else:
             await callback.message.edit_text(text, reply_markup=kb.concent_back_menu())
 
-
 @router.callback_query(F.data == "concent_view_files")
 async def concent_view_files(callback: CallbackQuery):
     """Меню выбора файла для просмотра"""
     await callback.answer()
 
     async with async_session() as session:
-        file_manager = FileManager(session)
+        file_repo = FileRepository(session)
 
         # Получаем информацию о файлах
-        adult_file = await file_manager.get_file_record(FileType.CPD)
-        minor_file = await file_manager.get_file_record(FileType.CPD_MINOR)
-        all_files = await file_manager.get_all_file_records()
+        adult_file = await file_repo.get_file_record(FileType.CPD)
+        minor_file = await file_repo.get_file_record(FileType.CPD_MINOR)
+        all_files = await file_repo.get_all_file_records()
         other_files_count = len([f for f in all_files if f.file_type == FileType.OTHER])
 
         # Формируем текст
@@ -220,7 +214,6 @@ async def concent_view_files(callback: CallbackQuery):
 
         await callback.message.edit_text(text, reply_markup=keyboard)
 
-
 @router.callback_query(F.data.startswith("concent_send_"))
 async def concent_send_file(callback: CallbackQuery):
     """Отправка файла по типу"""
@@ -235,8 +228,8 @@ async def concent_send_file(callback: CallbackQuery):
         return
 
     async with async_session() as session:
-        file_manager = FileManager(session)
-        file_record = await file_manager.get_file_record(file_type)
+        file_repo = FileRepository(session)
+        file_record = await file_repo.get_file_record(file_type)
 
         if not file_record:
             await callback.message.answer(f"Файл типа {file_type.value} не найден в базе данных.")
@@ -269,15 +262,14 @@ async def concent_send_file(callback: CallbackQuery):
                 reply_markup=kb.concent_back_menu()
             )
 
-
 @router.callback_query(F.data == "concent_view_other_files")
 async def concent_view_other_files(callback: CallbackQuery):
     """Просмотр других файлов"""
     await callback.answer()
 
     async with async_session() as session:
-        file_manager = FileManager(session)
-        all_files = await file_manager.get_all_file_records()
+        file_repo = FileRepository(session)
+        all_files = await file_repo.get_all_file_records()
         other_files = [f for f in all_files if f.file_type == FileType.OTHER]
 
         if not other_files:
@@ -306,7 +298,6 @@ async def concent_view_other_files(callback: CallbackQuery):
 
         await callback.message.edit_text(text, reply_markup=builder.as_markup())
 
-
 @router.callback_query(F.data.startswith("concent_send_other_"))
 async def concent_send_other_file(callback: CallbackQuery):
     """Отправка конкретного другого файла по ID"""
@@ -319,12 +310,10 @@ async def concent_send_other_file(callback: CallbackQuery):
         return
 
     async with async_session() as session:
-        file_manager = FileManager(session)
+        file_repo = FileRepository(session)
 
-        # Находим файл по ID
-        stmt = select(TelegramFile).where(TelegramFile.id == file_id, TelegramFile.file_type == FileType.OTHER)
-        result = await session.execute(stmt)
-        file_record = result.scalar_one_or_none()
+        # Находим файл по ID и типу
+        file_record = await file_repo.get_by_id_and_type(file_id, FileType.OTHER)
 
         if not file_record:
             await callback.message.answer("Файл не найден в базе данных.")
@@ -334,7 +323,8 @@ async def concent_send_other_file(callback: CallbackQuery):
             # Отправляем файл
             await callback.message.answer_document(
                 document=file_record.file_telegram_id,
-                caption=f"{file_record.file_name}\nЗагружен: {file_record.uploaded_at.strftime('%d.%m.%Y %H:%M') if file_record.uploaded_at else 'неизвестно'}"
+                caption=f"{file_record.file_name}\nЗагружен:
+                {file_record.uploaded_at.strftime('%d.%m.%Y %H:%M') if file_record.uploaded_at else 'неизвестно'}"
             )
 
             # Показываем информацию
@@ -354,7 +344,6 @@ async def concent_send_other_file(callback: CallbackQuery):
                 f"Ошибка при отправке файла: {e}",
                 reply_markup=kb.concent_back_menu()
             )
-
 
 @router.callback_query(F.data.in_(["concent_no_file_adult", "concent_no_file_minor"]))
 async def concent_no_file(callback: CallbackQuery):
@@ -412,7 +401,6 @@ async def start_concent_upload(callback: CallbackQuery, state: FSMContext):
 
     await callback.message.edit_text(text, reply_markup=kb.concent_back_menu())
 
-
 @router.message(UploadConcent.waiting_for_file, F.document)
 async def process_concent_upload(message: Message, state: FSMContext):
     """Обработка загруженного файла"""
@@ -434,42 +422,43 @@ async def process_concent_upload(message: Message, state: FSMContext):
 
     try:
         async with async_session() as session:
-            file_manager = FileManager(session)
+            async with UnitOfWork(session) as uow:
+                file_repo = FileRepository(uow.session)
 
-            # Проверяем, есть ли старый файл
-            old_file = await file_manager.get_file_record(file_type)
+                # Проверяем, есть ли старый файл
+                old_file = await file_repo.get_file_record(file_type)
 
-            # Сохраняем файл в базу
-            await file_manager.save_file_id(
-                file_type=file_type,
-                file_telegram_id=document.file_id,
-                file_name=document.file_name,
-                file_size=document.file_size,
-                uploaded_by=message.from_user.id
-            )
-
-            logger.info(f"Администратор {message.from_user.id} загрузил файл {file_type.value}: {document.file_name}")
-
-            # Формируем ответ
-            response = (
-                f"Файл успешно загружен!\n\n"
-                f"Тип: {file_type_name}\n"
-                f"Название: {document.file_name}\n"
-                f"Размер: {document.file_size} байт\n"
-                f"MIME тип: {document.mime_type or 'не указан'}\n"
-                f"File ID: {document.file_id[:50]}..."
-            )
-
-            if old_file:
-                old_date = old_file.uploaded_at.strftime("%d.%m.%Y %H:%M") if old_file.uploaded_at else "неизвестно"
-                response += (
-                    f"\n\nСтарый файл заменен:\n"
-                    f"• Название: {old_file.file_name}\n"
-                    f"• Размер: {old_file.file_size} байт\n"
-                    f"• Загружен: {old_date}"
+                # Сохраняем файл в базу
+                await file_repo.save_file_id(
+                    file_type=file_type,
+                    file_telegram_id=document.file_id,
+                    file_name=document.file_name,
+                    file_size=document.file_size,
+                    uploaded_by=message.from_user.id
                 )
 
-            await message.answer(response, reply_markup=kb.concent_back_menu())
+                logger.info(f"Администратор {message.from_user.id} загрузил файл {file_type.value}: {document.file_name}")
+
+                # Формируем ответ
+                response = (
+                    f"Файл успешно загружен!\n\n"
+                    f"Тип: {file_type_name}\n"
+                    f"Название: {document.file_name}\n"
+                    f"Размер: {document.file_size} байт\n"
+                    f"MIME тип: {document.mime_type or 'не указан'}\n"
+                    f"File ID: {document.file_id[:50]}..."
+                )
+
+                if old_file:
+                    old_date = old_file.uploaded_at.strftime("%d.%m.%Y %H:%M") if old_file.uploaded_at else "неизвестно"
+                    response += (
+                        f"\n\nСтарый файл заменен:\n"
+                        f"• Название: {old_file.file_name}\n"
+                        f"• Размер: {old_file.file_size} байт\n"
+                        f"• Загружен: {old_date}"
+                    )
+
+                await message.answer(response, reply_markup=kb.concent_back_menu())
 
     except Exception as e:
         logger.error(f"Ошибка при сохранении файла: {e}", exc_info=True)
@@ -481,7 +470,6 @@ async def process_concent_upload(message: Message, state: FSMContext):
 
     finally:
         await state.clear()
-
 
 @router.message(UploadConcent.waiting_for_file)
 async def process_wrong_file_type(message: Message, state: FSMContext):
@@ -496,18 +484,17 @@ async def process_wrong_file_type(message: Message, state: FSMContext):
         reply_markup=kb.concent_back_menu()
     )
 
-
 @router.callback_query(F.data == "concent_files")
 async def concent_files_callback(callback: CallbackQuery):
     """Обработчик возврата в меню файлов"""
     await callback.answer()
 
     async with async_session() as session:
-        file_manager = FileManager(session)
+        file_repo = FileRepository(session)
 
-        adult_file = await file_manager.get_file_record(FileType.CPD)
-        minor_file = await file_manager.get_file_record(FileType.CPD_MINOR)
-        all_files = await file_manager.get_all_file_records()
+        adult_file = await file_repo.get_file_record(FileType.CPD)
+        minor_file = await file_repo.get_file_record(FileType.CPD_MINOR)
+        all_files = await file_repo.get_all_file_records()
         other_files_count = len([f for f in all_files if f.file_type == FileType.OTHER])
 
         adult_info = f"Есть ({adult_file.file_name})" if adult_file else "Нет"
@@ -523,7 +510,6 @@ async def concent_files_callback(callback: CallbackQuery):
         )
 
     await callback.message.edit_text(text, reply_markup=kb.concent_files_menu())
-
 
 @router.callback_query(F.data == "admin_settings")
 async def settings_main_callback(callback: CallbackQuery):

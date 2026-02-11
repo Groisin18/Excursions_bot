@@ -1,15 +1,13 @@
 from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from datetime import datetime, timedelta
-from sqlalchemy import select
 
 from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, clients_submenu, cancel_button
 )
-from app.database.requests import DatabaseManager
-from app.database.models import UserRole, User, ClientStatus
+from app.database.unit_of_work import UnitOfWork
+from app.database.managers import UserManager, BookingManager
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
@@ -50,18 +48,8 @@ async def search_client_process(message: Message, state: FSMContext):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-
-            # Поиск по имени или телефону
-            result = await session.execute(
-                select(User)
-                .where(User.role == UserRole.client)
-                .where(
-                    (User.full_name.ilike(f"%{search_query}%")) |
-                    (User.phone_number.ilike(f"%{search_query}%"))
-                )
-            )
-            clients = result.scalars().all()
+            user_manager = UserManager(session)
+            clients = await user_manager.search_clients(search_query, limit=5)
 
             if not clients:
                 logger.debug(f"Клиенты по запросу '{search_query}' не найдены")
@@ -71,7 +59,7 @@ async def search_client_process(message: Message, state: FSMContext):
 
             logger.info(f"Найдено клиентов по запросу '{search_query}': {len(clients)}")
             response = f"Найдено клиентов: {len(clients)}\n\n"
-            for client in clients[:5]:  # Ограничиваем вывод
+            for client in clients:
                 response += (
                     f"Имя: {client.full_name}\n"
                     f"Телефон: {client.phone_number}\n"
@@ -116,18 +104,8 @@ async def show_new_clients(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-
-            week_ago = datetime.now() - timedelta(days=7)
-            logger.debug(f"Поиск клиентов зарегистрированных после {week_ago}")
-
-            result = await session.execute(
-                select(User)
-                .where(User.role == UserRole.client)
-                .where(User.created_at >= week_ago)
-                .order_by(User.created_at.desc())
-            )
-            new_clients = result.scalars().all()
+            user_manager = UserManager(session)
+            new_clients = await user_manager.get_new_clients(days_ago=7)
 
             if not new_clients:
                 logger.debug("Новых клиентов за последнюю неделю не найдено")
@@ -184,18 +162,16 @@ async def mark_arrived(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            success = await db_manager.update_booking_status(
-                booking_id,
-                client_status=ClientStatus.arrived
-            )
+            async with UnitOfWork(session) as uow:
+                booking_manager = BookingManager(uow.session)
+                success = await booking_manager.mark_client_arrived(booking_id)
 
-            if success:
-                logger.info(f"Бронирование {booking_id} отмечено как прибывшее")
-                await callback.message.edit_text("Клиент отмечен как прибывший")
-            else:
-                logger.warning(f"Не удалось отметить прибытие для бронирования {booking_id}")
-                await callback.message.edit_text("Ошибка при обновлении статуса")
+                if success:
+                    logger.info(f"Бронирование {booking_id} отмечено как прибывшее")
+                    await callback.message.edit_text("Клиент отмечен как прибывший")
+                else:
+                    logger.warning(f"Не удалось отметить прибытие для бронирования {booking_id}")
+                    await callback.message.edit_text("Ошибка при обновлении статуса")
 
     except Exception as e:
         logger.error(f"Ошибка при отметке прибытия для бронирования {booking_id}: {e}", exc_info=True)

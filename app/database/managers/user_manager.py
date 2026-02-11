@@ -3,16 +3,18 @@
 Содержит сложные операции с пользователями: создание через токены,
 работа с детьми, привязка Telegram и т.д.
 """
-
-from datetime import datetime, date
-from typing import Optional, Tuple
 import secrets
+
+from datetime import datetime, date, timedelta
+from typing import Optional, Tuple
+from sqlalchemy import select
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseManager
+from .salary_manager import SalaryManager
 from ..repositories.user_repository import UserRepository
-from app.database.models import User, UserRole, RegistrationType
+from ..models import User, UserRole, RegistrationType
 
 
 class UserManager(BaseManager):
@@ -113,7 +115,7 @@ class UserManager(BaseManager):
 
             # Бизнес-логика: генерация виртуального телефона для детей
             if linked_to_parent_id and not phone_number:
-                parent = await self.user_repo.get_user_by_id(created_by_id)
+                parent = await self.user_repo.get_by_id(created_by_id)
                 if parent and parent.phone_number:
                     phone_number = f"{parent.phone_number}:{token}:child"
                     self.logger.debug(f"Сгенерирован виртуальный телефон для ребенка: {phone_number}")
@@ -162,7 +164,7 @@ class UserManager(BaseManager):
 
         try:
             # Бизнес-логика: проверка уникальности телефона
-            existing_user = await self.user_repo.get_user_by_phone(phone_number)
+            existing_user = await self.user_repo.get_by_phone(phone_number)
             if existing_user:
                 error_msg = f"Номер телефона {phone_number} уже зарегистрирован"
                 self.logger.warning(error_msg)
@@ -180,7 +182,7 @@ class UserManager(BaseManager):
 
             # Дополнительная логика: обновление адреса
             if address:
-                await self.user_repo.update_user_data(user.id, address=address)
+                await self.user_repo.update(user.id, address=address)
                 await self._refresh(user)
 
             self._log_operation_end("create_user_by_admin",
@@ -214,7 +216,7 @@ class UserManager(BaseManager):
 
         try:
             # Бизнес-логика: поиск родителя
-            parent = await self.user_repo.get_user_by_telegram_id(parent_telegram_id)
+            parent = await self.user_repo.get_by_telegram_id(parent_telegram_id)
             if not parent:
                 error_msg = f"Родитель с ID {parent_telegram_id} не найден"
                 self.logger.error(error_msg)
@@ -267,14 +269,14 @@ class UserManager(BaseManager):
 
         try:
             # Бизнес-логика: проверка занятости Telegram ID
-            existing_user = await self.user_repo.get_user_by_telegram_id(telegram_id)
+            existing_user = await self.user_repo.get_by_telegram_id(telegram_id)
             if existing_user:
                 error_msg = f"Telegram ID {telegram_id} уже используется пользователем {existing_user.id}"
                 self.logger.warning(error_msg)
                 raise ValueError(error_msg)
 
             # Получаем пользователя по токену
-            user = await self.user_repo.get_user_by_token(token)
+            user = await self.user_repo.get_by_token(token)
             if not user:
                 self.logger.warning(f"Пользователь с токеном {token[:8]}... не найден")
                 return None
@@ -286,7 +288,7 @@ class UserManager(BaseManager):
                 raise ValueError(error_msg)
 
             # Обновляем пользователя через репозиторий
-            updated = await self.user_repo.update_user_data(
+            updated = await self.user_repo.update(
                 user.id,
                 telegram_id=telegram_id,
                 is_virtual=False,
@@ -300,7 +302,7 @@ class UserManager(BaseManager):
                 raise RuntimeError(error_msg)
 
             # Получаем обновленного пользователя
-            updated_user = await self.user_repo.get_user_by_id(user.id)
+            updated_user = await self.user_repo.get_by_id(user.id)
 
             self._log_operation_end("link_telegram_to_user",
                                    success=True,
@@ -322,7 +324,7 @@ class UserManager(BaseManager):
         self._log_operation_start("get_user_token", user_id=user_id)
 
         try:
-            user = await self.user_repo.get_user_by_id(user_id)
+            user = await self.user_repo.get_by_id(user_id)
             if user and user.verification_token:
                 self._log_operation_end("get_user_token", success=True, has_token=True)
                 return user.verification_token
@@ -333,3 +335,59 @@ class UserManager(BaseManager):
             self._log_operation_end("get_user_token", success=False)
             self.logger.error(f"Ошибка получения токена пользователя {user_id}: {e}", exc_info=True)
             return None
+
+    async def get_captains_with_stats(self, period_start=None):
+        """Получить список капитанов со статистикой"""
+
+        if period_start is None:
+            period_start = date.today().replace(day=1)
+
+        result = await self.session.execute(
+            select(User)
+            .where(User.role == UserRole.captain)
+            .where(User.telegram_id.isnot(None))
+        )
+        captains = result.scalars().all()
+
+        # Добавляем статистику для каждого капитана
+        captains_with_stats = []
+        for captain in captains:
+            salary_manager = SalaryManager(self.session)
+            captain_stats = await salary_manager.calculate_captain_salary(
+                captain.id,
+                period_start
+            )
+            captains_with_stats.append({
+                'captain': captain,
+                'stats': captain_stats
+            })
+
+        return captains_with_stats
+
+    async def search_clients(self, search_query: str, limit: int = 5):
+        """Поиск клиентов по имени или телефону"""
+
+        result = await self.session.execute(
+            select(User)
+            .where(User.role == UserRole.client)
+            .where(
+                (User.full_name.ilike(f"%{search_query}%")) |
+                (User.phone_number.ilike(f"%{search_query}%"))
+            )
+        )
+        clients = result.scalars().all()
+
+        return clients[:limit] if limit else clients
+
+    async def get_new_clients(self, days_ago: int = 7):
+        """Получить новых клиентов за последние N дней"""
+
+        week_ago = datetime.now() - timedelta(days=days_ago)
+
+        result = await self.session.execute(
+            select(User)
+            .where(User.role == UserRole.client)
+            .where(User.created_at >= week_ago)
+            .order_by(User.created_at.desc())
+        )
+        return result.scalars().all()

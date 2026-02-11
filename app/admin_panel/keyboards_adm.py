@@ -806,7 +806,7 @@ def schedule_month_management_menu(slots_by_date: dict) -> InlineKeyboardMarkup:
     # Если есть еще даты
     if len(slots_by_date) > 7:
         builder.button(
-            text=f"Показать еще {len(slots_by_date) - 5} дней...",
+            text=f"Показать еще {len(slots_by_date) - 7} дней...",
             callback_data="show_more_month_dates"
         )
 
@@ -959,7 +959,6 @@ def concent_files_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-
 def concent_upload_menu() -> InlineKeyboardMarkup:
     """Меню выбора типа файла для загрузки"""
     builder = InlineKeyboardBuilder()
@@ -989,7 +988,6 @@ def concent_back_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Назад", callback_data="concent_files")
     return builder.as_markup()
-
 
 def concent_cancel_menu() -> InlineKeyboardMarkup:
     """Кнопка отмены загрузки файла"""
@@ -1044,5 +1042,42 @@ def concent_file_selection_menu(
 
     builder.button(text="Назад", callback_data="concent_files")
     builder.adjust(1)
+
+    return builder.as_markup()
+
+
+# ===== МЕНЮ СТАТИСТИКИ =====
+
+
+def dashboard_quick_actions():
+    """Быстрые действия для дашборда"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Неоплаченные брони",
+        callback_data="show_unpaid_bookings"
+    )
+    builder.button(
+        text="Свободные капитаны",
+        callback_data="show_free_captains"
+    )
+    builder.button(
+        text="Ближайшие слоты",
+        callback_data="show_near_slots"
+    )
+    builder.button(
+        text="Новые клиенты",
+        callback_data="show_new_clients"
+    )
+    builder.button(
+        text="Активные записи",
+        callback_data="show_active_bookings"
+    )
+    builder.button(
+        text="Обновить дашборд",
+        callback_data="refresh_dashboard"
+    )
+
+    builder.adjust(2)  # 2 кнопки в ряд
 
     return builder.as_markup()

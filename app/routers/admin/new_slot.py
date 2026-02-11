@@ -5,16 +5,20 @@ from datetime import datetime, timedelta
 from pydantic import BaseModel, Field, field_validator, ValidationError
 from typing import Optional
 
-from app.admin_panel.states_adm import AddToSchedule
-from app.database.requests import DatabaseManager
+from app.database.repositories import ExcursionRepository, UserRepository
+from app.database.managers.slot_manager import SlotManager
+from app.database.unit_of_work import UnitOfWork
 from app.database.session import async_session
-from app.utils.validation import validate_slot_date, validate_slot_time
+
+from app.admin_panel.states_adm import AddToSchedule
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_back_menu,
     captains_selection_menu, time_slot_menu, schedule_captains_management_menu,
     excursions_selection_menu_for_schedule, no_captains_options_menu
 )
 from app.middlewares import AdminMiddleware
+
+from app.utils.validation import validate_slot_date, validate_slot_time
 from app.utils.logging_config import get_logger
 
 
@@ -85,8 +89,8 @@ async def add_to_schedule(message: Message):
     try:
         # Показываем меню для выбора экскурсии
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursions = await db_manager.get_all_excursions(active_only=True)
+            exc_repo = ExcursionRepository(session)
+            excursions = await exc_repo.get_all(active_only=True)
 
             if not excursions:
                 await message.answer(
@@ -326,9 +330,10 @@ async def handle_max_weight(message: Message, state: FSMContext):
         max_people = data.get('max_people')
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            exc_repo = ExcursionRepository(session)
+            user_repo = UserRepository(session)
 
-            excursion = await db_manager.get_excursion_by_id(excursion_id)
+            excursion = await exc_repo.get_by_id(excursion_id)
             if not excursion:
                 await message.answer("Ошибка: данный вид экскурсии не найден.", reply_markup=schedule_back_menu())
                 await state.clear()
@@ -336,7 +341,7 @@ async def handle_max_weight(message: Message, state: FSMContext):
 
             end_datetime = start_datetime + timedelta(minutes=excursion.base_duration_minutes)
 
-            available_captains = await db_manager.get_available_captains(
+            available_captains = await user_repo.get_available_captains(
                 start_datetime=start_datetime,
                 end_datetime=end_datetime
             )
@@ -419,18 +424,32 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
 
         # Создаем слот
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                exc_repo = ExcursionRepository(uow.session)
+                slot_manager = SlotManager(uow.session)
 
-            slot = await db_manager.create_excursion_slot(
-                excursion_id=slot_data.excursion_id,
-                start_datetime=slot_data.start_datetime,
-                max_people=slot_data.max_people,
-                max_weight=slot_data.max_weight,
-                captain_id=slot_data.captain_id
-            )
+                slot = await slot_manager.create_slot(
+                    excursion_id=slot_data.excursion_id,
+                    start_datetime=slot_data.start_datetime,
+                    max_people=slot_data.max_people,
+                    max_weight=slot_data.max_weight,
+                    captain_id=slot_data.captain_id
+                )
 
-            if slot:
-                excursion = await db_manager.get_excursion_by_id(slot_data.excursion_id)
+                if not slot:
+                    logger.error("Ошибка создания слота")
+                    await state.clear()
+                    await callback.message.answer(
+                        "Ошибка добавления экскурсии в расписание!\n"
+                        "Возможно, на данное время уже назначена данная экскурсия, "
+                        "или произошла другая ошибка.\n"
+                        "Пожалуйста, попробуйте назначить экскурсию заново.",
+                        reply_markup=schedule_back_menu()
+                    )
+                    return
+
+                excursion = await exc_repo.get_by_id(slot_data.excursion_id)
+
                 await callback.message.answer(
                     "Экскурсия успешно добавлена в расписание!\n\n"
                     f"Экскурсия: {excursion.name}\n"
@@ -440,23 +459,19 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
                     f"Вместимость по весу: {slot.max_weight} кг\n"
                     f"Слот ID: {slot.id}\n\n"
                 )
-                await state.clear()
-                await callback.message.answer(
-                "Выберите действие:",
-                reply_markup=schedule_exc_management_menu()
-                )
 
-            else:
-                logger.error(f"Ошибка создания слота")
-                await state.clear()
-                await callback.message.answer("Ошибка добавления экскурсии в расписание!\n"
-                                              "Возможно, на данное время "
-                                              "уже назначена данная экскурсия, или произошла другая ошибка.\n"
-                                              "Пожалуйста, попробуйте назначить экскурсию заново.", reply_markup=schedule_back_menu())
+        await state.clear()
+        await callback.message.answer(
+            "Выберите действие:",
+            reply_markup=schedule_exc_management_menu()
+        )
 
     except Exception as e:
         logger.error(f"Ошибка выбора капитана: {e}", exc_info=True)
-        await callback.message.answer("Ошибка при выборе капитана", reply_markup=schedule_back_menu())
+        await callback.message.answer(
+            "Ошибка при выборе капитана",
+            reply_markup=schedule_back_menu()
+        )
         await state.clear()
 
 @router.callback_query(F.data == "create_without_captain")
@@ -483,18 +498,32 @@ async def create_without_captain(callback: CallbackQuery, state: FSMContext):
             return
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                exc_repo = ExcursionRepository(uow.session)
+                slot_manager = SlotManager(uow.session)
 
-            slot = await db_manager.create_excursion_slot(
-                excursion_id=slot_data.excursion_id,
-                start_datetime=slot_data.start_datetime,
-                max_people=slot_data.max_people,
-                max_weight=slot_data.max_weight,
-                captain_id=None
-            )
+                slot = await slot_manager.create_slot(
+                    excursion_id=slot_data.excursion_id,
+                    start_datetime=slot_data.start_datetime,
+                    max_people=slot_data.max_people,
+                    max_weight=slot_data.max_weight,
+                    captain_id=None
+                )
 
-            if slot:
-                excursion = await db_manager.get_excursion_by_id(slot_data.excursion_id)
+                if not slot:
+                    logger.error("Ошибка создания слота")
+                    await state.clear()
+                    await callback.message.answer(
+                        "Ошибка добавления экскурсии в расписание!\n"
+                        "Возможно, на данное время уже назначена данная экскурсия, "
+                        "или произошла другая ошибка.\n"
+                        "Пожалуйста, попробуйте назначить экскурсию заново.",
+                        reply_markup=schedule_back_menu()
+                    )
+                    return
+
+                excursion = await exc_repo.get_by_id(slot_data.excursion_id)
+
                 await callback.message.answer(
                     "Экскурсия успешно добавлена в расписание!\n\n"
                     f"Экскурсия: {excursion.name}\n"
@@ -505,19 +534,13 @@ async def create_without_captain(callback: CallbackQuery, state: FSMContext):
                     f"Слот ID: {slot.id}\n\n"
                     "Не забудьте назначить капитана в ближайшее время"
                 )
-                await callback.message.answer(f"Слот создан без капитана! ID: {slot.id}")
-                await state.clear()
-                await callback.message.answer(
-                "Выберите действие:",
-                reply_markup=schedule_exc_management_menu()
-                )
-            else:
-                logger.error(f"Ошибка создания слота")
-                await state.clear()
-                await callback.message.answer("Ошибка добавления экскурсии в расписание!\n"
-                                              "Возможно, на данное время "
-                                              "уже назначена данная экскурсия, или произошла другая ошибка.\n"
-                                              "Пожалуйста, попробуйте назначить экскурсию заново.", reply_markup=schedule_back_menu())
+
+        await callback.message.answer(f"Слот создан без капитана! ID: {slot.id}")
+        await state.clear()
+        await callback.message.answer(
+            "Выберите действие:",
+            reply_markup=schedule_exc_management_menu()
+        )
 
     except Exception as e:
         logger.error(f"Ошибка создания без капитана: {e}", exc_info=True)
@@ -606,27 +629,26 @@ async def add_to_specific_date_callback(callback: CallbackQuery, state: FSMConte
     try:
         await callback.answer()
 
-        # Парсим дату
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-
-        # Сохраняем дату в состоянии
         await state.update_data(slot_date=target_date)
 
-        # Получаем список экскурсий
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursions = await db_manager.get_all_excursions(active_only=True)
+            exc_repo = ExcursionRepository(session)
+            excursions = await exc_repo.get_all(active_only=True)
 
             if not excursions:
                 await callback.message.answer(
-                    "Нет активных экскурсий. Сначала создайте экскурсию.", reply_markup=schedule_back_menu()
+                    "Нет активных экскурсий. Сначала создайте экскурсию.",
+                    reply_markup=schedule_back_menu()
                 )
                 await state.clear()
                 return
+
             await callback.message.answer(
                 f"Выберите экскурсию для добавления на {target_date.strftime('%d.%m.%Y')}:",
                 reply_markup=excursions_selection_menu_for_schedule(excursions)
             )
+
     except Exception as e:
         logger.error(f"Ошибка начала добавления на дату: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка", reply_markup=schedule_back_menu())

@@ -23,15 +23,15 @@ class UserRepository(BaseRepository):
 # ===== Простые поиски =====
 
 
-    async def get_user_by_id(self, user_id: int) -> Optional[User]:
+    async def get_by_id(self, user_id: int) -> Optional[User]:
         """Получить пользователя по ID"""
         return await self._get_one(User, User.id == user_id)
 
-    async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[User]:
+    async def get_by_telegram_id(self, telegram_id: int) -> Optional[User]:
         """Получить пользователя по telegram_id"""
         return await self._get_one(User, User.telegram_id == telegram_id)
 
-    async def get_user_by_phone(self, phone_number: str) -> Optional[User]:
+    async def get_by_phone(self, phone_number: str) -> Optional[User]:
         """Получить пользователя по номеру телефона"""
         try:
             original_phone = phone_number
@@ -53,12 +53,20 @@ class UserRepository(BaseRepository):
             self.logger.error(f"Ошибка при поиске пользователя по телефону: {e}", exc_info=True)
             return None
 
-    async def get_user_by_token(self, token: str) -> Optional[User]:
+    async def get_by_token(self, token: str) -> Optional[User]:
         """Получить пользователя по токену"""
         return await self._get_one(User, User.verification_token == token)
 
+
 # ===== Поиск нескольких записей =====
 
+
+    async def get_users_by_role(self, role: UserRole) -> List[User]:
+        """Получить пользователей по роли"""
+
+        query = select(User).where(User.role == role)
+        result = await self._execute_query(query)
+        return list(result.scalars().all())
 
     async def get_users_created_by(self, creator_id: int) -> List[User]:
         """Получить всех пользователей, созданных указанным пользователем"""
@@ -98,7 +106,7 @@ class UserRepository(BaseRepository):
 # ===== Создание записей =====
 
 
-    async def create_user(self, **user_data) -> User:
+    async def create(self, **user_data) -> User:
         """Создать пользователя (базовая версия, без токенов)"""
         return await self._create(User, **user_data)
 
@@ -106,7 +114,7 @@ class UserRepository(BaseRepository):
 # ===== Обновление записей =====
 
 
-    async def update_user_data(self, user_id: int, **update_data) -> bool:
+    async def update(self, user_id: int, **update_data) -> bool:
         """Обновить данные пользователя"""
         # Удаляем None значения
         clean_data = {k: v for k, v in update_data.items() if v is not None}

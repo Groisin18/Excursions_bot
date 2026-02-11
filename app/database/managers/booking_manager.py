@@ -4,12 +4,11 @@ from typing import Tuple, Optional, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseManager
-from ..repositories.booking_repository import BookingRepository
-from ..repositories.slot_repository import SlotRepository
-from ..repositories.user_repository import UserRepository
-from ..repositories.promocode_repository import PromoCodeRepository
+from app.database.repositories import (
+    BookingRepository, SlotRepository, UserRepository, PromoCodeRepository
+)
 from app.database.models import (
-    Booking, BookingStatus, SlotStatus
+    Booking, BookingStatus, SlotStatus, ClientStatus
 )
 from app.utils.price_calculator import PriceCalculator
 
@@ -56,7 +55,7 @@ class BookingManager(BaseManager):
                 return None, error_msg
 
             # Проверяем существование клиента
-            client = await self.user_repo.get_user_by_id(client_id)
+            client = await self.user_repo.get_by_id(client_id)
             if not client:
                 error_msg = "Клиент не найден"
                 self.logger.warning(error_msg)
@@ -133,7 +132,7 @@ class BookingManager(BaseManager):
 
         try:
             # Проверяем пользователя и токен
-            user = await self.user_repo.get_user_by_id(user_id)
+            user = await self.user_repo.get_by_id(user_id)
             if not user or user.verification_token != token:
                 self.logger.warning(f"Неверный токен для пользователя {user_id}")
                 self._log_operation_end("create_booking_with_token", success=False, error="invalid_token")
@@ -200,7 +199,7 @@ class BookingManager(BaseManager):
             children_prices = {}
             if child_user_ids:
                 for child_id in child_user_ids:
-                    child = await self.user_repo.get_user_by_id(child_id)
+                    child = await self.user_repo.get_by_id(child_id)
                     if child and child.date_of_birth:
                         child_price, category = PriceCalculator.calculate_child_price(
                             base_price, child.date_of_birth
@@ -292,7 +291,7 @@ class BookingManager(BaseManager):
             # Расчетная стоимость
             calculated_price = await self.calculate_price(
                 booking.slot_id,
-                booking.client_id,
+                booking.adult_user_id,
                 # TODO: получить ID детей
             )
 
@@ -300,10 +299,21 @@ class BookingManager(BaseManager):
                 'booking': booking,
                 'calculated_price': calculated_price,
                 'slot_info': await self.slot_repo.get_with_bookings(booking.slot_id),
-                'client': booking.client,
+                'client': booking.adult_user,
                 'payments': booking.payments
             }
 
         except Exception as e:
             self.logger.error(f"Ошибка получения информации о бронировании {booking_id}: {e}")
             return None
+
+    async def mark_client_arrived(self, booking_id: int) -> bool:
+        """Отметить клиента как прибывшего"""
+
+        booking = await self.booking_repo.get_by_id(booking_id)
+        if not booking:
+            return False
+
+        booking.client_status = ClientStatus.arrived
+        await self.booking_repo.update(booking)
+        return True

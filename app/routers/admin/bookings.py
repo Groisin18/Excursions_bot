@@ -1,13 +1,8 @@
 from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
-from app.database.requests import DatabaseManager
-from app.database.models import (
-    Booking, ExcursionSlot,
-    BookingStatus, PaymentStatus
-)
+from app.database.models import PaymentStatus
+from app.database.managers.slot_manager import SlotManager
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
@@ -32,18 +27,8 @@ async def show_active_bookings(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-
-            # Получаем все активные бронирования
-            result = await session.execute(
-                select(Booking)
-                .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
-                .options(selectinload(Booking.slot).selectinload(ExcursionSlot.captain))
-                .options(selectinload(Booking.adult_user))  # Изменено с client на adult_user
-                .where(Booking.booking_status == BookingStatus.active)
-                .order_by(Booking.created_at.desc())
-            )
-            bookings = result.scalars().all()
+            slot_manager = SlotManager(session)
+            bookings = await slot_manager.get_active_bookings()
 
             if not bookings:
                 logger.debug("Активных записей не найдено")
@@ -52,7 +37,7 @@ async def show_active_bookings(message: Message):
 
             logger.info(f"Найдено активных записей: {len(bookings)}")
             response = "Активные записи:\n\n"
-            for booking in bookings[:10]:  # Ограничиваем вывод
+            for booking in bookings[:10]:
                 response += (
                     f"ID: {booking.id}\n"
                     f"Клиент: {booking.adult_user.full_name}\n"
@@ -82,16 +67,8 @@ async def show_unpaid_bookings(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-
-            result = await session.execute(
-                select(Booking)
-                .options(selectinload(Booking.adult_user))
-                .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
-                .where(Booking.payment_status != PaymentStatus.paid)
-                .where(Booking.booking_status == BookingStatus.active)
-            )
-            bookings = result.scalars().all()
+            slot_manager = SlotManager(session)
+            bookings = await slot_manager.get_unpaid_bookings()
 
             if not bookings:
                 logger.debug("Неоплаченных записей не найдено")

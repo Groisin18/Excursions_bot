@@ -1,21 +1,23 @@
-import asyncio
-
 from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
-from datetime import datetime, date, timedelta
-from sqlalchemy import select, text, func
+from datetime import datetime, timedelta
+
 from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
-    admin_main_menu, bookings_submenu, statistics_submenu, cancel_button
+    admin_main_menu, bookings_submenu, statistics_submenu, cancel_button,
+    dashboard_quick_actions
 )
-from app.admin_panel.services.statistics_service import StatisticsService
-from app.database.requests import DatabaseManager
-from app.database.models import User, Booking, ExcursionSlot, Excursion
+from app.database.repositories import UserRepository, SlotRepository
+from app.database.managers import StatisticsManager
+from app.database.models import UserRole
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
+
+from app.routers.admin.bookings import show_active_bookings, show_unpaid_bookings
+from app.routers.admin.clients import show_new_clients
 from app.utils.logging_config import get_logger
 
 
@@ -29,7 +31,7 @@ router.callback_query.middleware(AdminMiddleware())
 
 # ===== СТАТИСТИКА =====
 
-#Делаем статистику. Используем файл statistics_service, надо начинать обрабатывать еще не написанные кнопки
+# TODO Делаем статистику. Надо обрабатывать еще не написанные кнопки
 
 
 @router.message(Command("dashboard"))
@@ -38,91 +40,98 @@ async def dashboard_handler(message: Message):
     logger.info(f"Администратор {message.from_user.id} запросил дашборд")
 
     try:
-        stats_service = StatisticsService()
-
-        # Статистика за сегодня
         today = datetime.now()
-        today_stats = await stats_service.get_daily_stats(today)
-
-        # Статистика за вчера для сравнения
         yesterday = today - timedelta(days=1)
-        yesterday_stats = await stats_service.get_daily_stats(yesterday)
 
-        # Сравнение
+        async with async_session() as session:
+            stats_manager = StatisticsManager(session)
+
+            # Статистика за сегодня
+            today_stats = await stats_manager.get_daily_stats(today)
+
+            # Статистика за вчера для сравнения
+            yesterday_stats = await stats_manager.get_daily_stats(yesterday)
+
+            # Активные экскурсии
+            active_excursions = await stats_manager.get_active_excursions_count()
+
+            # Срочные/важные данные
+            urgent_bookings = await stats_manager.get_urgent_bookings_info()
+            free_captains = await stats_manager.get_captains_without_slots()
+
+        # Функция сравнения
         def compare(current, previous):
             if previous == 0:
-                return "+∞%" if current > 0 else "0%"
+                return "[новое]" if current > 0 else "[без изменений]"
             change = ((current - previous) / previous) * 100
-            prefix = "+" if change > 0 else ""
-            return f"{prefix}{change:.1f}%"
+            if change > 20:
+                return f"[высокий рост +{change:.0f}%]"
+            elif change > 0:
+                return f"[рост +{change:.0f}%]"
+            elif change < -20:
+                return f"[сильное падение {change:.0f}%]"
+            elif change < 0:
+                return f"[падение {change:.0f}%]"
+            else:
+                return "[без изменений]"
 
+        # Основные метрики
         dashboard_text = f"""
 ДАШБОРД АДМИНИСТРАТОРА | {today.strftime('%d.%m.%Y')}
 
 СЕГОДНЯ:
-• Бронирования: {today_stats['total_bookings']} ({compare(today_stats['total_bookings'], yesterday_stats['total_bookings'])})
-• Выручка: {today_stats['total_revenue']} руб. ({compare(today_stats['total_revenue'], yesterday_stats['total_revenue'])})
-• Новые пользователи: {today_stats['new_users']} ({compare(today_stats['new_users'], yesterday_stats['new_users'])})
-• Активные экскурсии: {today_stats['active_excursions']}
-        """
+• Бронирования: {today_stats.get('total_bookings', 0)} {compare(today_stats.get('total_bookings', 0), yesterday_stats.get('total_bookings', 0))}
+• Выручка: {today_stats.get('total_revenue', 0)} руб. {compare(today_stats.get('total_revenue', 0), yesterday_stats.get('total_revenue', 0))}
+• Новые пользователи: {today_stats.get('new_users', 0)} {compare(today_stats.get('new_users', 0), yesterday_stats.get('new_users', 0))}
+• Активные экскурсии: {active_excursions}
+"""
 
-        await message.answer(dashboard_text)
+        # Срочные задачи/внимание
+        if urgent_bookings > 0 or free_captains > 0:
+            dashboard_text += "\nТРЕБУЕТ ВНИМАНИЯ:\n"
+            if urgent_bookings > 0:
+                dashboard_text += f"• Неоплаченные брони на ближайшие дни: {urgent_bookings}\n"
+            if free_captains > 0:
+                dashboard_text += f"• Капитанов без слотов: {free_captains}\n"
+
+        # Советы/рекомендации
+        advice = []
+        if today_stats.get('total_bookings', 0) < 3:
+            advice.append("Мало бронирований сегодня")
+        if urgent_bookings > 5:
+            advice.append("Много неоплаченных бронирований. Напомните клиентам.")
+        if free_captains > 3:
+            advice.append("Много свободных капитанов. Есть возможность добавить новые слоты.")
+
+        if advice:
+            dashboard_text += "\Рекомендации:\n" + "\n".join(f"• {item}" for item in advice)
+
+        await message.answer(dashboard_text, reply_markup=dashboard_quick_actions())
         logger.debug(f"Дашборд отправлен администратору {message.from_user.id}")
 
     except Exception as e:
         logger.error(f"Ошибка получения дашборда: {e}", exc_info=True)
         await message.answer("Ошибка при получении данных дашборда")
 
-
 @router.message(F.text == "Сегодня")
 async def statistics_today(message: Message):
-    """Статистика за сегодня с использованием StatisticsService"""
+    """Статистика за сегодня с использованием StatisticsManager"""
     logger.info(f"Администратор {message.from_user.id} запросил статистику за сегодня")
 
     try:
-        stats_service = StatisticsService()
         today = datetime.now()
-        stats = await stats_service.get_daily_stats(today)
 
-        # Также получаем дополнительные данные из БД для деталей
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-
-            # Детали по экскурсиям за сегодня
-            excursions_query = await session.execute(
-                select(
-                    Excursion.name,
-                    func.count(Booking.id).label('total_bookings'),
-                    func.sum(Booking.people_count).label('total_people')
-                ).select_from(Booking)
-                .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
-                .join(Excursion, ExcursionSlot.excursion_id == Excursion.id)
-                .where(func.date(Booking.created_at) == today.date())
-                .where(Booking.booking_status.in_(['active', 'confirmed', 'completed']))
-                .group_by(Excursion.name)
-            )
-            excursions_stats = excursions_query.all()
-
-            # Детали по капитанам за сегодня
-            captains_query = await session.execute(
-                select(
-                    User.full_name,
-                    func.count(Booking.id).label('total_bookings')
-                ).select_from(Booking)
-                .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
-                .join(User, ExcursionSlot.captain_id == User.id)
-                .where(func.date(Booking.created_at) == today.date())
-                .where(Booking.booking_status.in_(['active', 'confirmed', 'completed']))
-                .group_by(User.full_name)
-            )
-            captains_stats = captains_query.all()
+            stats_manager = StatisticsManager(session)
+            basic_stats = await stats_manager.get_daily_stats(today)
+            excursions_stats = await stats_manager.get_daily_excursions_stats(today)
+            captains_stats = await stats_manager.get_daily_captains_stats(today)
 
         response = f"СТАТИСТИКА ЗА СЕГОДНЯ ({today.strftime('%d.%m.%Y')})\n\n"
         response += f"Основные показатели:\n"
-        response += f"• Новые бронирования: {stats['total_bookings']}\n"
-        response += f"• Выручка: {stats['total_revenue']} руб.\n"
-        response += f"• Новые пользователи: {stats['new_users']}\n"
-        response += f"• Активные экскурсии: {stats['active_excursions']}\n\n"
+        response += f"• Новые бронирования: {basic_stats.get('total_bookings', 0)}\n"
+        response += f"• Выручка: {basic_stats.get('total_revenue', 0)} руб.\n"
+        response += f"• Новые пользователи: {basic_stats.get('new_users', 0)}\n\n"
 
         if excursions_stats:
             response += "По экскурсиям:\n"
@@ -144,40 +153,36 @@ async def statistics_today(message: Message):
         logger.error(f"Ошибка получения статистики за сегодня: {e}", exc_info=True)
         await message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
 
-
 @router.message(F.text == "Общая статистика")
 async def general_statistics(message: Message):
     """Общая статистика"""
     logger.info(f"Администратор {message.from_user.id} запросил общую статистику")
 
     try:
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=30)
+
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            stats_manager = StatisticsManager(session)
+            period_stats = await stats_manager.get_period_stats(start_date, end_date)
 
-            # Статистика за последние 30 дней
-            end_date = date.today()
-            start_date = end_date - timedelta(days=30)
-            logger.debug(f"Сбор статистики за период {start_date} - {end_date}")
-            stats = await db_manager.get_statistics(start_date, end_date)
+        response = (
+            f"Общая статистика за 30 дней:\n\n"
+            f"Всего бронирований: {period_stats.get('total_bookings', 0)}\n"
+            f"Всего участников: {period_stats.get('total_people', 0)}\n"
+            f"Общая выручка: {period_stats.get('total_revenue', 0)} руб.\n"
+            f"Новых пользователей: {period_stats.get('new_users', 0)}\n"
+            f"Проведено экскурсий: {period_stats.get('completed_excursions', 0)}\n"
+            f"Средний чек: {period_stats.get('avg_check', 0)} руб.\n"
+            f"Конверсия: {period_stats.get('conversion_rate', 0)}%\n"
+            f"Самый популярный маршрут: {period_stats.get('popular_excursion', 'Нет данных')}"
+        )
 
-            total_bookings = sum(exc['total_bookings'] for exc in stats['excursions'])
-            total_people = sum(exc['total_people'] for exc in stats['excursions'])
-            total_revenue = sum(exc['total_revenue'] for exc in stats['excursions'])
-
-            response = (
-                f"Общая статистика за 30 дней:\n\n"
-                f"Всего записей: {total_bookings}\n"
-                f"Всего человек: {total_people}\n"
-                f"Общий доход: {total_revenue} руб.\n"
-            )
-
-            logger.debug(f"Общая статистика: {total_bookings} записей, {total_people} человек, {total_revenue} руб.")
-            await message.answer(response, reply_markup=statistics_submenu())
+        await message.answer(response, reply_markup=statistics_submenu())
 
     except Exception as e:
         logger.error(f"Ошибка получения общей статистики: {e}", exc_info=True)
         await message.answer("Ошибка при получении статистики", reply_markup=bookings_submenu())
-
 
 @router.message(F.text == "За период")
 async def statistics_period_start(message: Message, state: FSMContext):
@@ -196,7 +201,6 @@ async def statistics_period_start(message: Message, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка начала выбора периода: {e}", exc_info=True)
 
-
 @router.message(AdminStates.waiting_for_statistics_period)
 async def statistics_period_process(message: Message, state: FSMContext):
     """Обработка введенного периода"""
@@ -204,28 +208,21 @@ async def statistics_period_process(message: Message, state: FSMContext):
 
     try:
         date_range = message.text.split('-')
-        start_date = datetime.strptime(date_range[0].strip(), "%d.%m.%Y").date()
-        end_date = datetime.strptime(date_range[1].strip(), "%d.%m.%Y").date()
+        start_datetime = datetime.strptime(date_range[0].strip(), "%d.%m.%Y")
+        end_datetime = datetime.strptime(date_range[1].strip(), "%d.%m.%Y")
 
-        logger.debug(f"Парсинг периода: {start_date} - {end_date}")
+        # Устанавливаем время для полного дня
+        end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+
+        logger.debug(f"Парсинг периода: {start_datetime.date()} - {end_datetime.date()}")
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            logger.debug(f"Запрос статистики за период {start_date} - {end_date}")
-            stats = await db_manager.get_statistics(start_date, end_date)
+            stats_manager = StatisticsManager(session)
+            logger.debug(f"Запрос статистики за период {start_datetime.date()} - {end_datetime.date()}")
 
-            response = f"Статистика за период {start_date.strftime('%d.%m.%Y')}-{end_date.strftime('%d.%m.%Y')}:\n\n"
+            report = await stats_manager.generate_period_report(start_datetime, end_datetime)
 
-            if stats['excursions']:
-                logger.debug(f"Найдено {len(stats['excursions'])} экскурсий за период")
-                response += "Экскурсии:\n"
-                for exc in stats['excursions']:
-                    response += f"- {exc['name']}: {exc['total_bookings']} записей, {exc['total_people']} человек, {exc['total_revenue']} руб.\n"
-
-            if not stats['excursions']:
-                response = f"За период {start_date.strftime('%d.%m.%Y')}-{end_date.strftime('%d.%m.%Y')} статистики нет"
-
-            await message.answer(response, reply_markup=statistics_submenu())
+            await message.answer(report, reply_markup=statistics_submenu())
             logger.debug(f"Статистика за период отправлена администратору {message.from_user.id}")
 
     except ValueError as e:
@@ -254,6 +251,96 @@ async def cancel_statistics_period(message: Message, state: FSMContext):
         logger.error(f"Ошибка отмены выбора периода: {e}", exc_info=True)
         await message.answer("Ошибка", reply_markup=admin_main_menu())
 
+@router.callback_query(F.data == "refresh_dashboard")
+async def refresh_dashboard_callback(callback: CallbackQuery):
+    """Обновить дашборд"""
+    await callback.answer()
+    await dashboard_handler(callback.message)
+
+@router.callback_query(F.data == "show_near_slots")
+async def show_near_slots_callback(callback: CallbackQuery):
+    """Показать ближайшие слоты"""
+    await callback.answer()
+
+    today = datetime.now()
+    three_days_later = today + timedelta(days=3)
+
+    try:
+        async with async_session() as session:
+            slot_repo = SlotRepository(session)
+            slots = await slot_repo.get_for_period(today, three_days_later)
+
+            if not slots:
+                await callback.message.answer("На ближайшие 3 дней нет слотов")
+                return
+
+            response = "Ближайшие слоты (3 дня):\n\n"
+            for slot in slots[:15]:  # Можно увеличить лимит
+                excursion_name = slot.excursion.name if slot.excursion else "Неизвестно"
+                time_str = slot.start_datetime.strftime('%d.%m %H:%M')
+                status = slot.status.value
+
+                response += f"• {time_str} - {excursion_name} ({status})\n"
+                if slot.captain:
+                    response += f"  Капитан: {slot.captain.full_name}\n"
+
+            if len(slots) > 15:
+                response += f"\n... и еще {len(slots) - 15} слотов"
+
+            await callback.message.answer(response)
+
+    except Exception as e:
+        logger.error(f"Ошибка показа ближайших слотов: {e}")
+        await callback.message.answer("Ошибка при получении слотов")
+
+@router.callback_query(F.data == "show_free_captains")
+async def show_free_captains_callback(callback: CallbackQuery):
+    """Показать свободных капитанов"""
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            stats_manager = StatisticsManager(session)
+            user_repo = UserRepository(session)
+
+            free_captains_count = await stats_manager.get_captains_without_slots()
+            all_captains = await user_repo.get_users_by_role(UserRole.captain)
+            response = f"Капитаны: {len(all_captains)} всего, {free_captains_count} свободны\n\n"
+
+            for captain in all_captains[:10]:  # Показываем первых 10
+                response += f"• {captain.full_name} ({captain.phone_number})\n"
+
+            if len(all_captains) > 10:
+                response += f"\n... и еще {len(all_captains) - 10} капитанов"
+
+            await callback.message.answer(response)
+
+    except Exception as e:
+        logger.error(f"Ошибка показа капитанов: {e}")
+        await callback.message.answer("Ошибка при получении данных")
+
+@router.callback_query(F.data == "show_unpaid_bookings")
+async def show_unpaid_bookings_callback(callback: CallbackQuery):
+    """Показать неоплаченные бронирования"""
+    await callback.answer()
+    await show_unpaid_bookings(callback.message)
+
+@router.callback_query(F.data == "show_new_clients")
+async def show_new_clients_callback(callback: CallbackQuery):
+    """Показать новых клиентов"""
+    await callback.answer()
+    await show_new_clients(callback.message)
+
+@router.callback_query(F.data == "show_active_bookings")
+async def show_active_bookings_callback(callback: CallbackQuery):
+    """Показать активные записи"""
+    await callback.answer()
+    await show_active_bookings(callback.message)
+
+
+
+
+
 @router.message(F.text == "По экскурсиям")
 async def statistics_by_excursions(message: Message):
     """Статистика по экскурсиям"""
@@ -275,7 +362,6 @@ async def statistics_by_captains(message: Message):
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
 
-
 @router.message(F.text == "Отказы и неявки")
 async def statistics_cancellations(message: Message):
     """Статистика отказов и неявок"""
@@ -285,52 +371,6 @@ async def statistics_cancellations(message: Message):
         await message.answer("Функция 'Отказы и неявки' в разработке")
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
-
-
-@router.message(AdminStates.waiting_for_statistics_period)
-async def statistics_period_process(message: Message, state: FSMContext):
-    """Обработка введенного периода с использованием StatisticsService"""
-    logger.info(f"Администратор {message.from_user.id} отправил период: {message.text}")
-
-    try:
-        # Проверяем специальные ключевые слова
-        if message.text.lower() == "неделя":
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=7)
-        elif message.text.lower() == "месяц":
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=30)
-        elif message.text.lower() == "квартал":
-            end_date = datetime.now()
-            start_date = end_date - timedelta(days=90)
-        else:
-            # Парсим период из формата дд.мм.гггг-дд.мм.гггг
-            date_range = message.text.split('-')
-            start_date = datetime.strptime(date_range[0].strip(), "%d.%m.%Y")
-            end_date = datetime.strptime(date_range[1].strip(), "%d.%m.%Y")
-
-        logger.debug(f"Парсинг периода: {start_date.date()} - {end_date.date()}")
-
-        # Используем StatisticsService для генерации отчета
-        stats_service = StatisticsService()
-        report = await stats_service.generate_period_report(start_date, end_date)
-
-        await message.answer(report, reply_markup=statistics_submenu())
-        logger.debug(f"Отчет за период отправлен администратору {message.from_user.id}")
-
-    except ValueError as e:
-        logger.warning(f"Неверный формат периода от пользователя {message.from_user.id}: {message.text}")
-        await message.answer("Ошибка формата. Используйте: дд.мм.гггг-дд.мм.гггг или ключевые слова: неделя, месяц, квартал")
-        return
-    except Exception as e:
-        logger.error(f"Ошибка обработки периода: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при генерации отчета")
-
-    await state.clear()
-    logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
-
-
-
 
 @router.callback_query(F.data.startswith("excursion_stats:"))
 async def excursion_stats_callback(callback: CallbackQuery):

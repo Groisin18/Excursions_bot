@@ -4,16 +4,19 @@ from aiogram.fsm.context import FSMContext
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from app.utils.validation import validate_excursion_duration, validate_amount_rub
-from app.admin_panel.states_adm import (NewExcursion, RedactExcursion)
-from app.database.requests import DatabaseManager
+from app.database.repositories.excursion_repository import ExcursionRepository
+from app.database.unit_of_work import UnitOfWork
 from app.database.session import async_session
+
+from app.admin_panel.states_adm import NewExcursion, RedactExcursion
 from app.admin_panel.keyboards_adm import (
     excursions_submenu, err_add_exc, exc_redaction_builder,
     excursions_list_keyboard, excursion_actions_menu, inline_end_add_exc,
     admin_main_menu,
 )
 from app.middlewares import AdminMiddleware
+
+from app.utils.validation import validate_excursion_duration, validate_amount_rub
 from app.utils.logging_config import get_logger
 
 
@@ -57,8 +60,8 @@ async def show_excursions(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursions = await db_manager.get_all_excursions()
+            exc_repo = ExcursionRepository(session)
+            excursions = await exc_repo.get_all()
 
             if not excursions:
                 logger.debug("Экскурсии не найдены в базе данных")
@@ -97,8 +100,8 @@ async def exc_actions(callback:CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursion = await db_manager.get_excursion_by_id(exc_id)
+            exc_repo = ExcursionRepository(session)
+            excursion = await exc_repo.get_by_id()
 
             if not excursion:
                 logger.warning(f"Экскурсия {exc_id} не найдена")
@@ -169,9 +172,9 @@ async def reg_ex_name(message: Message, state: FSMContext):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            exc_repo = ExcursionRepository(session)
             exc_name = message.text
-            excursion_exists = await db_manager.get_excursion_by_name(exc_name)
+            excursion_exists = await exc_repo.get_by_name(exc_name)
 
             if excursion_exists:
                 logger.warning(f"Попытка создания дублирующей экскурсии: '{exc_name}' (ID: {excursion_exists.id})")
@@ -260,15 +263,15 @@ async def reg_exc_base_price(message: Message, state: FSMContext):
 
         # Сохраняем в БД
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursion = await db_manager.create_excursion(
-                name=final_exc.name,
-                description=final_exc.description,
-                base_duration_minutes=final_exc.base_duration_minutes,
-                base_price=final_exc.base_price,
-                is_active=True
-            )
-
+            async with UnitOfWork(session) as uow:
+                excursion_repo = ExcursionRepository(uow.session)
+                excursion = await excursion_repo.create(
+                    name=final_exc.name,
+                    description=final_exc.description,
+                    base_duration_minutes=final_exc.base_duration_minutes,
+                    base_price=final_exc.base_price,
+                    is_active=True
+                )
             if excursion:
                 logger.info(f"Экскурсия создана: ID={excursion.id}, название='{excursion.name}'")
                 exc_id = excursion.id
@@ -313,8 +316,8 @@ async def redact_exc_data(callback:CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            exc = await db_manager.get_excursion_by_id(exc_id)
+            exc_repo = ExcursionRepository(session)
+            exc = await exc_repo.get_by_id(exc_id)
 
             if not exc:
                 logger.warning(f"Экскурсия {exc_id} не найдена для редактирования")
@@ -366,26 +369,36 @@ async def redact_name_two(message: Message, state: FSMContext):
         logger.debug(f"Проверка нового названия для экскурсии {exc_id}")
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            excursion_exists = await db_manager.get_excursion_by_name(new_name)
+            # Проверка на дубликат
+            exc_repo = ExcursionRepository(session)
+            excursion_exists = await exc_repo.get_by_name(new_name)
 
             if excursion_exists and excursion_exists.id != exc_id:
                 logger.warning(f"Попытка переименования в существующее название: '{new_name}' (ID: {excursion_exists.id})")
                 await message.answer(f'Экскурсия с названием "{new_name}" уже есть в базе данных (id:{excursion_exists.id}).\n\n'
                                     'Пожалуйста, ведите другое название')
-            else:
-                excursion = await db_manager.get_excursion_by_id(exc_id)
-                success = await db_manager.update_excursion_data(
+                return  # Выход без очистки состояния
+
+            # Обновление
+            async with UnitOfWork(session) as uow:
+                exc_repo_uow = ExcursionRepository(uow.session)
+                success = await exc_repo_uow.update(
                     exc_id=exc_id,
                     name=new_name
-                    )
+                )
 
-                if success:
-                    updated_exc = await db_manager.get_excursion_by_id(exc_id)
-                    logger.info(f"Название экскурсии {exc_id} обновлено на '{new_name}'")
+                if not success:
+                    logger.warning(f"Не удалось обновить название экскурсии {exc_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=inline_end_add_exc(exc_id))
+                    return
 
-                    await message.answer(
-                    "Название обновено!\n\n"
+                # Получаем обновленную экскурсию
+                updated_exc = await exc_repo_uow.get_by_id(exc_id)
+                logger.info(f"Название экскурсии {exc_id} обновлено на '{new_name}'")
+
+                await message.answer(
+                    "Название обновлено!\n\n"
                     "Актуальные данные экскурсии:\n"
                     f" - Название: {updated_exc.name}\n"
                     f' - Описание:\n"{updated_exc.description}"\n'
@@ -393,14 +406,10 @@ async def redact_name_two(message: Message, state: FSMContext):
                     f" - Стоимость: {updated_exc.base_price} рублей\n"
                     f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
                     reply_markup=inline_end_add_exc(exc_id)
-                    )
-                else:
-                    logger.warning(f"Не удалось обновить название экскурсии {exc_id}")
-                    await message.answer("Ошибка обновления",
-                                        reply_markup=inline_end_add_exc(exc_id))
+                )
 
-                await state.clear()
-                logger.debug(f"Состояние очищено для администратора {message.from_user.id}")
+        await state.clear()
+        logger.debug(f"Состояние очищено для администратора {message.from_user.id}")
 
     except ValueError as e:
         logger.error(f"Ошибка валидации при редактировании названия: {e}")
@@ -437,33 +446,35 @@ async def redact_description_two(message: Message, state: FSMContext):
         exc_id = data.get('excursion_id')
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            success = await db_manager.update_excursion_data(
-                exc_id=exc_id,
-                description=new_description
+            async with UnitOfWork(session) as uow:
+                exc_repo = ExcursionRepository(uow.session)
+                success = await exc_repo.update(
+                    exc_id=exc_id,
+                    description=new_description
                 )
 
-            if success:
-                updated_exc = await db_manager.get_excursion_by_id(exc_id)
+                if not success:
+                    logger.warning(f"Не удалось обновить описание экскурсии {exc_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=inline_end_add_exc(exc_id))
+                    return
+
+                updated_exc = await exc_repo.get_by_id(exc_id)
                 logger.info(f"Описание экскурсии {exc_id} обновлено")
 
                 await message.answer(
-                "Описание обновено!\n\n"
-                "Актуальные данные экскурсии:\n"
-                f" - Название: {updated_exc.name}\n"
-                f' - Описание:\n"{updated_exc.description}"\n'
-                f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
-                f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                reply_markup=inline_end_add_exc(exc_id)
+                    "Описание обновлено!\n\n"
+                    "Актуальные данные экскурсии:\n"
+                    f" - Название: {updated_exc.name}\n"
+                    f' - Описание:\n"{updated_exc.description}"\n'
+                    f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
+                    f" - Стоимость: {updated_exc.base_price} рублей\n"
+                    f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
+                    reply_markup=inline_end_add_exc(exc_id)
                 )
-            else:
-                logger.warning(f"Не удалось обновить описание экскурсии {exc_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=inline_end_add_exc(exc_id))
 
         await state.clear()
-        logger.debug(f"Состояние очищено для администратора {message.from_user.id}")
+        logger.debug(f"Состояние очищено для администратор {message.from_user.id}")
 
     except ValueError as e:
         logger.error(f"Ошибка валидации при редактировании описания: {e}")
@@ -502,30 +513,32 @@ async def redact_duration_two(message: Message, state: FSMContext):
         exc_id = data.get('excursion_id')
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            success = await db_manager.update_excursion_data(
-                exc_id=exc_id,
-                base_duration_minutes=new_duration
+            async with UnitOfWork(session) as uow:
+                exc_repo = ExcursionRepository(uow.session)
+                success = await exc_repo.update(
+                    exc_id=exc_id,
+                    base_duration_minutes=new_duration
                 )
 
-            if success:
-                updated_exc = await db_manager.get_excursion_by_id(exc_id)
+                if not success:
+                    logger.warning(f"Не удалось обновить продолжительность экскурсии {exc_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=inline_end_add_exc(exc_id))
+                    return
+
+                updated_exc = await exc_repo.get_by_id(exc_id)
                 logger.info(f"Продолжительность экскурсии {exc_id} обновлена на {new_duration} минут")
 
                 await message.answer(
-                "Продолжительность обновена!\n\n"
-                "Актуальные данные экскурсии:\n"
-                f" - Название: {updated_exc.name}\n"
-                f' - Описание:\n"{updated_exc.description}"\n'
-                f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
-                f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                reply_markup=inline_end_add_exc(exc_id)
+                    "Продолжительность обновлена!\n\n"
+                    "Актуальные данные экскурсии:\n"
+                    f" - Название: {updated_exc.name}\n"
+                    f' - Описание:\n"{updated_exc.description}"\n'
+                    f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
+                    f" - Стоимость: {updated_exc.base_price} рублей\n"
+                    f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
+                    reply_markup=inline_end_add_exc(exc_id)
                 )
-            else:
-                logger.warning(f"Не удалось обновить продолжительность экскурсии {exc_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=inline_end_add_exc(exc_id))
 
         await state.clear()
         logger.debug(f"Состояние очищено для администратора {message.from_user.id}")
@@ -567,33 +580,35 @@ async def redact_price_two(message: Message, state: FSMContext):
         exc_id = data.get('excursion_id')
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            success = await db_manager.update_excursion_data(
-                exc_id=exc_id,
-                base_price=new_price
+            async with UnitOfWork(session) as uow:
+                exc_repo = ExcursionRepository(uow.session)
+                success = await exc_repo.update(
+                    exc_id=exc_id,
+                    base_price=new_price
                 )
 
-            if success:
-                updated_exc = await db_manager.get_excursion_by_id(exc_id)
+                if not success:
+                    logger.warning(f"Не удалось обновить стоимость экскурсии {exc_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=inline_end_add_exc(exc_id))
+                    return
+
+                updated_exc = await exc_repo.get_by_id(exc_id)
                 logger.info(f"Стоимость экскурсии {exc_id} обновлена на {new_price} руб.")
 
                 await message.answer(
-                "Стоимость обновена!\n\n"
-                "Актуальные данные экскурсии:\n"
-                f" - Название: {updated_exc.name}\n"
-                f' - Описание:\n"{updated_exc.description}"\n'
-                f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
-                f" - Стоимость: {updated_exc.base_price} рублей\n"
-                f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                reply_markup=inline_end_add_exc(exc_id)
+                    "Стоимость обновлена!\n\n"
+                    "Актуальные данные экскурсии:\n"
+                    f" - Название: {updated_exc.name}\n"
+                    f' - Описание:\n"{updated_exc.description}"\n'
+                    f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
+                    f" - Стоимость: {updated_exc.base_price} рублей\n"
+                    f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
+                    reply_markup=inline_end_add_exc(exc_id)
                 )
-            else:
-                logger.warning(f"Не удалось обновить стоимость экскурсии {exc_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=inline_end_add_exc(exc_id))
 
         await state.clear()
-        logger.debug(f"Состояние очищено для администраторa {message.from_user.id}")
+        logger.debug(f"Состояние очищено для администратора {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидная стоимость от администратора {message.from_user.id}: {message.text}")

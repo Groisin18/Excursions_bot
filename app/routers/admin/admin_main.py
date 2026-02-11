@@ -14,8 +14,8 @@ from app.admin_panel.keyboards_adm import (
     bookings_submenu, statistics_submenu, finances_submenu, notifications_submenu,
     settings_submenu
 )
-from app.database.requests import DatabaseManager
 from app.database.models import User
+from app.database.repositories.user_repository import UserRepository
 from app.database.session import engine, async_session
 
 from app.middlewares import AdminMiddleware
@@ -266,8 +266,8 @@ async def promote_to_admin_command(message: Message):
             logger.info(f"Поиск пользователя по телефону {masked_phone} для изменения статуса")
 
             async with async_session() as session:
-                db_manager = DatabaseManager(session)
-                to_admin_user = await db_manager.get_user_by_phone(target_phone)
+                user_repo = UserRepository(session)
+                to_admin_user = await user_repo.get_by_phone(target_phone)
 
             if to_admin_user is None:
                 logger.warning(f"Пользователь с телефоном {masked_phone} не найден")
@@ -315,8 +315,8 @@ async def promote_to_admin(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            target_user = await db_manager.get_user_by_telegram_id(target_user_id)
+            user_repo = UserRepository(session)
+            target_user = await user_repo.get_by_telegram_id(target_user_id)
 
             if not target_user:
                 logger.error(f"Пользователь {target_user_id} не найден для повышения")
@@ -324,7 +324,7 @@ async def promote_to_admin(callback: CallbackQuery):
                 return
 
             user_name = target_user.full_name
-            success = await db_manager.promote_to_admin(target_user)
+            success = await user_repo.promote_to_admin(target_user)
 
             if success:
                 logger.info(f"Пользователь {target_user_id} ({user_name}) успешно повышен до администратора")
@@ -354,8 +354,8 @@ async def promote_to_captain(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            target_user = await db_manager.get_user_by_telegram_id(target_user_id)
+            user_repo = UserRepository(session)
+            target_user = await user_repo.get_by_telegram_id(target_user_id)
 
             if not target_user:
                 logger.error(f"Пользователь {target_user_id} не найден для повышения")
@@ -363,7 +363,7 @@ async def promote_to_captain(callback: CallbackQuery):
                 return
 
             user_name = target_user.full_name
-            success = await db_manager.promote_to_captain(target_user)
+            success = await user_repo.promote_to_captain(target_user)
 
             if success:
                 logger.info(f"Пользователь {target_user_id} ({user_name}) успешно повышен до капитана")
@@ -393,8 +393,8 @@ async def promote_to_client(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            target_user = await db_manager.get_user_by_telegram_id(target_user_id)
+            user_repo = UserRepository(session)
+            target_user = await user_repo.get_by_telegram_id(target_user_id)
 
             if not target_user:
                 logger.error(f"Пользователь {target_user_id} не найден для понижения")
@@ -402,7 +402,7 @@ async def promote_to_client(callback: CallbackQuery):
                 return
 
             user_name = target_user.full_name
-            success = await db_manager.promote_to_client(target_user)
+            success = await user_repo.promote_to_client(target_user)
 
             if success:
                 logger.info(f"Пользователь {target_user_id} ({user_name}) успешно понижен до клиента")

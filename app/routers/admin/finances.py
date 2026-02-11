@@ -1,15 +1,9 @@
 from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
-from datetime import datetime
-from sqlalchemy import select
-from sqlalchemy.orm import selectinload
 
-
-from app.database.requests import DatabaseManager
-from app.database.models import (
-    Booking, Payment,
-    PaymentStatus, PaymentMethod, YooKassaStatus
-)
+from app.database.unit_of_work import UnitOfWork
+from app.database.repositories import PaymentRepository, BookingRepository
+from app.database.models import PaymentStatus, YooKassaStatus
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
@@ -33,19 +27,8 @@ async def show_online_payments(message: Message):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-
-            today = datetime.now().date()
-            logger.debug(f"Поиск онлайн-платежей за {today}")
-
-            result = await session.execute(
-                select(Payment)
-                .options(selectinload(Payment.booking).selectinload(Booking.client))
-                .where(Payment.payment_method == PaymentMethod.online)
-                .where(Payment.created_at >= today)
-                .order_by(Payment.created_at.desc())
-            )
-            payments = result.scalars().all()
+            payment_repo = PaymentRepository(session)
+            payments = await payment_repo.get_today_online_payments()
 
             if not payments:
                 logger.debug("Онлайн-оплат за сегодня не найдено")
@@ -76,7 +59,6 @@ async def show_online_payments(message: Message):
     except Exception as e:
         logger.error(f"Ошибка получения онлайн-платежей: {e}", exc_info=True)
         await message.answer("Ошибка при получении списка платежей")
-
 
 @router.message(F.text == "Сводка и текущие платежи")
 async def finances_summary(message: Message):
@@ -132,18 +114,19 @@ async def mark_paid(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            success = await db_manager.update_booking_status(
-                booking_id,
-                payment_status=PaymentStatus.paid
-            )
+            async with UnitOfWork(session) as uow:
+                booking_repo = BookingRepository(uow.session)
+                success = await booking_repo.update_status(
+                    booking_id,
+                    payment_status=PaymentStatus.paid
+                )
 
-            if success:
-                logger.info(f"Бронирование {booking_id} отмечено как оплаченное")
-                await callback.message.edit_text("Оплата подтверждена")
-            else:
-                logger.warning(f"Не удалось отметить оплату для бронирования {booking_id}")
-                await callback.message.edit_text("Ошибка при обновлении статуса")
+                if success:
+                    logger.info(f"Бронирование {booking_id} отмечено как оплаченное")
+                    await callback.message.edit_text("Оплата подтверждена")
+                else:
+                    logger.warning(f"Не удалось отметить оплату для бронирования {booking_id}")
+                    await callback.message.edit_text("Ошибка при обновлении статуса")
 
     except Exception as e:
         logger.error(f"Ошибка при отметке оплаты для бронирования {booking_id}: {e}", exc_info=True)

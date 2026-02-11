@@ -19,7 +19,7 @@ async def is_user_admin(telegram_id: int) -> bool:
     try:
         async with async_session() as session:
             user_repo = UserRepository(session)
-            user = await user_repo.get_user_by_telegram_id(telegram_id)
+            user = await user_repo.get_by_telegram_id(telegram_id)
 
             if user is None:
                 logger.debug(f"Пользователь {telegram_id} не найден в базе")

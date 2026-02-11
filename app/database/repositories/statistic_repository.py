@@ -106,6 +106,22 @@ class StatisticsRepository(BaseRepository):
             self.logger.error(f"Ошибка получения новых пользователей за период: {e}")
             return 0
 
+    async def get_period_total_people(self, start_date: datetime, end_date: datetime) -> int:
+        """Общее количество участников экскурсий за период (взрослые + дети)"""
+        try:
+            query = select(func.sum(Booking.people_count)).where(
+                and_(
+                    Booking.created_at >= start_date,
+                    Booking.created_at <= end_date,
+                    Booking.booking_status.in_(['active', 'confirmed', 'completed'])
+                )
+            )
+            result = await self._execute_query(query)
+            return result.scalar() or 0
+        except Exception as e:
+            self.logger.error(f"Ошибка получения общего количества людей: {e}")
+            return 0
+
     async def get_period_completed_excursions(self, start_date: datetime, end_date: datetime) -> int:
         """Завершенные экскурсии за период"""
         try:

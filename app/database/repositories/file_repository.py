@@ -1,7 +1,6 @@
 """Репозиторий для работы с файлами Telegram (CRUD операции)"""
 
 from typing import Optional, List
-from sqlalchemy import select, delete, exists
 
 from .base import BaseRepository
 from app.database.models import TelegramFile, FileType
@@ -77,6 +76,14 @@ class FileRepository(BaseRepository):
         except Exception as e:
             self.logger.error(f"Ошибка получения записи файла для типа {file_type.value}: {e}")
             return None
+
+    async def get_by_id_and_type(self, file_id: int, file_type: FileType) -> Optional[TelegramFile]:
+        """Получить файл по ID и типу"""
+        return await self._get_one(
+            TelegramFile,
+            TelegramFile.id == file_id,
+            TelegramFile.file_type == file_type
+        )
 
     async def file_exists(self, file_type: FileType) -> bool:
         """Проверить существование файла по типу"""
