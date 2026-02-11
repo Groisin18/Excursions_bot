@@ -229,8 +229,8 @@ def public_schedule_options() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
 
     builder.add(
-        InlineKeyboardButton(text="На сегодня", callback_data="public_schedule_today"),
-        InlineKeyboardButton(text="На завтра", callback_data="public_schedule_tomorrow"),
+        InlineKeyboardButton(text="На сегодня", callback_data="public_schedule:today"),
+        InlineKeyboardButton(text="На завтра", callback_data="public_schedule:tomorrow"),
         InlineKeyboardButton(text="На неделю вперед", callback_data="public_schedule_week"),
         InlineKeyboardButton(text="На месяц вперед", callback_data="public_schedule_month"),
         InlineKeyboardButton(text="Выбрать дату", callback_data="public_schedule_by_date"),

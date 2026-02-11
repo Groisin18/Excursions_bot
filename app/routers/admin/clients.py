@@ -152,8 +152,6 @@ async def edit_client(message: Message):
         logger.error(f"Ошибка: {e}", exc_info=True)
 
 
-
-
 @router.callback_query(F.data.startswith("arrived:"))
 async def mark_arrived(callback: CallbackQuery):
     """Отметить прибытие клиента"""

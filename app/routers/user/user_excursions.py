@@ -5,21 +5,24 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 import app.user_panel.keyboards as kb
+from app.user_panel.states import UserScheduleStates
 
-from app.database.requests import DatabaseManager
-from app.database.models import SlotStatus
+from app.database.repositories import ExcursionRepository
+from app.database.managers import SlotManager
 from app.database.session import async_session
+
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_name
 from app.utils.validation import validate_slot_date
-from app.user_panel.states import UserScheduleStates
 
 
 router = Router(name="user_excursions")
 
 logger = get_logger(__name__)
 
+
 # ===== НАЧАЛЬНОЕ МЕНЮ ВЫБОРА РАСПИСАНИЯ =====
+
 
 @router.message(F.text == 'Наши экскурсии')
 async def excursions(message: Message):
@@ -27,8 +30,8 @@ async def excursions(message: Message):
     logger.info(f"Пользователь {message.from_user.id} запросил список экскурсий")
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
-            excursions_list = await db.get_all_excursions(active_only=True)
+            exc_repo = ExcursionRepository(session)
+            excursions_list = await exc_repo.get_all(active_only=True)
             if not excursions_list:
                 logger.warning(f"Нет доступных экскурсий для пользователя {message.from_user.id}")
                 await message.answer(
@@ -89,8 +92,8 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
 
         # Просто отправляем новое сообщение со списком экскурсий
         async with async_session() as session:
-            db = DatabaseManager(session)
-            excursions_list = await db.get_all_excursions(active_only=True)
+            exc_repo = ExcursionRepository(session)
+            excursions_list = await exc_repo.get_all(active_only=True)
 
             if not excursions_list:
                 await callback.message.answer(
@@ -131,54 +134,12 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
 
 # ===== ПРОСМОТР РАСПИСАНИЯ ПО ДАТЕ =====
 
-async def format_public_schedule_for_date(
-    target_date: date,
-    slots: list,
-    db_manager: DatabaseManager
-) -> str:
-    """Форматировать расписание для пользователей"""
-
-
-    response = f"Расписание на {target_date.strftime('%d.%m.%Y')} ({get_weekday_name(target_date)}):\n\n"
-
-    for slot in slots:
-        excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
-
-        # Время
-        start_time = slot.start_datetime.strftime("%H:%M")
-        end_time = slot.end_datetime.strftime("%H:%M")
-
-        # Свободные места
-        booked = await db_manager.get_booked_places_for_slot(slot.id)
-        free_places = slot.max_people - booked
-
-        if free_places > 0:
-            places_text = f"({free_places} мест)"
-        else:
-            places_text = "(Мест нет)"
-
-        response += f"• {start_time}-{end_time} {excursion_name} {places_text}\n"
-
-    response += "\nНажмите на экскурсию, чтобы увидеть детали и записаться"
-
-    return response
 
 async def show_date_schedule(message_or_callback, target_date: date, is_callback: bool = False):
-    """
-    Общая функция показа расписания на дату
-
-    Args:
-        message_or_callback: объект Message или CallbackQuery
-        target_date: дата для показа
-        is_callback: True если это callback, False если message
-    """
     try:
-        date_from = datetime.combine(target_date, datetime.min.time())
-        date_to = datetime.combine(target_date, datetime.max.time())
-
         async with async_session() as session:
-            db = DatabaseManager(session)
-            slots = await db.get_public_schedule_for_period(date_from, date_to)
+            slot_manager = SlotManager(session)
+            formatted_text, slots = await slot_manager.get_date_schedule(target_date)
 
             if not slots:
                 if is_callback:
@@ -194,14 +155,13 @@ async def show_date_schedule(message_or_callback, target_date: date, is_callback
                     )
                 return
 
-            text = await format_public_schedule_for_date(target_date, slots, db)
             keyboard = kb.public_schedule_date_menu(slots, target_date)
 
             if is_callback:
-                await message_or_callback.message.answer(text, reply_markup=keyboard)
+                await message_or_callback.message.answer(formatted_text, reply_markup=keyboard)
                 await message_or_callback.answer()
             else:
-                await message_or_callback.answer(text, reply_markup=keyboard)
+                await message_or_callback.answer(formatted_text, reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания: {e}", exc_info=True)
@@ -210,15 +170,39 @@ async def show_date_schedule(message_or_callback, target_date: date, is_callback
         else:
             await message_or_callback.answer("Произошла ошибка при получении расписания")
 
-@router.callback_query(F.data == "public_schedule_today")
-async def public_schedule_today(callback: CallbackQuery):
-    """Показать расписание на сегодня"""
-    await show_date_schedule(callback, datetime.now().date(), is_callback=True)
 
-@router.callback_query(F.data == "public_schedule_tomorrow")
-async def public_schedule_tomorrow(callback: CallbackQuery):
-    """Показать расписание на завтра"""
-    await show_date_schedule(callback, datetime.now().date() + timedelta(days=1), is_callback=True)
+@router.callback_query(F.data.startswith("public_schedule:"))
+async def handle_public_schedule(callback: CallbackQuery):
+    """Обработчик для публичного расписания (сегодня/завтра)"""
+    try:
+        await callback.answer()
+
+        if callback.data == "public_schedule:today":
+            target_date = datetime.now().date()
+            date_name = "сегодня"
+        elif callback.data == "public_schedule:tomorrow":
+            target_date = datetime.now().date() + timedelta(days=1)
+            date_name = "завтра"
+        else:
+            return
+
+        async with async_session() as session:
+            slot_manager = SlotManager(session)
+            formatted_text, slots = await slot_manager.get_date_schedule(target_date)
+
+            if not slots:
+                await callback.message.answer(
+                    f"На {date_name} ({target_date.strftime('%d.%m.%Y')}) нет доступных экскурсий.",
+                    reply_markup=kb.public_schedule_options()
+                )
+                return
+
+            keyboard = kb.public_schedule_date_menu(slots, target_date)
+            await callback.message.answer(formatted_text, reply_markup=keyboard)
+
+    except Exception as e:
+        logger.error(f"Ошибка показа расписания ({callback.data}): {e}", exc_info=True)
+        await callback.answer("Ошибка загрузки расписания", show_alert=True)
 
 @router.callback_query(F.data == "public_schedule_week")
 async def public_schedule_week(callback: CallbackQuery):
@@ -226,54 +210,16 @@ async def public_schedule_week(callback: CallbackQuery):
     try:
         await callback.answer()
 
-        date_from = datetime.now()
-        date_to = date_from + timedelta(days=7)
-
         async with async_session() as session:
-            db = DatabaseManager(session)
-            slots = await db.get_public_schedule_for_period(date_from, date_to)
+            slot_manager = SlotManager(session)
+            text, slots_by_date = await slot_manager.get_week_schedule()
 
-            if not slots:
+            if not slots_by_date:
                 await callback.message.answer(
                     "На ближайшую неделю нет доступных экскурсий.",
                     reply_markup=kb.public_schedule_options()
                 )
                 return
-
-            # Группируем по датам
-            slots_by_date = {}
-            for slot in slots:
-                date_key = slot.start_datetime.date()
-                if date_key not in slots_by_date:
-                    slots_by_date[date_key] = []
-                slots_by_date[date_key].append(slot)
-
-            # Формируем текст
-            text = "Расписание на неделю:\n\n"
-
-            for date_key in sorted(slots_by_date.keys()):
-                date_slots = slots_by_date[date_key]
-                text += f"{date_key.strftime('%d.%m.%Y')} ({get_weekday_name(date_key)}):\n"
-
-                for slot in date_slots:
-                    excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
-
-                    # Время
-                    start_time = slot.start_datetime.strftime("%H:%M")
-                    end_time = slot.end_datetime.strftime("%H:%M")
-
-                    # Свободные места
-                    booked = await db.get_booked_places_for_slot(slot.id)
-                    free_places = slot.max_people - booked
-
-                    if free_places > 0:
-                        places_text = f"({free_places} мест)"
-                    else:
-                        places_text = "(Мест нет)"
-
-                    text += f"• {start_time}-{end_time} {excursion_name} {places_text}\n"
-
-                text += "\n"
 
             keyboard = kb.public_schedule_week_menu(slots_by_date)
             await callback.message.answer(text, reply_markup=keyboard)
@@ -288,60 +234,16 @@ async def public_schedule_month(callback: CallbackQuery):
     try:
         await callback.answer()
 
-        date_from = datetime.now()
-        date_to = date_from + timedelta(days=30)
-
         async with async_session() as session:
-            db = DatabaseManager(session)
-            slots = await db.get_public_schedule_for_period(date_from, date_to)
+            slot_manager = SlotManager(session)
+            text, slots_by_date = await slot_manager.get_month_schedule()
 
-            if not slots:
+            if not slots_by_date:
                 await callback.message.answer(
                     "На ближайший месяц нет доступных экскурсий.",
                     reply_markup=kb.public_schedule_options()
                 )
                 return
-
-            # Группируем по датам
-            slots_by_date = {}
-            for slot in slots:
-                date_key = slot.start_datetime.date()
-                if date_key not in slots_by_date:
-                    slots_by_date[date_key] = []
-                slots_by_date[date_key].append(slot)
-
-
-            text = "Расписание на месяц:\n\n"
-
-            dates_to_show = sorted(slots_by_date.keys())
-
-            for date_key in dates_to_show:
-                date_slots = slots_by_date[date_key]
-                text += f"{date_key.strftime('%d.%m.%Y')} ({get_weekday_name(date_key)}):\n"
-
-                # Показываем только первые 3 слота на день
-                for slot in date_slots[:3]:
-                    excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
-
-                    # Время
-                    start_time = slot.start_datetime.strftime("%H:%M")
-                    end_time = slot.end_datetime.strftime("%H:%M")
-
-                    # Свободные места
-                    booked = await db.get_booked_places_for_slot(slot.id)
-                    free_places = slot.max_people - booked
-
-                    if free_places > 0:
-                        places_text = f"({free_places} мест)"
-                    else:
-                        places_text = "(Мест нет)"
-
-                    text += f"• {start_time}-{end_time} {excursion_name} {places_text}\n"
-
-                if len(date_slots) > 3:
-                    text += f"  ... и еще {len(date_slots) - 3} экскурсий\n"
-
-                text += "\n"
 
             keyboard = kb.public_schedule_month_menu(slots_by_date)
             await callback.message.answer(text, reply_markup=keyboard)
@@ -388,8 +290,21 @@ async def handle_public_schedule_date(message: Message, state: FSMContext):
             await message.answer("Нельзя посмотреть расписание на прошедшую дату.")
             return
 
-        # Используем общую функцию
-        await show_date_schedule(message, target_date, is_callback=False)
+        async with async_session() as session:
+            slot_manager = SlotManager(session)
+            formatted_text, slots = await slot_manager.get_date_schedule(target_date)
+
+            if not slots:
+                await message.answer(
+                    f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
+                    reply_markup=kb.public_schedule_options()
+                )
+                await state.clear()
+                return
+
+            keyboard = kb.public_schedule_date_menu(slots, target_date)
+            await message.answer(formatted_text, reply_markup=keyboard)
+
         await state.clear()
 
     except Exception as e:
@@ -420,6 +335,7 @@ async def public_back_to_schedule_options(callback: CallbackQuery):
 
 # ===== ПРОСМОТР РАСПИСАНИЯ ПО ВИДУ ЭКСКУРСИИ =====
 
+
 @router.callback_query(F.data.startswith("public_exc_detail:"))
 async def show_excursion_public_detail(callback: CallbackQuery):
     """Показать детали экскурсии для пользователя"""
@@ -427,8 +343,8 @@ async def show_excursion_public_detail(callback: CallbackQuery):
         exc_id = int(callback.data.split(":")[-1])
 
         async with async_session() as session:
-            db = DatabaseManager(session)
-            excursion = await db.get_excursion_by_id(exc_id)
+            exc_repo = ExcursionRepository(session)
+            excursion = await exc_repo.get_by_id(exc_id)
 
             if not excursion:
                 await callback.answer("Экскурсия не найдена", show_alert=True)
@@ -462,23 +378,14 @@ async def show_excursion_schedule(callback: CallbackQuery):
         await callback.answer()
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            slot_manager = SlotManager(session)
+            excursion, text, slots_by_date = await slot_manager.get_excursion_schedule_period(exc_id, days_ahead=30)
 
-            # Получаем экскурсию
-            excursion = await db.get_excursion_by_id(exc_id)
             if not excursion:
                 await callback.answer("Экскурсия не найдена", show_alert=True)
                 return
 
-            # Получаем слоты на ближайшие 30 дней
-            date_from = datetime.now()
-            date_to = date_from + timedelta(days=30)
-
-            slots = await db.get_public_schedule_for_period(date_from, date_to)
-            # Фильтруем по конкретной экскурсии
-            slots = [s for s in slots if s.excursion_id == exc_id]
-
-            if not slots:
+            if not slots_by_date:
                 text = f"{excursion.name}\n"
                 text += f"\nНа ближайшие 30 дней нет доступных записей на экскурсию '{excursion.name}'.\n"
                 text += "Пожалуйста, проверьте позже или выберите другую экскурсию."
@@ -488,36 +395,12 @@ async def show_excursion_schedule(callback: CallbackQuery):
                 )
                 return
 
-            # Группируем по датам
-            slots_by_date = {}
-            for slot in slots:
-                date_key = slot.start_datetime.date()
-                if date_key not in slots_by_date:
-                    slots_by_date[date_key] = []
-                slots_by_date[date_key].append(slot)
+            # Получаем все слоты для клавиатуры
+            all_slots = []
+            for date_slots in slots_by_date.values():
+                all_slots.extend(date_slots)
 
-            text = f"{excursion.name}\n"
-
-            for date_key in sorted(slots_by_date.keys()):
-                date_slots = slots_by_date[date_key]
-                text += f"\n{date_key.strftime('%d.%m.%Y')} ({get_weekday_name(date_key)}):\n"
-
-                for slot in date_slots:
-                    start_time = slot.start_datetime.strftime("%H:%M")
-                    end_time = slot.end_datetime.strftime("%H:%M")
-
-                    # Свободные места
-                    booked = await db.get_booked_places_for_slot(slot.id)
-                    free_places = slot.max_people - booked
-
-                    if free_places > 0:
-                        places_text = f"({free_places} мест)"
-                    else:
-                        places_text = "(Мест нет)"
-
-                    text += f"• {start_time}-{end_time} {places_text}\n"
-
-            keyboard = await kb.get_excursion_schedule_keyboard(slots)
+            keyboard = await kb.get_excursion_schedule_keyboard(all_slots)
             await callback.message.answer(text, reply_markup=keyboard)
 
     except Exception as e:
@@ -528,55 +411,22 @@ async def show_excursion_schedule(callback: CallbackQuery):
 async def public_view_exc_date(callback: CallbackQuery):
     """Показать слоты конкретной экскурсии на выбранную дату"""
     try:
-        # Формат: public_view_exc_date:{date_str}:{exc_id}
         parts = callback.data.split(":")
         date_str = parts[1]
         exc_id = int(parts[2])
-
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
 
-        date_from = datetime.combine(target_date, datetime.min.time())
-        date_to = datetime.combine(target_date, datetime.max.time())
-
         async with async_session() as session:
-            db = DatabaseManager(session)
+            slot_manager = SlotManager(session)
+            excursion, text, slots = await slot_manager.get_excursion_slots_for_date(exc_id, target_date)
 
-            # Получаем все слоты на дату
-            slots = await db.get_public_schedule_for_period(date_from, date_to)
-            # Фильтруем по экскурсии
-            slots = [s for s in slots if s.excursion_id == exc_id]
+            if not excursion:
+                await callback.answer("Экскурсия не найдена", show_alert=True)
+                return
 
             if not slots:
                 await callback.answer("На эту дату нет слотов для этой экскурсии", show_alert=True)
                 return
-
-            excursion = await db.get_excursion_by_id(exc_id)
-
-            # Формируем текст
-            from app.utils.datetime_utils import get_weekday_name
-
-            text = (
-                f"Экскурсия: {excursion.name if excursion else 'Экскурсия'}\n"
-                f"Дата: {target_date.strftime('%d.%m.%Y')} ({get_weekday_name(target_date)})\n\n"
-            )
-
-            for slot in slots:
-                start_time = slot.start_datetime.strftime("%H:%M")
-                end_time = slot.end_datetime.strftime("%H:%M")
-
-                booked = await db.get_booked_places_for_slot(slot.id)
-                free_places = slot.max_people - booked
-
-                current_weight = await db.get_current_weight_for_slot(slot.id)
-                free_weight = slot.max_weight - current_weight
-
-                if free_places > 0 and free_weight > 0:
-                    places_text = f"({free_places} мест, ограничение по весу - не более {free_weight} кг)"
-                else:
-                    places_text = "(Мест нет)"
-
-                text += f"• {start_time}-{end_time} {places_text}\n"
-                text += "\nНажмите на экскурсию, чтобы увидеть детали и записаться"
 
             keyboard = kb.public_schedule_date_menu(slots, target_date)
             await callback.message.answer(text, reply_markup=keyboard)
@@ -594,15 +444,13 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
 
     try:
         slot_id = int(callback.data.split(":")[-1])
-
         await callback.answer()
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            slot_manager = SlotManager(session)
+            slot_info = await slot_manager.get_slot_full_info(slot_id)
 
-            # Получаем слот с загруженными данными
-            slot = await db.get_slot_by_id(slot_id)
-            if not slot:
+            if not slot_info or not slot_info.get('slot'):
                 logger.warning(f"Слот {slot_id} не найден для пользователя {user_telegram_id}")
                 await callback.message.answer(
                     "Слот не найден. Возможно, он был удален или изменен.",
@@ -610,14 +458,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            if slot.status != SlotStatus.scheduled:
-                logger.warning(f"Слот {slot_id} не доступен для бронирования. Статус: {slot.status}")
-                await callback.message.answer(
-                    "Этот слот недоступен для записи.",
-                    reply_markup=kb.public_schedule_options()
-                )
-                return
-
+            slot = slot_info['slot']
             if not slot.excursion:
                 logger.error(f"Экскурсия не найдена для слота {slot.id}")
                 await callback.message.answer(
@@ -626,47 +467,55 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            booked_places = await db.get_booked_places_for_slot(slot.id)
-            free_places = slot.max_people - booked_places
-            current_weight = await db.get_current_weight_for_slot(slot.id)
-            available_weight = slot.max_weight - current_weight
+            if not slot_info.get('is_available', False):
+                logger.warning(f"Слот {slot_id} не доступен для бронирования. Статус: {slot.status}")
+                await callback.message.answer(
+                    "Этот слот недоступен для записи.",
+                    reply_markup=kb.public_schedule_options()
+                )
+                return
 
             weekday = get_weekday_name(slot.start_datetime)
 
-            # Формируем подробное описание
-            slot_info = (
-                f"<b>Детали экскурсии</b>\n\n"
-                f"<b>Дата:</b> {slot.start_datetime.strftime('%d.%m.%Y')} ({weekday})\n"
-                f"<b>Время:</b> {slot.start_datetime.strftime('%H:%M')}\n"
-                f"<b>Продолжительность:</b> {slot.excursion.base_duration_minutes} мин.\n"
-                f"<b>Экскурсия:</b> {slot.excursion.name}\n"
-                f"<b>Описание:</b> {slot.excursion.description or 'Нет описания'}\n\n"
+            # Получаем цены через PriceCalculator
+            from app.utils.price_calculator import PriceCalculator
+            base_price = slot.excursion.base_price
+            price_categories = PriceCalculator.get_price_categories(base_price)
 
-                f"<b>Стоимость:</b>\n"
-                f"• Взрослый: {slot.excursion.base_price} руб.\n"
-                f"• Детский билет:\n"
-                f"  - до 3 лет: бесплатно\n"
-                f"  - 4-7 лет: скидка 60%\n"
-                f"  - 8-12 лет: скидка 40%\n"
-                f"  - 13 лет и старше: полная стоимость\n\n"
+            # Формируем подробное описание без HTML
+            slot_info_text = (
+                "ДЕТАЛИ ЭКСКУРСИИ\n\n"
+                f"Дата: {slot.start_datetime.strftime('%d.%m.%Y')} ({weekday})\n"
+                f"Время: {slot.start_datetime.strftime('%H:%M')}\n"
+                f"Продолжительность: {slot.excursion.base_duration_minutes} минут\n"
+                f"Экскурсия: {slot.excursion.name}\n"
+                f"Описание: {slot.excursion.description or 'Нет описания'}\n\n"
 
-                f"<b>Ограничения:</b>\n"
-                f"• Максимальное количество человек: {slot.max_people}\n"
-                f"• Свободных мест: {free_places}\n"
-                f"• Максимальный суммарный вес: {slot.max_weight} кг\n"
-                f"• Доступный вес: {available_weight} кг\n"
+                "СТОИМОСТЬ:\n"
+                f"Взрослый: {base_price} руб.\n"
+                f"Детский билет:\n"
+            )
+
+            # Добавляем информацию о детских ценах
+            for category in price_categories:
+                slot_info_text += f"{category['age_range']}: {category['price']} руб.\n"
+
+            slot_info_text += (
+                f"\nОГРАНИЧЕНИЯ:\n"
+                f"Максимальное количество человек: {slot.max_people}\n"
+                f"Свободных мест: {slot_info.get('available_places', 0)}\n"
+                f"Максимальный суммарный вес: {slot.max_weight} кг\n"
+                f"Доступный вес: {slot_info.get('available_weight', 0)} кг\n"
             )
 
             # Добавляем информацию о капитане если есть
-            if slot.captain_id:
-                captain = await db.get_user_by_id(slot.captain_id)
-                if captain:
-                    captain_name = f"{captain.full_name}"
-                    slot_info += f"\n<b>Капитан:</b> {captain_name}"
+            if slot.captain:
+                captain_name = f"{slot.captain.full_name}"
+                slot_info_text += f"\nКапитан: {captain_name}"
 
             # Добавляем предупреждение если мест мало
-            if free_places <= 2:
-                slot_info += f"\n\n<i>Осталось всего {free_places} места!</i>"
+            if slot_info.get('available_places', 0) <= 2:
+                slot_info_text += f"\n\nОсталось всего {slot_info['available_places']} места!"
 
             # Создаем клавиатуру [Записаться][Вернуться]
             builder = InlineKeyboardBuilder()
@@ -682,9 +531,8 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
 
             # Отправляем сообщение с клавиатурой
             await callback.message.answer(
-                slot_info,
-                reply_markup=builder.as_markup(),
-                parse_mode="HTML"
+                slot_info_text,
+                reply_markup=builder.as_markup()
             )
 
             logger.debug(f"Показаны детали слота {slot_id} пользователю {user_telegram_id}")

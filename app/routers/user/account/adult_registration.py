@@ -4,12 +4,14 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.routers.user.account.models import User
+from app.routers.user.account.models import UserRegistrationData
 
 import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_user, Reg_token
-from app.database.requests import DatabaseManager, FileManager
+from app.database.unit_of_work import UnitOfWork
+from app.database.managers import UserManager
+from app.database.repositories import FileRepository
 from app.database.models import UserRole, RegistrationType, FileType
 from app.utils.validation import (validate_email, validate_phone, validate_name,
                                   validate_surname, validate_birthdate,
@@ -30,32 +32,33 @@ async def handle_registration(message, final_user):
     logger.info(f"Сохранение пользователя {final_user.name} {final_user.surname} в базу данных")
 
     try:
+        full_name = final_user.surname + ' ' + final_user.name
+        date_of_birth = datetime.strptime(final_user.date_of_birth, "%d.%m.%Y").date()
+
+        logger.debug(f"Создание пользователя: {full_name}, дата рождения: {date_of_birth}")
+
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                user_manager = UserManager(uow.session)
 
-            full_name = final_user.surname + ' ' + final_user.name
-            date_of_birth = datetime.strptime(final_user.date_of_birth, "%d.%m.%Y").date()
+                user = await user_manager.create_user(
+                    telegram_id=message.from_user.id,
+                    full_name=full_name,
+                    role=UserRole.client,
+                    phone_number=final_user.phone,
+                    date_of_birth=date_of_birth,
+                    address=final_user.address,
+                    weight=final_user.weight,
+                    consent_to_pd=True,
+                    registration_type=RegistrationType.SELF
+                )
 
-            logger.debug(f"Создание пользователя: {full_name}, дата рождения: {date_of_birth}")
-
-            user = await db_manager.create_user(
-                telegram_id=message.from_user.id,
-                full_name=full_name,
-                role=UserRole.client,
-                phone_number=final_user.phone,
-                date_of_birth=date_of_birth,
-                address=final_user.address,
-                weight=final_user.weight,
-                consent_to_pd=True,
-                registration_type=RegistrationType.SELF
-            )
-
-            if user:
-                logger.info(f"Пользователь создан: ID={user.id}, имя='{user.full_name}'")
-                return user
-            else:
-                logger.error("Ошибка создания пользователя: объект не возвращен")
-                raise ValueError('Ошибка создания пользователя!!!')
+                if user:
+                    logger.info(f"Пользователь создан: ID={user.id}, имя='{user.full_name}'")
+                    return user
+                else:
+                    logger.error("Ошибка создания пользователя: объект не возвращен")
+                    raise ValueError('Ошибка создания пользователя!!!')
 
     except Exception as e:
         logger.error(f"Ошибка создания пользователя: {e}", exc_info=True)
@@ -72,8 +75,8 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
 
         # Получаем file_id из базы данных
         async with async_session() as session:
-            file_manager = FileManager(session)
-            file_id = await file_manager.get_file_id(FileType.CPD)
+            file_repo = FileRepository(session)
+            file_id = await file_repo.get_file_id(FileType.CPD)
 
             if not file_id:
                 logger.error(f"File_id для согласия (CPD) не найден в базе данных для пользователя {callback.from_user.id}")
@@ -92,7 +95,7 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
                 return
 
             # Получаем информацию о файле для логирования
-            file_record = await file_manager.get_file_record(FileType.CPD)
+            file_record = await file_repo.get_file_record(FileType.CPD)
             file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
 
             await callback.message.answer_document(
@@ -269,11 +272,17 @@ async def reg_phone_and_end(message: Message, state: FSMContext):
         user_data = await state.get_data()
         logger.debug(f"Данные пользователя для создания: {user_data}")
 
-        final_user = User(**user_data)
+        final_user = UserRegistrationData(**user_data)
         logger.info(f"Создание пользователя: {final_user.name} {final_user.surname}")
 
-        # Сохраняем в БД
-        user = await handle_registration(message, final_user)
+        # Сохраняем в БД напрямую через менеджер
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_manager = UserManager(uow.session)
+                user = await user_manager.create_adult_user(
+                    telegram_id=message.from_user.id,
+                    user_data=final_user
+                )
 
         await message.answer(
             "Регистрация завершена!\n\n"

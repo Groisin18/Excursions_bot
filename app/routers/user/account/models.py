@@ -1,7 +1,7 @@
 from pydantic import BaseModel, Field, EmailStr
 
 
-class User(BaseModel):
+class UserRegistrationData(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, description="Имя")
     surname: str = Field(..., min_length=1, max_length=50, description="Фамилия")
     date_of_birth: str = Field(..., description="Дата рождения")
@@ -11,7 +11,7 @@ class User(BaseModel):
     phone: str = Field(..., description="Номер телефона")
     email: EmailStr = Field(..., description="Email адрес")
 
-class Child(BaseModel):
+class ChildRegistrationData(BaseModel):
     name: str = Field(..., min_length=1, max_length=50, description="Имя")
     surname: str = Field(..., min_length=1, max_length=50, description="Фамилия")
     date_of_birth: str = Field(..., description="Дата рождения")

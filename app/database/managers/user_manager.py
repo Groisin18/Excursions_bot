@@ -16,6 +16,8 @@ from .salary_manager import SalaryManager
 from ..repositories.user_repository import UserRepository
 from ..models import User, UserRole, RegistrationType
 
+from app.routers.user.account.models import UserRegistrationData, ChildRegistrationData
+
 
 class UserManager(BaseManager):
     """Менеджер для бизнес-логики пользователей"""
@@ -24,39 +26,30 @@ class UserManager(BaseManager):
         super().__init__(session)
         self.user_repo = UserRepository(session)
 
-    async def create_user_with_token(
+    async def _create_user_internal(
         self,
-        telegram_id: int,
+        telegram_id: Optional[int],
         full_name: str,
         role: UserRole,
-        phone_number: str = None,
-        date_of_birth: date = None,
-        address: str = None,
-        weight: int = None,
+        phone_number: Optional[str] = None,
+        date_of_birth: Optional[date] = None,
+        address: Optional[str] = None,
+        weight: Optional[int] = None,
         consent_to_pd: bool = False,
+        is_virtual: bool = False,
+        verification_token: Optional[str] = None,
         registration_type: RegistrationType = RegistrationType.SELF,
-        created_by_id: int = None,
-        linked_to_parent_id: int = None,
-        is_virtual: bool = None,
-        verification_token: str = None
+        created_by_id: Optional[int] = None,
+        linked_to_parent_id: Optional[int] = None
     ) -> User:
-        """Создать пользователя с токеном (бизнес-логика)"""
-        self._log_operation_start("create_user_with_token",
-                                 name=full_name,
-                                 telegram_id=telegram_id,
-                                 role=role.value)
+        """Базовое создание пользователя в БД"""
+        self._log_operation_start("_create_user_internal",
+                                name=full_name,
+                                telegram_id=telegram_id,
+                                role=role.value,
+                                is_virtual=is_virtual)
 
         try:
-            # Бизнес-логика: определение is_virtual
-            if is_virtual is None:
-                is_virtual = telegram_id is None
-
-            # Бизнес-логика: генерация токена для виртуальных пользователей
-            if is_virtual and not verification_token:
-                verification_token = secrets.token_urlsafe(32)
-                self.logger.debug(f"Сгенерирован токен для виртуального пользователя")
-
-            # Подготавливаем данные
             user_data = {
                 'telegram_id': telegram_id,
                 'full_name': full_name,
@@ -74,54 +67,85 @@ class UserManager(BaseManager):
                 'token_created_at': datetime.now() if verification_token else None
             }
 
-            # Вызываем репозиторий для сохранения (CRUD операция)
             user = await self.user_repo.create(**user_data)
 
-            self._log_operation_end("create_user_with_token",
-                                   success=True,
-                                   user_id=user.id,
-                                   is_virtual=user.is_virtual)
-
-            if verification_token:
-                self.logger.debug(f"Токен пользователя {user.id}: {verification_token}")
-
+            self._log_operation_end("_create_user_internal",
+                                success=True,
+                                user_id=user.id)
             return user
 
         except Exception as e:
-            self._log_operation_end("create_user_with_token", success=False)
-            self.logger.error(f"Ошибка создания пользователя '{full_name}': {e}", exc_info=True)
+            self._log_operation_end("_create_user_internal", success=False)
+            self.logger.error(f"Ошибка создания пользователя: {e}", exc_info=True)
             raise
 
-    async def create_virtual_user(
+    async def create_adult_user(
+        self,
+        telegram_id: int,
+        user_data: UserRegistrationData
+    ) -> User:
+        """Создать взрослого пользователя (self-регистрация)"""
+        self._log_operation_start("create_adult_user",
+                                name=f"{user_data.surname} {user_data.name}",
+                                telegram_id=telegram_id)
+
+        try:
+            full_name = f"{user_data.surname} {user_data.name}"
+            date_of_birth = datetime.strptime(user_data.date_of_birth, "%d.%m.%Y").date()
+
+            user = await self._create_user_internal(
+                telegram_id=telegram_id,
+                full_name=full_name,
+                role=UserRole.client,
+                phone_number=user_data.phone,
+                date_of_birth=date_of_birth,
+                address=user_data.address,
+                weight=user_data.weight,
+                consent_to_pd=True,
+                is_virtual=False,
+                verification_token=None,
+                registration_type=RegistrationType.SELF
+            )
+
+            self._log_operation_end("create_adult_user",
+                                success=True,
+                                user_id=user.id)
+            return user
+
+        except Exception as e:
+            self._log_operation_end("create_adult_user", success=False)
+            self.logger.error(f"Ошибка регистрации взрослого: {e}", exc_info=True)
+            raise
+
+    async def _create_virtual_user(
         self,
         full_name: str,
         created_by_id: int,
         registration_type: RegistrationType,
-        phone_number: str = None,
-        date_of_birth: date = None,
-        weight: int = None,
-        address: str = None,
-        linked_to_parent_id: int = None
+        phone_number: Optional[str] = None,
+        date_of_birth: Optional[date] = None,
+        weight: Optional[int] = None,
+        address: Optional[str] = None,
+        linked_to_parent_id: Optional[int] = None
     ) -> Tuple[User, str]:
-        """Создать виртуального пользователя (без Telegram)"""
-        self._log_operation_start("create_virtual_user",
-                                 name=full_name,
-                                 created_by=created_by_id,
-                                 type=registration_type.value)
+        """Создать виртуального пользователя с токеном"""
+        self._log_operation_start("_create_virtual_user",
+                                name=full_name,
+                                created_by=created_by_id,
+                                type=registration_type.value)
 
         try:
-            # Бизнес-логика: генерация короткого токена
+            # Генерация короткого токена
             token = secrets.token_urlsafe(4)
 
-            # Бизнес-логика: генерация виртуального телефона для детей
+            # Виртуальный телефон для детей
             if linked_to_parent_id and not phone_number:
                 parent = await self.user_repo.get_by_id(created_by_id)
                 if parent and parent.phone_number:
                     phone_number = f"{parent.phone_number}:{token}:child"
-                    self.logger.debug(f"Сгенерирован виртуальный телефон для ребенка: {phone_number}")
+                    self.logger.debug(f"Сгенерирован виртуальный телефон: {phone_number}")
 
-            # Вызываем основной метод создания
-            user = await self.create_user_with_token(
+            user = await self._create_user_internal(
                 telegram_id=None,
                 full_name=full_name,
                 role=UserRole.client,
@@ -129,6 +153,7 @@ class UserManager(BaseManager):
                 date_of_birth=date_of_birth,
                 weight=weight,
                 address=address,
+                consent_to_pd=False,
                 is_virtual=True,
                 verification_token=token,
                 registration_type=registration_type,
@@ -136,16 +161,15 @@ class UserManager(BaseManager):
                 linked_to_parent_id=linked_to_parent_id
             )
 
-            self._log_operation_end("create_virtual_user",
-                                   success=True,
-                                   user_id=user.id,
-                                   token=token)
-
+            self._log_operation_end("_create_virtual_user",
+                                success=True,
+                                user_id=user.id,
+                                token=token[:8])
             return user, token
 
         except Exception as e:
-            self._log_operation_end("create_virtual_user", success=False)
-            self.logger.error(f"Ошибка создания виртуального пользователя '{full_name}': {e}", exc_info=True)
+            self._log_operation_end("_create_virtual_user", success=False)
+            self.logger.error(f"Ошибка создания виртуального пользователя: {e}", exc_info=True)
             raise
 
     async def create_user_by_admin(
@@ -159,8 +183,8 @@ class UserManager(BaseManager):
     ) -> Tuple[User, str]:
         """Администратор создает пользователя (без Telegram)"""
         self._log_operation_start("create_user_by_admin",
-                                 name=full_name,
-                                 admin_id=admin_id)
+                                name=full_name,
+                                admin_id=admin_id)
 
         try:
             # Бизнес-логика: проверка уникальности телефона
@@ -170,8 +194,8 @@ class UserManager(BaseManager):
                 self.logger.warning(error_msg)
                 raise ValueError(error_msg)
 
-            # Создаем виртуального пользователя
-            user, token = await self.create_virtual_user(
+            # Создаем виртуального пользователя через новый protected метод
+            user, token = await self._create_virtual_user(
                 full_name=full_name,
                 created_by_id=admin_id,
                 registration_type=RegistrationType.ADMIN,
@@ -186,9 +210,9 @@ class UserManager(BaseManager):
                 await self._refresh(user)
 
             self._log_operation_end("create_user_by_admin",
-                                   success=True,
-                                   user_id=user.id,
-                                   token=token)
+                                success=True,
+                                user_id=user.id,
+                                token=token)
 
             return user, token
 
@@ -203,24 +227,27 @@ class UserManager(BaseManager):
 
     async def create_child_user(
         self,
-        child_name: str,
-        parent_telegram_id: int,
-        date_of_birth: date = None,
-        weight: int = None,
-        address: str = None
+        child_data: ChildRegistrationData,
+        parent_telegram_id: int
     ) -> Tuple[User, str]:
         """Родитель создает ребенка"""
         self._log_operation_start("create_child_user",
-                                 child_name=child_name,
-                                 parent_tg_id=parent_telegram_id)
+                                child_name=f"{child_data.surname} {child_data.name}",
+                                parent_tg_id=parent_telegram_id)
 
         try:
             # Бизнес-логика: поиск родителя
             parent = await self.user_repo.get_by_telegram_id(parent_telegram_id)
             if not parent:
-                error_msg = f"Родитель с ID {parent_telegram_id} не найден"
+                error_msg = f"Родитель с Telegram ID {parent_telegram_id} не найден"
                 self.logger.error(error_msg)
                 raise ValueError(error_msg)
+
+            # Проверка parent_id в данных
+            if child_data.parent_id != parent.id:
+                error_msg = f"ID родителя в данных ({child_data.parent_id}) не совпадает с найденным ({parent.id})"
+                self.logger.warning(error_msg)
+                child_data.parent_id = parent.id  # исправляем
 
             parent_id = parent.id
             self.logger.debug(f"Родитель найден: ID={parent_id}, имя='{parent.full_name}'")
@@ -234,21 +261,27 @@ class UserManager(BaseManager):
 
             self.logger.debug(f"У родителя {parent_id} сейчас {len(children)} детей (лимит: 7)")
 
+            # Преобразование даты
+            date_of_birth = datetime.strptime(child_data.date_of_birth, "%d.%m.%Y").date()
+
+            # Полное имя
+            full_name = f"{child_data.surname} {child_data.name}"
+
             # Создаем ребенка
-            user, token = await self.create_virtual_user(
-                full_name=child_name,
+            user, token = await self._create_virtual_user(
+                full_name=full_name,
                 created_by_id=parent_id,
                 registration_type=RegistrationType.PARENT,
                 date_of_birth=date_of_birth,
-                weight=weight,
-                address=address,
+                weight=child_data.weight,
+                address=child_data.address,
                 linked_to_parent_id=parent_id
             )
 
             self._log_operation_end("create_child_user",
-                                   success=True,
-                                   child_id=user.id,
-                                   token=token)
+                                success=True,
+                                child_id=user.id,
+                                token=token)
 
             return user, token
 
@@ -258,7 +291,7 @@ class UserManager(BaseManager):
             raise
         except Exception as e:
             self._log_operation_end("create_child_user", success=False)
-            self.logger.error(f"Ошибка создания ребенка '{child_name}': {e}", exc_info=True)
+            self.logger.error(f"Ошибка создания ребенка '{child_data.name}': {e}", exc_info=True)
             raise
 
     async def link_telegram_to_user(self, token: str, telegram_id: int) -> Optional[User]:

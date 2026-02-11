@@ -94,6 +94,12 @@ class FileType(enum.Enum):
     CPD_MINOR = "concent_personal_data_minor"
     OTHER = "other"
 
+class SchedulePeriod(Enum):
+    DATE = "date"
+    WEEK = "week"
+    MONTH = "month"
+    PERIOD = "period"
+
 # Логирование создания enum классов
 logger.debug("Созданы enum классы для статусов и типов")
 

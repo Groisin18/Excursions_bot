@@ -1,6 +1,6 @@
 """Менеджер для бизнес-логики слотов"""
 
-from typing import Tuple, Optional, Dict, List
+from typing import Tuple, Optional, Dict, List, Union
 from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -11,8 +11,10 @@ from app.database.repositories import (
     SlotRepository, ExcursionRepository, UserRepository
 )
 from app.database.models import (
-    ExcursionSlot, SlotStatus, BookingStatus, Booking, PaymentStatus
+    ExcursionSlot, SlotStatus, BookingStatus, Booking, PaymentStatus,
+    SchedulePeriod, Excursion
 )
+from app.utils.datetime_utils import get_weekday_name
 
 
 class SlotManager(BaseManager):
@@ -425,3 +427,278 @@ class SlotManager(BaseManager):
         except Exception as e:
             self.logger.error(f"Ошибка проверки доступности слота {slot_id}: {e}")
             return False
+
+    async def format_public_schedule_for_date(
+        self,
+        target_date: date,
+        slots: list
+    ) -> str:
+        """Форматировать расписание для пользователей"""
+        response = f"Расписание на {target_date.strftime('%d.%m.%Y')}:\n\n"
+
+        for slot in slots:
+            excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
+            start_time = slot.start_datetime.strftime("%H:%M")
+            end_time = slot.end_datetime.strftime("%H:%M")
+
+            booked = await self.get_booked_places(slot.id)
+            free_places = slot.max_people - booked
+            places_text = f"({free_places} мест)" if free_places > 0 else "(Мест нет)"
+
+            response += f"• {start_time}-{end_time} {excursion_name} {places_text}\n"
+
+        response += "\nНажмите на экскурсию, чтобы увидеть детали и записаться"
+        return response
+
+    async def _get_schedule(
+        self,
+        period_type: SchedulePeriod = SchedulePeriod.DATE,
+        target_date: Optional[date] = None,
+        days_ahead: Optional[int] = None,
+        max_slots_per_day: Optional[int] = None
+    ) -> Union[Tuple[Optional[str], List], Tuple[Optional[str], Dict]]:
+        """
+        Универсальный метод получения расписания
+
+        Args:
+            period_type: тип периода из SchedulePeriod
+            target_date: целевая дата (для DATE)
+            days_ahead: количество дней вперед (для WEEK/MONTH)
+            max_slots_per_day: ограничение слотов на день (только для MONTH)
+
+        Returns:
+            Для DATE: (formatted_text, list_of_slots)
+            Для WEEK/MONTH: (formatted_text, slots_by_date_dict)
+        """
+        # Определяем временной диапазон
+        if period_type == SchedulePeriod.DATE:
+            if not target_date:
+                target_date = datetime.now().date()
+            date_from = datetime.combine(target_date, datetime.min.time())
+            date_to = datetime.combine(target_date, datetime.max.time())
+        elif period_type in (SchedulePeriod.WEEK, SchedulePeriod.MONTH):
+            if not days_ahead:
+                days_ahead = 7 if period_type == SchedulePeriod.WEEK else 30
+            date_from = datetime.now()
+            date_to = date_from + timedelta(days=days_ahead)
+        else:
+            raise ValueError(f"Неизвестный тип периода: {period_type}")
+
+        # Получаем слоты
+        result = await self.session.execute(
+            select(ExcursionSlot)
+            .options(selectinload(ExcursionSlot.excursion))
+            .where(ExcursionSlot.start_datetime >= date_from)
+            .where(ExcursionSlot.start_datetime <= date_to)
+            .where(ExcursionSlot.status == SlotStatus.scheduled)
+            .order_by(ExcursionSlot.start_datetime)
+        )
+        slots = result.scalars().all()
+
+        if not slots:
+            return None, [] if period_type == SchedulePeriod.DATE else {}
+
+        # Форматирование в зависимости от типа периода
+        if period_type == SchedulePeriod.DATE:
+            formatted_text = await self.format_public_schedule_for_date(target_date, slots)
+            return formatted_text, slots
+
+        # Для WEEK и MONTH группируем по датам
+        slots_by_date = {}
+        for slot in slots:
+            date_key = slot.start_datetime.date()
+            if date_key not in slots_by_date:
+                slots_by_date[date_key] = []
+            slots_by_date[date_key].append(slot)
+
+        # Форматируем текст
+        period_names = {
+            SchedulePeriod.WEEK: "неделю",
+            SchedulePeriod.MONTH: "месяц"
+        }
+        text = f"Расписание на {period_names[period_type]}:\n\n"
+
+        for date_key in sorted(slots_by_date.keys()):
+            date_slots = slots_by_date[date_key]
+            text += f"{date_key.strftime('%d.%m.%Y')} ({get_weekday_name(date_key)}):\n"
+
+            # Для MONTH ограничиваем количество слотов на день
+            slots_to_show = date_slots
+            if period_type == SchedulePeriod.MONTH and max_slots_per_day:
+                slots_to_show = date_slots[:max_slots_per_day]
+
+            for slot in slots_to_show:
+                excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
+                start_time = slot.start_datetime.strftime("%H:%M")
+                end_time = slot.end_datetime.strftime("%H:%M")
+
+                booked = await self.get_booked_places(slot.id)
+                free_places = slot.max_people - booked
+                places_text = f"({free_places} мест)" if free_places > 0 else "(Мест нет)"
+
+                text += f"• {start_time}-{end_time} {excursion_name} {places_text}\n"
+
+            if period_type == SchedulePeriod.MONTH and max_slots_per_day and len(date_slots) > max_slots_per_day:
+                text += f"  ... и еще {len(date_slots) - max_slots_per_day} экскурсий\n"
+
+            text += "\n"
+
+        return text, slots_by_date
+
+    async def get_date_schedule(self, target_date: date) -> Tuple[Optional[str], List]:
+        """Обертка для получения расписания на дату"""
+        return await self._get_schedule(
+            period_type=SchedulePeriod.DATE,
+            target_date=target_date
+        )
+
+    async def get_week_schedule(self) -> Tuple[Optional[str], Dict]:
+        """Обертка для получения расписания на неделю"""
+        return await self._get_schedule(
+            period_type=SchedulePeriod.WEEK,
+            days_ahead=7
+        )
+
+    async def get_month_schedule(self) -> Tuple[Optional[str], Dict]:
+        """Обертка для получения расписания на месяц"""
+        return await self._get_schedule(
+            period_type=SchedulePeriod.MONTH,
+            days_ahead=30,
+            max_slots_per_day=3
+        )
+
+    async def _get_excursion_schedule(
+        self,
+        exc_id: int,
+        period_type: SchedulePeriod = SchedulePeriod.PERIOD,
+        target_date: Optional[date] = None,
+        days_ahead: Optional[int] = None
+    ) -> Tuple[Optional[Excursion], Optional[str], Union[List, Dict]]:
+        """
+        Универсальный метод получения расписания экскурсии
+
+        Args:
+            exc_id: ID экскурсии
+            period_type: тип периода (PERIOD для интервала, DATE для конкретной даты)
+            target_date: дата (для DATE)
+            days_ahead: дней вперед (для PERIOD)
+
+        Returns:
+            (excursion, formatted_text, slots_data)
+            - Для PERIOD: slots_data = slots_by_date_dict
+            - Для DATE: slots_data = list_of_slots
+        """
+
+        # Получаем экскурсию
+        result = await self.session.execute(
+            select(Excursion)
+            .where(Excursion.id == exc_id)
+        )
+        excursion = result.scalar_one_or_none()
+
+        if not excursion:
+            return None, None, ({} if period_type == SchedulePeriod.PERIOD else [])
+
+        # Определяем временной диапазон
+        if period_type == SchedulePeriod.DATE:
+            if not target_date:
+                target_date = datetime.now().date()
+            date_from = datetime.combine(target_date, datetime.min.time())
+            date_to = datetime.combine(target_date, datetime.max.time())
+        else:  # PERIOD
+            if not days_ahead:
+                days_ahead = 30
+            date_from = datetime.now()
+            date_to = date_from + timedelta(days=days_ahead)
+
+        # Получаем слоты
+        result = await self.session.execute(
+            select(ExcursionSlot)
+            .where(ExcursionSlot.excursion_id == exc_id)
+            .where(ExcursionSlot.start_datetime >= date_from)
+            .where(ExcursionSlot.start_datetime <= date_to)
+            .where(ExcursionSlot.status == SlotStatus.scheduled)
+            .order_by(ExcursionSlot.start_datetime)
+        )
+        slots = result.scalars().all()
+
+        # Форматирование в зависимости от типа периода
+        if period_type == SchedulePeriod.DATE:
+            if not slots:
+                return excursion, None, []
+
+            # Форматирование для конкретной даты
+            from app.utils.datetime_utils import get_weekday_name
+
+            text = (
+                f"Экскурсия: {excursion.name}\n"
+                f"Дата: {target_date.strftime('%d.%m.%Y')} ({get_weekday_name(target_date)})\n\n"
+            )
+
+            for slot in slots:
+                start_time = slot.start_datetime.strftime("%H:%M")
+                end_time = slot.end_datetime.strftime("%H:%M")
+
+                booked = await self.get_booked_places(slot.id)
+                free_places = slot.max_people - booked
+
+                current_weight = await self.get_current_weight(slot.id)
+                free_weight = slot.max_weight - current_weight
+
+                if free_places > 0 and free_weight > 0:
+                    places_text = f"({free_places} мест, ограничение по весу - не более {free_weight} кг)"
+                else:
+                    places_text = "(Мест нет)"
+
+                text += f"• {start_time}-{end_time} {places_text}\n"
+
+            text += "\nНажмите на экскурсию, чтобы увидеть детали и записаться"
+            return excursion, text, slots
+
+        else:  # PERIOD
+            if not slots:
+                return excursion, None, {}
+
+            # Группируем по датам и форматируем
+            slots_by_date = {}
+            for slot in slots:
+                date_key = slot.start_datetime.date()
+                if date_key not in slots_by_date:
+                    slots_by_date[date_key] = []
+                slots_by_date[date_key].append(slot)
+
+            # Форматируем текст
+
+            text = f"{excursion.name}\n"
+
+            for date_key in sorted(slots_by_date.keys()):
+                date_slots = slots_by_date[date_key]
+                text += f"\n{date_key.strftime('%d.%m.%Y')} ({get_weekday_name(date_key)}):\n"
+
+                for slot in date_slots:
+                    start_time = slot.start_datetime.strftime("%H:%M")
+                    end_time = slot.end_datetime.strftime("%H:%M")
+
+                    booked = await self.get_booked_places(slot.id)
+                    free_places = slot.max_people - booked
+                    places_text = f"({free_places} мест)" if free_places > 0 else "(Мест нет)"
+
+                    text += f"• {start_time}-{end_time} {places_text}\n"
+
+            return excursion, text, slots_by_date
+
+    async def get_excursion_schedule_period(self, exc_id: int, days_ahead: int):
+        """Обертка для получения расписания экскурсии на период"""
+        return await self._get_excursion_schedule(
+            exc_id=exc_id,
+            period_type=SchedulePeriod.PERIOD,
+            days_ahead=days_ahead
+        )
+
+    async def get_excursion_slots_for_date(self, exc_id: int, target_date: date):
+        """Обертка для получения слотов экскурсии на дату"""
+        return await self._get_excursion_schedule(
+            exc_id=exc_id,
+            period_type=SchedulePeriod.DATE,
+            target_date=target_date
+        )
