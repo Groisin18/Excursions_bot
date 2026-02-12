@@ -30,10 +30,8 @@ async def start_command(message: Message):
         logger.info(f"Приветственное сообщение отправлено пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка при обработке команды /start для пользователя {message.from_user.id}: {e}", exc_info=True)
-        try:
-            await message.answer("Произошла ошибка при запуске бота. Попробуйте еще раз.")
-        except:
-            pass
+        await message.answer("Произошла ошибка при запуске бота. Попробуйте еще раз нажать /start.")
+
 
 @router.message(Command("help"))
 async def help_command(message: Message):
@@ -49,6 +47,10 @@ async def help_command(message: Message):
         logger.debug(f"Справочное сообщение отправлено пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка при отправке справки пользователю {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.callback_query(F.data == 'back_to_main')
 async def back_to_main(callback: CallbackQuery, state: FSMContext):
@@ -59,20 +61,36 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
         if current_state:
             logger.debug(f"Пользователь {callback.from_user.id} вышел из состояния: {current_state}")
         await state.clear()
-        await callback.answer('Главное меню')
+        await callback.answer()
         await callback.message.answer(
             'Выберите необходимый пункт меню',
             reply_markup=kb.main
         )
         logger.debug(f"Главное меню показано пользователю {callback.from_user.id}")
     except Exception as e:
+        await callback.answer()
         logger.error(f"Ошибка возврата в главное меню для пользователя {callback.from_user.id}: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.message(F.text == 'Назад в меню')
 async def back_to_main_menu(message: Message):
     """Возврат в главное меню"""
     logger.info(f"Пользователь {message.from_user.id} вернулся в главное меню")
-    await message.answer("Вы вернулись в главное меню", reply_markup=kb.main)
+    try:
+        await message.answer(
+            "Вы вернулись в главное меню",
+            reply_markup=kb.main
+        )
+        logger.debug(f"Главное меню показано пользователю {message.from_user.id}")
+    except Exception as e:
+        logger.error(f"Ошибка возврата в главное меню для пользователя {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.message(F.text == 'Отзывы')
 async def reviews(message: Message):
@@ -89,6 +107,10 @@ async def reviews(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка показа отзывов для пользователя {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.message(F.text == 'О нас')
 async def about_us(message: Message):
@@ -106,6 +128,10 @@ async def about_us(message: Message):
         logger.debug(f"Информация о компании отправлена пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка показа информации о компании для пользователя {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.message(F.text == 'Основные вопросы')
 async def questions(message: Message):
@@ -125,13 +151,17 @@ async def questions(message: Message):
         logger.debug(f"FAQ показан пользователю {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка показа FAQ для пользователя {message.from_user.id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.callback_query(F.data == 'qu_startplace')
 async def qu_startplace(callback: CallbackQuery):
     """Ответ на вопрос о месте старта"""
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о месте старта")
+    await callback.answer()
     try:
-        await callback.answer('')
         await callback.message.edit_text(
             'Осенние экскурсии:\n'
             'Стартуем от адреса Пирогова 10.\n'
@@ -149,13 +179,17 @@ async def qu_startplace(callback: CallbackQuery):
         logger.debug(f"Ответ о месте старта отправлен пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о месте старта: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.callback_query(F.data == 'qu_things_witn')
 async def qu_things_witn(callback: CallbackQuery):
     """Ответ на вопрос о вещах с собой"""
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о вещах с собой")
+    await callback.answer()
     try:
-        await callback.answer('')
         await callback.message.edit_text(
             'На Ангаре холодно.\n'
             'По одежде штаны, кофта, головной убор, кроссовки на удобной подошве.\n'
@@ -169,13 +203,17 @@ async def qu_things_witn(callback: CallbackQuery):
         logger.debug(f"Ответ о вещах с собой отправлен пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о вещах с собой: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.callback_query(F.data == 'qu_discount')
 async def qu_discount(callback: CallbackQuery):
     """Ответ на вопрос о скидках"""
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о скидках")
+    await callback.answer()
     try:
-        await callback.answer('')
         await callback.message.edit_text(
             'У нас есть скидки детям:\n'
             'Дети до 3 лет бесплатно.\n'
@@ -188,13 +226,17 @@ async def qu_discount(callback: CallbackQuery):
         logger.debug(f"Ответ о скидках отправлен пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о скидках: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.callback_query(F.data == 'qu_self_co')
 async def qu_self_co(callback: CallbackQuery):
     """Ответ на вопрос об индивидуальных экскурсиях"""
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос об индивидуальных экскурсиях")
+    await callback.answer()
     try:
-        await callback.answer('')
         await callback.message.edit_text(
             'Хотите отдохнуть только своей компанией?\n'
             'Мы готовы предоставить вам экскурсию.\n'
@@ -209,6 +251,10 @@ async def qu_self_co(callback: CallbackQuery):
         logger.debug(f"Ответ об индивидуальных экскурсиях отправлен пользователю {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка отправки ответа об индивидуальных экскурсиях: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.message(F.text.contains('админ') | F.text.contains('администратор'))
 async def mention_admin(message: Message):
@@ -227,6 +273,10 @@ async def mention_admin(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка отправки ответа об администраторе: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 @router.message(F.text.contains('цена') | F.text.contains('стоимость'))
 async def mention_price(message: Message):
@@ -245,3 +295,7 @@ async def mention_price(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка отправки ответа о стоимости: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )

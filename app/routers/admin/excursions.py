@@ -12,7 +12,7 @@ from app.admin_panel.states_adm import NewExcursion, RedactExcursion
 from app.admin_panel.keyboards_adm import (
     excursions_submenu, err_add_exc, exc_redaction_builder,
     excursions_list_keyboard, excursion_actions_menu, inline_end_add_exc,
-    admin_main_menu,
+    admin_main_menu
 )
 from app.middlewares import AdminMiddleware
 
@@ -52,6 +52,7 @@ async def excursions_management(callback:CallbackQuery):
         logger.debug(f"Меню управления экскурсиями показано администратору {callback.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка показа меню управления экскурсиями: {e}", exc_info=True)
+        await callback.message.answer("Ошибка показа меню управления экскурсиями", reply_markup=admin_main_menu())
 
 @router.message(F.text == "Список видов экскурсий")
 async def show_excursions(message: Message):
@@ -90,13 +91,14 @@ async def show_excursions(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения списка экскурсий: {e}", exc_info=True)
-        await message.answer("Ошибка при получении списка экскурсий")
+        await message.answer("Ошибка при получении списка экскурсий", reply_markup=excursions_submenu())
 
 @router.callback_query(F.data.startswith('excursion_actions:'))
 async def exc_actions(callback:CallbackQuery):
     """Действия с конкретной экскурсией"""
     exc_id = int(callback.data.split(':')[1])
     logger.info(f"Администратор {callback.from_user.id} открыл действия для экскурсии {exc_id}")
+    await callback.answer()
 
     try:
         async with async_session() as session:
@@ -121,7 +123,7 @@ async def exc_actions(callback:CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка получения информации об экскурсии {exc_id}: {e}", exc_info=True)
-        await callback.message.answer("Ошибка при получении информации об экскурсии")
+        await callback.message.answer("Ошибка при получении информации об экскурсии", reply_markup=excursions_submenu())
 
 
 @router.message(F.text == "Назад")
@@ -145,6 +147,7 @@ async def back_from_excursions_submenu(message: Message, state: FSMContext):
 async def new_excursion(callback:CallbackQuery, state: FSMContext):
     """Создание новой экскурсии"""
     logger.info(f"Администратор {callback.from_user.id} начал создание новой экскурсии")
+    await callback.answer()
 
     try:
         await state.set_state(NewExcursion.name)
@@ -164,6 +167,8 @@ async def new_excursion_message(message: Message, state: FSMContext):
         logger.debug(f"Администратор {message.from_user.id} перешел в состояние ввода названия")
     except Exception as e:
         logger.error(f"Ошибка начала создания экскурсии: {e}", exc_info=True)
+        await message.answer("Произошла ошибка при начале создания экскурсии", reply_markup=excursions_submenu())
+        state.clear()
 
 @router.message(NewExcursion.name)
 async def reg_ex_name(message: Message, state: FSMContext):
@@ -190,7 +195,8 @@ async def reg_ex_name(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка проверки названия экскурсии: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при проверке названия")
+        await message.answer("Произошла ошибка при проверке названия", reply_markup=excursions_submenu())
+        state.clear()
 
 @router.message(NewExcursion.description)
 async def reg_ex_description(message: Message, state: FSMContext):
@@ -208,7 +214,8 @@ async def reg_ex_description(message: Message, state: FSMContext):
                              'Примеры:\n90 (90 минут),\n4:30 (4 часа 30 минут),\n2.00 (2 часа ровно)')
     except Exception as e:
         logger.error(f"Ошибка обработки описания: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработке описания")
+        await message.answer("Произошла ошибка при обработке описания", reply_markup=excursions_submenu())
+        state.clear()
 
 @router.message(NewExcursion.base_duration_minutes)
 async def reg_exc_base_duration(message: Message, state: FSMContext):
@@ -228,7 +235,8 @@ async def reg_exc_base_duration(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Ошибка обработки продолжительности: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработке продолжительности")
+        await message.answer("Произошла ошибка при обработке продолжительности", reply_markup=excursions_submenu())
+        state.clear()
 
 @router.message(NewExcursion.base_price)
 async def reg_exc_base_price(message: Message, state: FSMContext):
@@ -250,7 +258,8 @@ async def reg_exc_base_price(message: Message, state: FSMContext):
         return
     except Exception as e:
         logger.error(f"Ошибка обработки стоимости: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработки стоимости")
+        await message.answer("Произошла ошибка при обработки стоимости", reply_markup=excursions_submenu())
+        state.clear()
         return
 
     try:
@@ -311,8 +320,7 @@ async def redact_exc_data(callback:CallbackQuery):
     """Показать данные экскурсии для редактирования"""
     exc_id = int(callback.data.split(':')[1])
     logger.info(f"Администратор {callback.from_user.id} открыл редактирование экскурсии {exc_id}")
-
-    await callback.answer('')
+    await callback.answer()
 
     try:
         async with async_session() as session:
@@ -338,7 +346,7 @@ async def redact_exc_data(callback:CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка получения данных экскурсии {exc_id}: {e}", exc_info=True)
-        await callback.message.answer("Ошибка при получении данных экскурсии")
+        await callback.message.answer("Ошибка при получении данных экскурсии", reply_markup=excursions_submenu())
 
 @router.callback_query(F.data.startswith('redact_exc_name:'))
 async def redact_name_one(callback:CallbackQuery, state:FSMContext):
@@ -355,6 +363,8 @@ async def redact_name_one(callback:CallbackQuery, state:FSMContext):
         logger.debug(f"Администратор {callback.from_user.id} перешел в состояние редактирования названия")
     except Exception as e:
         logger.error(f"Ошибка начала редактирования названия: {e}", exc_info=True)
+        await callback.message.answer("Ошибка при начале редактирования названия", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.message(RedactExcursion.name)
 async def redact_name_two(message: Message, state: FSMContext):
@@ -377,9 +387,8 @@ async def redact_name_two(message: Message, state: FSMContext):
                 logger.warning(f"Попытка переименования в существующее название: '{new_name}' (ID: {excursion_exists.id})")
                 await message.answer(f'Экскурсия с названием "{new_name}" уже есть в базе данных (id:{excursion_exists.id}).\n\n'
                                     'Пожалуйста, ведите другое название')
-                return  # Выход без очистки состояния
+                return
 
-            # Обновление
             async with UnitOfWork(session) as uow:
                 exc_repo_uow = ExcursionRepository(uow.session)
                 success = await exc_repo_uow.update(
@@ -391,6 +400,7 @@ async def redact_name_two(message: Message, state: FSMContext):
                     logger.warning(f"Не удалось обновить название экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
                                         reply_markup=inline_end_add_exc(exc_id))
+                    await state.clear()
                     return
 
                 # Получаем обновленную экскурсию
@@ -416,7 +426,7 @@ async def redact_name_two(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Неожиданная ошибка при редактировании названия: {e}", exc_info=True)
-        await message.answer("Произошла непредвиденная ошибка")
+        await message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
         await state.clear()
 
 @router.callback_query(F.data.startswith('redact_exc_description:'))
@@ -434,6 +444,8 @@ async def redact_description_one(callback:CallbackQuery, state:FSMContext):
         logger.debug(f"Администратор {callback.from_user.id} перешел в состояние редактирования описания")
     except Exception as e:
         logger.error(f"Ошибка начала редактирования описания: {e}", exc_info=True)
+        await callback.message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.message(RedactExcursion.description)
 async def redact_description_two(message: Message, state: FSMContext):
@@ -457,6 +469,7 @@ async def redact_description_two(message: Message, state: FSMContext):
                     logger.warning(f"Не удалось обновить описание экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
                                         reply_markup=inline_end_add_exc(exc_id))
+                    await state.clear()
                     return
 
                 updated_exc = await exc_repo.get_by_id(exc_id)
@@ -481,7 +494,7 @@ async def redact_description_two(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Неожиданная ошибка при редактировании описания: {e}", exc_info=True)
-        await message.answer("Произошла непредвиденная ошибка")
+        await message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
         await state.clear()
 
 @router.callback_query(F.data.startswith('redact_exc_duration:'))
@@ -499,6 +512,8 @@ async def redact_duration_one(callback:CallbackQuery, state:FSMContext):
         logger.debug(f"Администратор {callback.from_user.id} перешел в состояние редактирования продолжительности")
     except Exception as e:
         logger.error(f"Ошибка начала редактирования продолжительности: {e}", exc_info=True)
+        await callback.message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.message(RedactExcursion.base_duration_minutes)
 async def redact_duration_two(message: Message, state: FSMContext):
@@ -524,6 +539,7 @@ async def redact_duration_two(message: Message, state: FSMContext):
                     logger.warning(f"Не удалось обновить продолжительность экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
                                         reply_markup=inline_end_add_exc(exc_id))
+                    await state.clear()
                     return
 
                 updated_exc = await exc_repo.get_by_id(exc_id)
@@ -548,7 +564,7 @@ async def redact_duration_two(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Неожиданная ошибка при редактировании продолжительности: {e}", exc_info=True)
-        await message.answer("Произошла непредвиденная ошибка")
+        await message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
         await state.clear()
 
 @router.callback_query(F.data.startswith('redact_exc_price:'))
@@ -566,6 +582,8 @@ async def redact_price_one(callback:CallbackQuery, state:FSMContext):
         logger.debug(f"Администратор {callback.from_user.id} перешел в состояние редактирования стоимости")
     except Exception as e:
         logger.error(f"Ошибка начала редактирования стоимости: {e}", exc_info=True)
+        await callback.message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.message(RedactExcursion.base_price)
 async def redact_price_two(message: Message, state: FSMContext):
@@ -591,6 +609,7 @@ async def redact_price_two(message: Message, state: FSMContext):
                     logger.warning(f"Не удалось обновить стоимость экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
                                         reply_markup=inline_end_add_exc(exc_id))
+                    await state.clear()
                     return
 
                 updated_exc = await exc_repo.get_by_id(exc_id)
@@ -615,5 +634,5 @@ async def redact_price_two(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Неожиданная ошибка при редактировании стоимости: {e}", exc_info=True)
-        await message.answer("Произошла непредвиденная ошибка")
+        await message.answer("Произошла непредвиденная ошибка", reply_markup=excursions_submenu())
         await state.clear()

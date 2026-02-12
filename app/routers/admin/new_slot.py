@@ -112,9 +112,10 @@ async def schedule_select_excursion(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора экскурсии для расписания"""
     excursion_id = int(callback.data.split(":")[1])
     logger.info(f"Администратор {callback.from_user.id} выбрал экскурсию {excursion_id} для расписания")
+    await callback.answer()
 
     try:
-        await callback.answer()
+
         await state.update_data(excursion_id=excursion_id)
         await callback.message.answer(
             "Введите дату проведения экскурсии в формате ДД.ММ.ГГГГ или ДД.ММ.ГГ\n"
@@ -126,6 +127,7 @@ async def schedule_select_excursion(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка обработки выбора экскурсии: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка при выборе экскурсии", reply_markup=schedule_back_menu())
+        await state.clear()
 
 @router.message(AddToSchedule.waiting_for_date)
 async def handle_schedule_date(message: Message, state: FSMContext):
@@ -160,7 +162,8 @@ async def handle_schedule_date(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки даты расписания: {e}", exc_info=True)
-        await message.answer(str(e))
+        await message.answer(str(e), reply_markup=schedule_back_menu())
+        await state.clear()
 
 @router.callback_query(F.data.startswith("select_time;"))
 async def handle_time_selection(callback: CallbackQuery, state: FSMContext):
@@ -208,7 +211,7 @@ async def handle_time_selection(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка выбора времени: {e}", exc_info=True)
-        await callback.message.answer(str(e))
+        await callback.message.answer(str(e), reply_markup=schedule_back_menu())
 
 @router.callback_query(F.data.startswith("custom_time:"))
 async def handle_custom_time_request(callback: CallbackQuery, state: FSMContext):
@@ -493,7 +496,7 @@ async def create_without_captain(callback: CallbackQuery, state: FSMContext):
             )
         except ValidationError as e:
             logger.error(f"Ошибка валидации: {e}")
-            await callback.message.answer("Ошибка валидации данных")
+            await callback.message.answer("Ошибка валидации данных", reply_markup=schedule_back_menu())
             await state.clear()
             return
 
@@ -592,6 +595,7 @@ async def handle_change_time(callback: CallbackQuery, state: FSMContext):
     except Exception as e:
         logger.error(f"Ошибка смены времени: {e}")
         await callback.message.answer("Произошла ошибка", reply_markup=schedule_back_menu())
+        await state.clear()
 
 @router.callback_query(F.data == "cancel_slot_creation")
 async def handle_cancel_slot_creation(callback: CallbackQuery, state: FSMContext):

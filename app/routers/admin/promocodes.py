@@ -10,7 +10,7 @@ from app.database.session import async_session
 
 from app.admin_panel.states_adm import CreatePromocode
 from app.admin_panel.keyboards_adm import (
-    promocodes_menu,
+    promocodes_menu, excursions_submenu,
     promo_edit_field_menu, promo_type_selection_menu,
     promo_duration_selection_menu, promo_creation_confirmation_menu
 )
@@ -92,7 +92,7 @@ async def show_promocodes(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка открытия промокодов: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при получении списка промокодов")
+        await message.answer("Произошла ошибка при получении списка промокодов", reply_markup=excursions_submenu())
 
 
 # ===== СОЗДАНИЕ ПРОМОКОДОВ (FSM) =====
@@ -101,9 +101,9 @@ async def show_promocodes(message: Message):
 async def create_promocode_start(callback: CallbackQuery, state: FSMContext):
     """Начало создания промокода"""
     logger.info(f"Администратор {callback.from_user.id} начал создание промокода")
+    await callback.answer()
 
     try:
-        await callback.answer()
         await state.clear()
         await state.set_state(CreatePromocode.waiting_for_code)
         await callback.message.answer(
@@ -117,7 +117,8 @@ async def create_promocode_start(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала создания промокода: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при начале создания промокода")
+        await callback.message.answer("Произошла ошибка при начале создания промокода", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.message(CreatePromocode.waiting_for_code)
@@ -170,7 +171,8 @@ async def handle_promocode_code(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки кода промокода: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработке кода промокода")
+        await message.answer("Произошла ошибка при обработке кода промокода", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.callback_query(F.data.startswith("promo_type:"))
@@ -178,10 +180,9 @@ async def handle_promocode_type(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора типа промокода"""
     promo_type = callback.data.split(":")[1]
     logger.info(f"Администратор {callback.from_user.id} выбрал тип промокода: {promo_type}")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
         # Сохраняем тип промокода
         discount_type = DiscountType.percent if promo_type == "percent" else DiscountType.fixed
         await state.update_data(discount_type=discount_type)
@@ -205,7 +206,8 @@ async def handle_promocode_type(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки типа промокода: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при выборе типа промокода")
+        await callback.message.answer("Произошла ошибка при выборе типа промокода", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.message(CreatePromocode.waiting_for_value)
@@ -267,7 +269,8 @@ async def handle_promocode_value(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки значения промокода: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработке значения скидки")
+        await message.answer("Произошла ошибка при обработке значения скидки", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.message(CreatePromocode.waiting_for_usage_limit)
@@ -324,7 +327,8 @@ async def handle_promocode_usage_limit(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки лимита использований: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при обработке лимита использований")
+        await message.answer("Произошла ошибка при обработке лимита использований", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.callback_query(F.data.startswith("promo_duration:"))
@@ -332,10 +336,9 @@ async def handle_promocode_duration(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора срока действия промокода"""
     duration_str = callback.data.split(":")[1]
     logger.info(f"Администратор {callback.from_user.id} выбрал срок действия: {duration_str} дней")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
         if duration_str == "0":
             # Бессрочный промокод
             valid_until = None
@@ -352,17 +355,17 @@ async def handle_promocode_duration(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки срока действия: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при выборе срока действия")
+        await callback.message.answer("Произошла ошибка при выборе срока действия", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.callback_query(F.data == "promo_custom_duration")
 async def handle_custom_duration(callback: CallbackQuery, state: FSMContext):
     """Запрос пользовательского срока действия"""
     logger.info(f"Администратор {callback.from_user.id} выбрал пользовательский срок")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
         await callback.message.answer(
             "Введите срок действия промокода в днях (от 1 до 365):\n"
             "Например: 14 (для 2 недель), 60 (для 2 месяцев)\n"
@@ -373,7 +376,8 @@ async def handle_custom_duration(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка запроса пользовательского срока: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.message(CreatePromocode.waiting_for_custom_duration)
 async def handle_promocode_custom_duration(message: Message, state: FSMContext):
@@ -407,17 +411,17 @@ async def handle_promocode_custom_duration(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки срока действия: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при выборе срока действия")
+        await message.answer("Произошла ошибка при выборе срока действия", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.callback_query(F.data == "cancel_promo_creation")
 async def cancel_promo_creation(callback: CallbackQuery, state: FSMContext):
     """Отмена создания промокода"""
     logger.info(f"Администратор {callback.from_user.id} отменил создание промокода")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
         await state.clear()
         await callback.message.answer(
             "Создание промокода отменено.",
@@ -426,7 +430,8 @@ async def cancel_promo_creation(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка отмены создания промокода: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 async def show_promocode_summary(message: Message, state: FSMContext):
@@ -468,10 +473,9 @@ async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
     """Подтверждение создания промокода"""
     admin_id = callback.from_user.id
     logger.info(f"Администратор {admin_id} подтвердил создание промокода")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
         data = await state.get_data()
         code = data.get('code')
         discount_type = data.get('discount_type')
@@ -544,7 +548,8 @@ async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка создания промокода администратором {admin_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при создании промокода.\n"
-            "Пожалуйста, попробуйте еще раз или обратитесь к разработчику."
+            "Пожалуйста, попробуйте еще раз или обратитесь к разработчику.",
+            reply_markup=excursions_submenu()
         )
         await state.clear()
 
@@ -555,33 +560,31 @@ async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
 async def edit_promo_data(callback: CallbackQuery, state: FSMContext):
     """Редактирование данных промокода перед созданием"""
     logger.info(f"Администратор {callback.from_user.id} хочет редактировать данные промокода")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
-        # Используем клавиатуру из keyboards_adm.py
         await callback.message.answer(
             "Выберите поле для редактирования:",
             reply_markup=promo_edit_field_menu()
         )
-
     except Exception as e:
         logger.error(f"Ошибка начала редактирования: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при начале редактирования")
+        await callback.message.answer("Произошла ошибка при начале редактирования", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.callback_query(F.data == "back_to_promo_summary")
 async def back_to_promo_summary(callback: CallbackQuery, state: FSMContext):
     """Возврат к сводке промокода"""
     logger.info(f"Администратор {callback.from_user.id} вернулся к сводке промокода")
-
+    await callback.answer()
     try:
-        await callback.answer()
         await state.set_state(CreatePromocode.waiting_for_confirmation)
         await show_promocode_summary(callback.message, state)
     except Exception as e:
         logger.error(f"Ошибка возврата к сводке: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при возврате к сводке")
+        await callback.message.answer("Произошла ошибка при возврате к сводке", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 @router.callback_query(F.data.startswith("edit_promo_field:"))
@@ -589,10 +592,9 @@ async def edit_promo_field(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора поля для редактирования"""
     field = callback.data.split(":")[1]
     logger.info(f"Администратор {callback.from_user.id} редактирует поле: {field}")
+    await callback.answer()
 
     try:
-        await callback.answer()
-
         # Конфигурация для каждого поля
         field_configs = {
             "code": {
@@ -648,7 +650,8 @@ async def edit_promo_field(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка редактирования поля {field}: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при выборе поля для редактирования")
+        await callback.message.answer("Произошла ошибка при выборе поля для редактирования", reply_markup=excursions_submenu())
+        await state.clear()
 
 
 
@@ -661,12 +664,12 @@ async def list_promocodes_callback(callback: CallbackQuery):
     """Управление промокодами"""
     logger.info(f"Администратор {callback.from_user.id} запросил список промокодов для управления")
 # TODO Реализовать клавиатуру (промокод) -> ([Статистика][Редактирование][Завершить действие][Назад])
+    await callback.answer()
     try:
-        await callback.answer()
         await show_promocodes(callback.message)
     except Exception as e:
         logger.error(f"Ошибка в list_promocodes: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
 
 
 
@@ -674,9 +677,10 @@ async def list_promocodes_callback(callback: CallbackQuery):
 async def archive_promocodes_callback(callback: CallbackQuery):
     """Архивные промокоды"""
     logger.info(f"Администратор {callback.from_user.id} запросил архивные промокоды")
+    await callback.answer()
 
     try:
-        await callback.answer()
+
 
         async with async_session() as session:
             promo_repo = PromoCodeRepository(session)
@@ -716,7 +720,7 @@ async def archive_promocodes_callback(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа архивных промокодов: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
 
 
 

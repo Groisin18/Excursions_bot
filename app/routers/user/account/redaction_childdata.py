@@ -292,16 +292,15 @@ async def redact_child_birth_date_two(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        validated_date_str = validate_birthdate(message.text)
-        birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
-        logger.debug(f"Дата рождения ребенка валидирована: {validated_date_str} -> {birth_date_for_save}")
+        validated_date = validate_birthdate(message.text)
+        logger.debug(f"Дата рождения ребенка валидирована: {validated_date}")
 
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 user_repo = UserRepository(uow.session)
                 success = await user_repo.update(
                     child_id,
-                    date_of_birth=birth_date_for_save
+                    date_of_birth=validated_date
                 )
 
                 if success:

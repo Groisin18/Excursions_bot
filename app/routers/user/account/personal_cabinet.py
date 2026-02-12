@@ -3,6 +3,7 @@
 '''
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 
 import app.user_panel.keyboards as kb
@@ -26,7 +27,7 @@ async def registration_data(message: Message, state: FSMContext):
 
     try:
         # Отправляем временное сообщение, которое убирает реплай-клавиатуру
-        sent_message = await message.answer(
+        await message.answer(
             "Загружаем личный кабинет...",
             reply_markup=ReplyKeyboardRemove()
         )
@@ -51,7 +52,7 @@ async def registration_data(message: Message, state: FSMContext):
                     children = await user_repo.get_children_users(user.id)
                     user_info += f"\nДетей зарегистрировано: {len(children)}"
 
-                await sent_message.edit_text(
+                await message.answer(
                     user_info,
                     reply_markup=keyboard
                 )
@@ -59,7 +60,7 @@ async def registration_data(message: Message, state: FSMContext):
                 logger.debug(f"Пользователь {user_telegram_id} не зарегистрирован, начало регистрации")
                 await state.set_state(Reg_user.is_token)
 
-                await sent_message.edit_text(
+                await message.answer(
                     'Для начала давайте зарегистрируемся!\n\n'
                     'Если вас ранее регистрировал другой человек, то выдается '
                     'специальный токен (набор символов). Есть ли он у вас?',
@@ -119,7 +120,6 @@ async def child_choice(callback: CallbackQuery):
 
             message_text += "\nВыберите ребенка для редактирования:"
 
-            from aiogram.utils.keyboard import InlineKeyboardBuilder
             builder = InlineKeyboardBuilder()
             for child in children:
                 builder.button(
@@ -142,23 +142,32 @@ async def child_choice(callback: CallbackQuery):
                     message_text,
                     reply_markup=builder.as_markup()
                 )
+            await callback.answer()
 
     except Exception as e:
-        logger.error(f"Ошибка показа данных детей: {e}", exc_info=True)
-        await callback.answer("Произошла ошибка", show_alert=True)
+        logger.error(f"Ошибка при выводе списка детей: {e}")
+        await callback.message.answer(
+            "Произошла ошибка при выводе списка детей. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await callback.answer()
+
 
 @router.callback_query(F.data == 'back_to_cabinet')
 async def back_to_cabinet(callback: CallbackQuery):
     """Вернуться в личный кабинет"""
     user_id = callback.from_user.id
-
+    await callback.answer()
     try:
         async with async_session() as session:
             user_repo = UserRepository(session)
 
             user = await user_repo.get_by_telegram_id(user_id)
             if not user:
-                await callback.answer("Ошибка", show_alert=True)
+                await callback.message.answer(
+                    "Произошла ошибка при возврате в личный кабинет. Попробуйте позже.",
+                    reply_markup=kb.main
+                )
                 return
 
             has_children = await user_repo.user_has_children(user.id)
@@ -182,4 +191,7 @@ async def back_to_cabinet(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка возврата в кабинет: {e}")
-        await callback.answer("Ошибка", show_alert=True)
+        await callback.message.answer(
+            "Произошла ошибка при возврате в личный кабинет. Попробуйте позже.",
+            reply_markup=kb.main
+        )

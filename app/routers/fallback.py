@@ -13,8 +13,12 @@ logger = get_logger(__name__)
 @router.callback_query(F.data == 'no_action')
 async def redact_exc_data(callback: CallbackQuery):
     """Пустой обработчик для необрабатываемых инлайн-кнопок"""
-    logger.debug(f"Пользователь {callback.from_user.id} нажал кнопку 'no_action'")
-    await callback.answer("")
+    try:
+        logger.debug(f"Пользователь {callback.from_user.id} нажал кнопку 'no_action'")
+        await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка в обработчике no_action: {e}", exc_info=True)
+        await callback.answer("Произошла ошибка", show_alert=True)
 
 
 @router.message(F.content_type.in_({'photo', 'video', 'document', 'sticker', 'voice'}))
@@ -39,9 +43,9 @@ async def unsupported_content(message: Message):
             reply_markup=kb.main
         )
         logger.debug(f"Пользователю {message.from_user.id} отправлено сообщение о неподдерживаемом контенте")
-
     except Exception as e:
         logger.error(f"Ошибка обработки неподдерживаемого контента: {e}", exc_info=True)
+        await message.answer("Произошла ошибка. Попробуйте позже.", reply_markup=kb.main)
 
 
 @router.message(F.text.contains('/'))
@@ -60,9 +64,11 @@ async def unknown_command(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка обработки неизвестной команды: {e}", exc_info=True)
+        await message.answer("Произошла ошибка. Попробуйте позже.", reply_markup=kb.main)
+
 
 @router.callback_query()
-async def unknown_callback(callback:CallbackQuery, state:FSMContext):
+async def unknown_callback(callback: CallbackQuery, state: FSMContext):
     """Обработка неизвестных колбэков"""
     logger.warning(
         f"Неизвестный колбэк от пользователя {callback.from_user.id} "
@@ -78,27 +84,22 @@ async def unknown_callback(callback:CallbackQuery, state:FSMContext):
         logger.debug(f"Состояние FSM очищено для пользователя {callback.from_user.id}")
 
         await callback.message.answer(
-            'Мы извиняемся. Выберите другой пункт меню.'
+            'Мы извиняемся. Произошла ошибка. Выберите другой пункт меню.',
+            reply_markup=kb.main
         )
         logger.debug(f"Пользователю {callback.from_user.id} отправлено сообщение об ошибке")
-
     except Exception as e:
         logger.error(f"Ошибка обработки неизвестного колбэка: {e}", exc_info=True)
-        try:
-            await callback.answer("Произошла ошибка", show_alert=True)
-        except:
-            pass
 
 
 @router.message()
-async def unknown_message(message: Message, state:FSMContext):
+async def unknown_message(message: Message, state: FSMContext):
     """Обработка неизвестных сообщений"""
     logger.warning(
         f"Неизвестное сообщение от пользователя {message.from_user.id} "
         f"({message.from_user.username}): text='{message.text}', "
         f"тип={message.content_type}"
     )
-
     try:
         current_state = await state.get_state()
         if current_state:
@@ -111,13 +112,6 @@ async def unknown_message(message: Message, state:FSMContext):
             reply_markup=kb.main
         )
         logger.debug(f"Пользователю {message.from_user.id} отправлено сообщение о неизвестной команде")
-
     except Exception as e:
         logger.error(f"Ошибка обработки неизвестного сообщения: {e}", exc_info=True)
-        try:
-            await message.answer(
-                'Произошла ошибка. Пожалуйста, используйте кнопки меню.',
-                reply_markup=kb.main
-            )
-        except:
-            pass
+        await message.answer("Произошла ошибка. Попробуйте позже.", reply_markup=kb.main)

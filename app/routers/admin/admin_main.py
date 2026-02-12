@@ -1,13 +1,9 @@
 import asyncio
 
 from aiogram import F, Router
-from aiogram.types import (
-    Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
-)
+from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
-from datetime import datetime
-from sqlalchemy import select, text
 
 import app.user_panel.keyboards as main_kb
 
@@ -16,9 +12,8 @@ from app.admin_panel.keyboards_adm import (
     bookings_submenu, statistics_submenu, finances_submenu,
     notifications_submenu, settings_submenu
 )
-from app.database.models import User
 from app.database.repositories import UserRepository
-from app.database.session import engine, async_session
+from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
@@ -49,7 +44,7 @@ async def admin_start(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка при входе в админ-панель для пользователя {message.from_user.id}: {e}", exc_info=True)
-        await message.answer("Ошибка при загрузке админ-панели")
+        await message.answer("Ошибка при загрузке админ-панели", reply_markup=main_kb.main)
 
 
 @router.message(Command("adminhelp"))
@@ -65,9 +60,7 @@ async def adminhelp_command(message: Message):
             '/promote (номер телефона) - назначить пользователя админом, капитаном, или разжаловать в клиенты\n'
             '/dashboard - дашборд админа\n'
             '/statistic_today - детальная статистика за сегодня\n'
-            '/report - генерация отчета за период\n'
-            '/debug - проверка состояния и подключения к базе данных (для сисадмина!)\n'
-            '/reset_db - принудительное отключение сессий базы данных (для сисадмина!)',
+            '/report - генерация отчета за период',
             reply_markup=main_kb.main
         )
         logger.debug(f"Adminhelp отправлен пользователю {message.from_user.id}")
@@ -82,10 +75,7 @@ async def admin_exit(message: Message):
 
     try:
         await message.answer(
-            "Вы вышли из админ-панели",
-            reply_markup=main_kb.main
-        )
-        logger.debug(f"Пользователь {message.from_user.id} успешно вышел из админ-панели")
+            "Вы вышли из админ-панели", reply_markup=main_kb.main)
     except Exception as e:
         logger.error(f"Ошибка при выходе из админ-панели: {e}", exc_info=True)
 
@@ -136,7 +126,7 @@ async def excursions_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия управления экскурсиями: {e}", exc_info=True)
-
+        await message.answer("Ошибка открытия управления экскурсиями", reply_markup=admin_main_menu())
 
 @router.message(F.text == "Капитаны")
 async def captains_main(message: Message):
@@ -150,6 +140,7 @@ async def captains_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия управления капитанами: {e}", exc_info=True)
+        await message.answer("Ошибка открытия управления капитанами", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Клиенты")
@@ -164,6 +155,7 @@ async def clients_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия управления клиентами: {e}", exc_info=True)
+        await message.answer("Ошибка открытия управления клиентами", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Записи")
@@ -178,6 +170,7 @@ async def bookings_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия управления записями: {e}", exc_info=True)
+        await message.answer("Ошибка открытия управления записями", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Статистика")
@@ -192,6 +185,7 @@ async def statistics_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия статистики: {e}", exc_info=True)
+        await message.answer("Ошибка открытия статистики", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Финансы")
@@ -206,6 +200,7 @@ async def finances_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия финансов: {e}", exc_info=True)
+        await message.answer("Ошибка открытия финансов", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Уведомления")
@@ -220,6 +215,7 @@ async def notifications_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия уведомлений: {e}", exc_info=True)
+        await message.answer("Ошибка открытия уведомлений", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Настройки")
@@ -234,6 +230,7 @@ async def settings_main(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка открытия настроек: {e}", exc_info=True)
+        await message.answer("Ошибка открытия настроек", reply_markup=admin_main_menu())
 
 
 @router.message(F.text == "Назад")
@@ -258,7 +255,7 @@ async def back_from_submenu(message: Message, state: FSMContext):
 # ===== КОМАНДЫ АДМИНИСТРИРОВАНИЯ =====
 
 @router.message(Command("promote"))
-async def promote_to_admin_command(message: Message):
+async def promote_command(message: Message):
     """Команда для изменения статуса админа, капитана, клиента"""
     logger.info(f"Администратор {message.from_user.id} использует команду /promote")
     if len(message.text.split()) > 1:
@@ -301,7 +298,7 @@ async def promote_to_admin_command(message: Message):
             await message.answer("Неверный формат номера телефона")
         except Exception as e:
             logger.error(f"Ошибка в команде /promote: {e}", exc_info=True)
-            await message.answer("Произошла ошибка")
+            await message.answer("Произошла ошибка", reply_markup=admin_main_menu())
     else:
         logger.debug(f"Администратор {message.from_user.id} использовал /promote без параметров")
         await message.answer("Использование: /promote (номер телефона)")
@@ -343,7 +340,7 @@ async def promote_to_admin(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка повышения пользователя {target_user_id} до администратора: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при назначении")
+        await callback.message.answer("Произошла ошибка при назначении", reply_markup=admin_main_menu())
 
 
 @router.callback_query(F.data.startswith('confirm_give_cap:'))
@@ -382,7 +379,7 @@ async def promote_to_captain(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка повышения пользователя {target_user_id} до капитана: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при назначении")
+        await callback.message.answer("Произошла ошибка при назначении", reply_markup=admin_main_menu())
 
 
 @router.callback_query(F.data.startswith('confirm_give_clt:'))
@@ -421,206 +418,4 @@ async def promote_to_client(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка понижения пользователя {target_user_id} до клиента: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при изменении статуса")
-
-
-# ===== КОМАНДЫ ДЕБАГА =====
-
-@router.message(Command('debug'))
-async def cmd_debug(message: Message, state: FSMContext):
-    """Команда отладки"""
-    logger.info(f"Запрос debug от пользователя {message.from_user.id}")
-
-    try:
-        async with async_session() as session:
-            # Проверяем подключение к БД
-            result = await session.execute(select(1))
-            test = result.scalar()
-
-            # Проверяем пользователя
-            user = await session.execute(
-                select(User).where(User.telegram_id == message.from_user.id)
-            )
-            user = user.scalar_one_or_none()
-            current_state = await state.get_state()
-
-            debug_info = {
-                "db_connection": "OK" if test == 1 else "FAILED",
-                "user_found": bool(user),
-                "user_telegram_id": message.from_user.id,
-                "user_date_of_birth": user.date_of_birth if user else None,
-                "current_fsm_state": current_state
-            }
-
-            logger.info(f"Debug info для пользователя {message.from_user.id}: {debug_info}")
-            await message.answer(f"Debug info:\n{debug_info}")
-
-    except Exception as e:
-        logger.error(f"Debug error для пользователя {message.from_user.id}: {e}", exc_info=True)
-        await message.answer(f"Debug error: {e}")
-
-
-async def reset_database_sessions():
-    """Принудительно сбрасывает все сессии БД"""
-    logger.warning("Принудительный сброс сессий БД")
-
-    try:
-        # Закрываем все соединения в engine
-        if 'engine' in globals():
-            await engine.dispose()
-            logger.info("Engine соединения сброшены")
-            return True
-        else:
-            logger.warning("Engine не найден в глобальной области видимости")
-            return False
-    except Exception as e:
-        logger.error(f"Ошибка при сбросе сессий: {e}", exc_info=True)
-        return False
-
-
-@router.message(Command('reset_db'))
-async def cmd_reset_db(message: Message):
-    """Принудительный сброс сессий БД"""
-    logger.warning(f"Пользователь {message.from_user.id} использует команду reset_db")
-
-    try:
-        success = await reset_database_sessions()
-        if success:
-            logger.info(f"Сессии БД сброшены по запросу пользователя {message.from_user.id}")
-            await message.answer("Сессии БД сброшены! Бот должен работать нормально.")
-        else:
-            logger.error(f"Не удалось сбросить сессии БД для пользователя {message.from_user.id}")
-            await message.answer("Ошибка при сбросе сессий БД")
-    except Exception as e:
-        logger.error(f"Ошибка выполнения reset_db: {e}", exc_info=True)
-        await message.answer(f"Ошибка сброса: {e}")
-
-
-
-@router.message(Command('optimize_db'))
-async def cmd_optimize_db(message: Message):
-    """Оптимизация базы данных (только для админов)"""
-    # Отправляем начальное сообщение
-    status_msg = await message.answer("Начинаю оптимизацию БД...")
-    start_time = datetime.now()
-    try:
-        # Шаг 1: Быстрые оптимизации (не блокирующие)
-        async with engine.connect() as conn:
-            result = await conn.execute(text("PRAGMA optimize"))
-            analysis = await result.fetchone()
-            await status_msg.edit_text(
-                f"Анализ БД выполнен:\n"
-                f"Рекомендации: {analysis[0] if analysis else 'нет'}"
-            )
-            await asyncio.sleep(1)
-
-            # Шаг 2: Checkpoint WAL (быстрый)
-            await conn.execute(text("PRAGMA wal_checkpoint(PASSIVE)"))
-            await status_msg.edit_text("WAL checkpoint выполнен")
-            await asyncio.sleep(1)
-
-            # Шаг 3: Анализ индексов
-            await conn.execute(text("ANALYZE"))
-            await status_msg.edit_text("Анализ индексов выполнен")
-            await asyncio.sleep(1)
-
-        # Шаг 4: Медленные операции (спрашиваем подтверждение)
-        confirm_keyboard = InlineKeyboardMarkup(
-            inline_keyboard=[
-                [
-                    InlineKeyboardButton(
-                        text="VACUUM (Занимает время! Только при разросшейся БД)",
-                        callback_data="db_vacuum"
-                    ),
-                    InlineKeyboardButton(
-                        text="Только быстрая оптимизация",
-                        callback_data="db_fast_only"
-                    )
-                ]
-            ]
-        )
-
-        await status_msg.edit_text(
-            f"Быстрая оптимизация завершена за {(datetime.now() - start_time).total_seconds():.1f} сек\n"
-            f"Хотите выполнить полную оптимизацию (VACUUM)?\n"
-            f"Это может занять время и заблокировать БД на 1-10 мин!\n\n"
-            "Когда нужно делать VACUUM?\n"
-            "После массового удаления - например, удалил 1000+ старых бронирований\n"
-            "Раз в месяц/квартал - профилактическая оптимизация\n"
-            "Когда БД выросла вдвое - без видимых причин\n"
-            "Перед бэкапом - чтобы бэкап был меньше\n\n"
-            "Когда не нужно делать VACUUM?\n"
-            "В пиковое время - бот будет недоступен 1-10 минут\n"
-            "На маленькой БД (< 100MB) - эффект минимальный\n"
-            "Если нет свободного места на сервере - VACUUM временно требует 2x мест\n\n"
-            "VACUUM Не удаляет таблицы, действующие данные, не меняет структуру БД, не сбрасывает счетчики\n",
-            reply_markup=confirm_keyboard
-        )
-
-    except Exception as e:
-        logger.error(f"Ошибка оптимизации БД: {e}")
-        await message.answer(f"Ошибка оптимизации: {e}")
-        if status_msg:
-            await status_msg.delete()
-
-
-@router.callback_query(F.data.startswith('db_'))
-async def handle_db_optimization_confirm(callback: CallbackQuery):
-    """Обработка подтверждения оптимизации"""
-    await callback.answer('')
-    if callback.data == "db_fast_only":
-        await callback.message.edit_text("Быстрая оптимизация завершена!")
-        return
-
-    # Полная оптимизация с VACUUM
-    status_msg = await callback.message.edit_text(
-        "Запускаю полную оптимизацию (VACUUM)...\n"
-        "Это может занять несколько минут!"
-    )
-    start_time = datetime.now()
-    try:
-        async with engine.connect() as conn:
-            db_size_before = (await conn.execute(
-                text("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")
-            )).scalar_one()
-            try:
-                await asyncio.wait_for(
-                    conn.execute(text("VACUUM")),
-                    timeout=600  # 10 минут максимум
-                )
-            except asyncio.TimeoutError:
-                await status_msg.edit_text("VACUUM превысил лимит времени (10 минут)")
-                return
-
-            db_size_after = (await conn.execute(
-                text("SELECT page_count * page_size FROM pragma_page_count(), pragma_page_size()")
-            )).scalar_one()
-            stats_result = await conn.execute(text("PRAGMA stats"))
-            stats = await stats_result.fetchone()
-        saved_space = db_size_before - db_size_after
-        saved_percent = (saved_space / db_size_before * 100) if db_size_before > 0 else 0
-        time_taken = (datetime.now() - start_time).total_seconds()
-        report = (
-            f"Полная оптимизация БД завершена!\n"
-            f"Время выполнения: {time_taken:.1f} сек\n"
-            f"Размер БД: {db_size_after / 1024 / 1024:.2f} MB\n"
-            f"Сэкономлено: {saved_space / 1024 / 1024:.2f} MB ({saved_percent:.1f}%)\n"
-            f"Статистика: {stats[0] if stats else 'N/A'}"
-        )
-
-        await status_msg.edit_text(report)
-
-        logger.info(
-            f"Optimization completed: "
-            f"time={time_taken:.1f}s, "
-            f"saved={saved_space / 1024 / 1024:.2f}MB, "
-            f"admin={callback.from_user.id}"
-        )
-
-    except asyncio.TimeoutError:
-        await status_msg.edit_text("Операция VACUUM превысила лимит времени")
-        logger.warning("VACUUM timeout exceeded")
-
-    except Exception as e:
-        logger.error(f"Ошибка при выполнении VACUUM: {e}")
-        await status_msg.edit_text(f"Ошибка при оптимизации: {e}")
+        await callback.message.answer("Произошла ошибка при изменении статуса", reply_markup=admin_main_menu())

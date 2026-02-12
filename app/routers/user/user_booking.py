@@ -627,14 +627,21 @@ async def cancel_booking(callback: CallbackQuery, state: FSMContext):
     user_telegram_id = callback.from_user.id
     logger.info(f"Пользователь {user_telegram_id} отменил бронирование")
 
-    await state.clear()
+    try:
+        await state.clear()
+        await callback.message.answer(
+            "Бронирование отменено.",
+            reply_markup=kb.main
+        )
+        await callback.answer()
 
-    await callback.message.answer(
-        "Бронирование отменено.",
-        reply_markup=kb.main
-    )
-
-    await callback.answer()
+    except Exception as e:
+        logger.error(f"Ошибка при отмене бронирования пользователем {user_telegram_id}: {e}", exc_info=True)
+        await callback.message.answer(
+                "Произошла ошибка при отмене бронирования. Попробуйте позже.",
+                reply_markup=kb.main
+            )
+        await callback.answer()
 
 @router.message(UserBookingStates.requesting_child_weight)
 async def request_child_weight(message: Message, state: FSMContext):
@@ -827,8 +834,3 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
             reply_markup=kb.main
         )
         await state.clear()
-
-@router.callback_query(UserBookingStates.requesting_child_weight, F.data == "cancel_booking")
-async def cancel_booking_during_weight(callback: CallbackQuery, state: FSMContext):
-    """Отмена бронирования во время ввода веса ребенка"""
-    await cancel_booking(callback, state)

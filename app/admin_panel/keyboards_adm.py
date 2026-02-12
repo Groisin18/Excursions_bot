@@ -177,7 +177,6 @@ def settings_submenu():
 
     buttons = [
         "Управление администраторами",
-        "Настройки базы данных",
         "Файлы согласия на обработку ПД",
         "Назад"
     ]
@@ -185,7 +184,7 @@ def settings_submenu():
     for button in buttons:
         builder.add(KeyboardButton(text=button))
 
-    builder.adjust(2, 2)
+    builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 

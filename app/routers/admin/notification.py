@@ -35,6 +35,10 @@ async def send_notification_start(message: Message, state: FSMContext):
         logger.debug(f"Пользователь {message.from_user.id} перешел в состояние отправки уведомления")
     except Exception as e:
         logger.error(f"Ошибка начала отправки уведомления: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=notifications_submenu()
+        )
 
 
 @router.message(AdminStates.waiting_for_notification_text)
@@ -55,10 +59,9 @@ async def send_notification_process(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка обработки уведомления: {e}", exc_info=True)
-        await message.answer("Ошибка при обработке уведомления")
+        await message.answer("Ошибка при обработке уведомления", reply_markup=notifications_submenu())
+        await state.clear()
 
-    await state.clear()
-    logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
 
 @router.message(F.text == "Отмена", AdminStates.waiting_for_notification_text)
@@ -74,7 +77,8 @@ async def cancel_notification(message: Message, state: FSMContext):
         )
     except Exception as e:
         logger.error(f"Ошибка отмены уведомления: {e}", exc_info=True)
-        await message.answer("Ошибка", reply_markup=admin_main_menu())
+        await message.answer("Ошибка", reply_markup=notifications_submenu())
+        await state.clear()
 
 @router.message(F.text == "Напоминания")
 async def notifications_reminders(message: Message):

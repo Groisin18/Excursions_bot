@@ -1,5 +1,3 @@
-from datetime import datetime
-
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
@@ -12,7 +10,7 @@ from app.user_panel.states import Reg_user, Reg_token
 from app.database.unit_of_work import UnitOfWork
 from app.database.managers import UserManager
 from app.database.repositories import FileRepository
-from app.database.models import UserRole, RegistrationType, FileType
+from app.database.models import FileType
 from app.utils.validation import (validate_email, validate_phone, validate_name,
                                   validate_surname, validate_birthdate,
                                   validate_weight, validate_address
@@ -25,44 +23,6 @@ from app.utils.datetime_utils import calculate_age
 router = Router(name="adult_registration")
 
 logger = get_logger(__name__)
-
-
-async def handle_registration(message, final_user):
-    """Сохранение пользователя в БД"""
-    logger.info(f"Сохранение пользователя {final_user.name} {final_user.surname} в базу данных")
-
-    try:
-        full_name = final_user.surname + ' ' + final_user.name
-        date_of_birth = datetime.strptime(final_user.date_of_birth, "%d.%m.%Y").date()
-
-        logger.debug(f"Создание пользователя: {full_name}, дата рождения: {date_of_birth}")
-
-        async with async_session() as session:
-            async with UnitOfWork(session) as uow:
-                user_manager = UserManager(uow.session)
-
-                user = await user_manager.create_user(
-                    telegram_id=message.from_user.id,
-                    full_name=full_name,
-                    role=UserRole.client,
-                    phone_number=final_user.phone,
-                    date_of_birth=date_of_birth,
-                    address=final_user.address,
-                    weight=final_user.weight,
-                    consent_to_pd=True,
-                    registration_type=RegistrationType.SELF
-                )
-
-                if user:
-                    logger.info(f"Пользователь создан: ID={user.id}, имя='{user.full_name}'")
-                    return user
-                else:
-                    logger.error("Ошибка создания пользователя: объект не возвращен")
-                    raise ValueError('Ошибка создания пользователя!!!')
-
-    except Exception as e:
-        logger.error(f"Ошибка создания пользователя: {e}", exc_info=True)
-        raise
 
 
 @router.callback_query(F.data == 'user_hasnt_token')
@@ -115,14 +75,28 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при загрузке документа. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.callback_query(F.data == 'pd_consent_false')
 async def reg_consest_false(callback: CallbackQuery, state: FSMContext):
     """Согласие не дано, отмена регистрации"""
-    await callback.message.answer(
+    try:
+        await callback.answer()
+        await callback.message.edit_text(
             'К сожалению, регистрация без согласия на обработку персональных'
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
             reply_markup=kb.inline_pd_consent)
+    except Exception as e:
+        logger.error(f"Ошибка при отказе от согласия: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.callback_query(F.data == 'pd_consent_true')
 async def reg_consest_true(callback: CallbackQuery, state: FSMContext):
@@ -137,6 +111,11 @@ async def reg_consest_true(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала регистрации без токена: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.message(Reg_user.name)
 async def reg_surname(message: Message, state: FSMContext):
@@ -154,6 +133,13 @@ async def reg_surname(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидное имя от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе имени: {e}", exc_info=True)
+        await message.answer(
+            "Произошла внутренняя ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.message(Reg_user.surname)
 async def reg_birth_date(message: Message, state: FSMContext):
@@ -174,6 +160,13 @@ async def reg_birth_date(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидная фамилия от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе фамилии: {e}", exc_info=True)
+        await message.answer(
+            "Произошла внутренняя ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.message(Reg_user.date_of_birth)
 async def reg_age(message: Message, state: FSMContext):
@@ -197,6 +190,14 @@ async def reg_age(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидная дата рождения от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе даты рождения: {e}", exc_info=True)
+        await message.answer(
+            "Произошла внутренняя ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.message(Reg_user.weight)
 async def reg_weight(message: Message, state: FSMContext):
@@ -214,6 +215,13 @@ async def reg_weight(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный вес от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе веса: {e}", exc_info=True)
+        await message.answer(
+            "Произошла внутренняя ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.message(Reg_user.address)
 async def reg_address(message: Message, state: FSMContext):
@@ -231,6 +239,13 @@ async def reg_address(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный адрес от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе адреса: {e}", exc_info=True)
+        await message.answer(
+            "Произошла внутренняя ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.message(Reg_user.email)
 async def reg_email(message: Message, state: FSMContext):
@@ -248,6 +263,13 @@ async def reg_email(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный email от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе email: {e}", exc_info=True)
+        await message.answer(
+            "Произошла внутренняя ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
 
 @router.message(Reg_user.phone)
 async def reg_phone_and_end(message: Message, state: FSMContext):
@@ -275,7 +297,6 @@ async def reg_phone_and_end(message: Message, state: FSMContext):
         final_user = UserRegistrationData(**user_data)
         logger.info(f"Создание пользователя: {final_user.name} {final_user.surname}")
 
-        # Сохраняем в БД напрямую через менеджер
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 user_manager = UserManager(uow.session)

@@ -38,6 +38,7 @@ async def search_client_start(message: Message, state: FSMContext):
         logger.debug(f"Пользователь {message.from_user.id} перешел в состояние поиска клиента")
     except Exception as e:
         logger.error(f"Ошибка начала поиска клиента: {e}", exc_info=True)
+        await message.answer("Ошибка начала поиска клиента", reply_markup=clients_submenu())
 
 
 @router.message(AdminStates.waiting_for_client_search)
@@ -72,13 +73,14 @@ async def search_client_process(message: Message, state: FSMContext):
 
             await message.answer(response, reply_markup=clients_submenu())
             logger.debug(f"Результаты поиска отправлены администратору {message.from_user.id}")
+            await state.clear()
 
     except Exception as e:
         logger.error(f"Ошибка поиска клиента по запросу '{search_query}': {e}", exc_info=True)
         await message.answer("Ошибка при поиске клиента", reply_markup=clients_submenu())
+        await state.clear()
 
-    await state.clear()
-    logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+
 
 
 @router.message(F.text == "Отмена", AdminStates.waiting_for_client_search)
@@ -95,7 +97,8 @@ async def cancel_client_search(message: Message, state: FSMContext):
         logger.debug(f"Поиск клиента отменен для пользователя {message.from_user.id}")
     except Exception as e:
         logger.error(f"Ошибка отмены поиска клиента: {e}", exc_info=True)
-        await message.answer("Ошибка при отмене", reply_markup=admin_main_menu())
+        await message.answer("Ошибка при отмене", reply_markup=clients_submenu())
+        await state.clear()
 
 @router.message(F.text == "Новые клиенты")
 async def show_new_clients(message: Message):
@@ -127,7 +130,7 @@ async def show_new_clients(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения новых клиентов: {e}", exc_info=True)
-        await message.answer("Ошибка при получении списка клиентов")
+        await message.answer("Ошибка при получении списка клиентов", reply_markup=clients_submenu())
 
 
 @router.message(F.text == "Добавить клиента")
@@ -155,6 +158,7 @@ async def edit_client(message: Message):
 @router.callback_query(F.data.startswith("arrived:"))
 async def mark_arrived(callback: CallbackQuery):
     """Отметить прибытие клиента"""
+    await callback.answer()
     booking_id = int(callback.data.split(":")[1])
     logger.info(f"Администратор {callback.from_user.id} отмечает прибытие для бронирования {booking_id}")
 
@@ -173,6 +177,4 @@ async def mark_arrived(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка при отметке прибытия для бронирования {booking_id}: {e}", exc_info=True)
-        await callback.message.edit_text("Произошла ошибка")
-
-    await callback.answer()
+        await callback.message.answer("Произошла ошибка", reply_markup=clients_submenu())

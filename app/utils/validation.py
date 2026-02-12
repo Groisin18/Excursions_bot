@@ -85,7 +85,7 @@ def validate_address(v: str) -> str:
     return cleaned
 
 
-def validate_birthdate(date_str: str) -> str:
+def validate_birthdate(date_str: str) -> date:
     """Валидация даты рождения"""
     logger.debug(f"Валидация даты | входное значение: '{date_str}'")
 
@@ -127,7 +127,7 @@ def validate_birthdate(date_str: str) -> str:
 
     result = date_obj.strftime("%d.%m.%Y")
     logger.debug(f"Дата успешно валидирована | результат: '{result}'")
-    return result
+    return date_obj
 
 
 def validate_weight(v: str) -> int:

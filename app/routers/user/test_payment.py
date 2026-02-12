@@ -51,7 +51,7 @@ async def test_buy(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка отправки инвойса пользователю {message.from_user.id}: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при создании платежа. Попробуйте позже.")
+        await message.answer("Произошла ошибка при создании платежа. Попробуйте позже.", reply_markup=kb.main)
 
 
 @router.pre_checkout_query()
@@ -165,6 +165,10 @@ async def web_app_data(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка обработки данных веб-приложения: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при обработке данных. Попробуйте позже.",
+            reply_markup=kb.main
+        )
 
 
 # Можно добавить обработку ошибок платежей

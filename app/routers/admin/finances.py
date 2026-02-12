@@ -7,6 +7,7 @@ from app.database.models import PaymentStatus, YooKassaStatus
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
+from app.admin_panel.keyboards_adm import admin_main_menu, finances_submenu
 from app.utils.logging_config import get_logger
 
 
@@ -58,7 +59,7 @@ async def show_online_payments(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения онлайн-платежей: {e}", exc_info=True)
-        await message.answer("Ошибка при получении списка платежей")
+        await message.answer("Ошибка при получении списка платежей", reply_markup=finances_submenu())
 
 @router.message(F.text == "Сводка и текущие платежи")
 async def finances_summary(message: Message):
@@ -126,10 +127,10 @@ async def mark_paid(callback: CallbackQuery):
                     await callback.message.edit_text("Оплата подтверждена")
                 else:
                     logger.warning(f"Не удалось отметить оплату для бронирования {booking_id}")
-                    await callback.message.edit_text("Ошибка при обновлении статуса")
+                    await callback.message.edit_text("Ошибка при обновлении статуса", reply_markup=finances_submenu())
 
     except Exception as e:
         logger.error(f"Ошибка при отметке оплаты для бронирования {booking_id}: {e}", exc_info=True)
-        await callback.message.edit_text("Произошла ошибка")
+        await callback.message.edit_text("Произошла ошибка", reply_markup=finances_submenu())
 
     await callback.answer()

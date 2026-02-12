@@ -291,9 +291,8 @@ async def redact_birth_date_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новую дату рождения: '{message.text}'")
 
     try:
-        validated_date_str = validate_birthdate(message.text)
-        birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
-        logger.debug(f"Дата рождения валидирована: {validated_date_str} -> {birth_date_for_save}")
+        validated_date = validate_birthdate(message.text)
+        logger.debug(f"Дата рождения валидирована: {validated_date}")
 
         async with async_session() as session:
             user_repo = UserRepository(session)
@@ -308,7 +307,7 @@ async def redact_birth_date_two(message: Message, state: FSMContext):
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 user_repo = UserRepository(uow.session)
-                success = await user_repo.update(user.id, date_of_birth=birth_date_for_save)
+                success = await user_repo.update(user.id, date_of_birth=validated_date)
 
                 if success:
                     updated_user = await user_repo.get_by_id(user.id)

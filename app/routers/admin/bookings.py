@@ -7,6 +7,7 @@ from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
+from app.admin_panel.keyboards_adm import admin_main_menu, bookings_submenu
 
 
 logger = get_logger(__name__)
@@ -57,7 +58,7 @@ async def show_active_bookings(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения активных записей: {e}", exc_info=True)
-        await message.answer("Ошибка при получении списка записей")
+        await message.answer("Ошибка при получении списка записей", reply_markup=bookings_submenu())
 
 
 @router.message(F.text == "Неоплаченные")
@@ -91,7 +92,7 @@ async def show_unpaid_bookings(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения неоплаченных записей: {e}", exc_info=True)
-        await message.answer("Ошибка при получении списка неоплаченных записей")
+        await message.answer("Ошибка при получении списка неоплаченных записей", reply_markup=bookings_submenu())
 
 
 @router.message(F.text == "Создать запись")

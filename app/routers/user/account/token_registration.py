@@ -23,20 +23,25 @@ router = Router(name="token_registration")
 logger = get_logger(__name__)
 
 
-
 @router.callback_query(F.data == 'user_has_token')
 async def reg_has_token(callback: CallbackQuery, state: FSMContext):
     """Начало регистрации по токену"""
     logger.info(f"Пользователь {callback.from_user.id} начал регистрацию по токену")
 
     try:
-        await callback.answer('')
+        await callback.answer()
         await state.set_state(Reg_token.token)
         await callback.message.answer('Хорошо! Введите этот токен. Обращайте внимание на большие и маленькие буквы')
         logger.debug(f"Пользователь {callback.from_user.id} перешел в состояние ввода токена")
 
     except Exception as e:
         logger.error(f"Ошибка начала регистрации по токену: {e}", exc_info=True)
+        await callback.message.answer(
+            'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.message(Reg_token.token)
 async def reg_is_token_right(message: Message, state: FSMContext):
@@ -90,6 +95,8 @@ async def reg_is_token_right(message: Message, state: FSMContext):
             'Произошла ошибка. Попробуйте снова или обратитесь к администратору',
             reply_markup=kb.inline_in_menu
         )
+        await state.clear()
+
 
 @router.callback_query(F.data == 'user_has_wrong_token')
 async def reg_token_wrong(callback: CallbackQuery, state: FSMContext):
@@ -97,22 +104,27 @@ async def reg_token_wrong(callback: CallbackQuery, state: FSMContext):
     logger.info(f"Пользователь {callback.from_user.id} вводит токен повторно")
 
     try:
-        await callback.answer('')
+        await callback.answer()
         await state.set_state(Reg_token.token)
         await callback.message.answer('Попробуйте ввести верный токен еще раз:')
 
     except Exception as e:
         logger.error(f"Ошибка повторного ввода токена: {e}", exc_info=True)
+        await callback.message.answer(
+            'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.callback_query(F.data == 'user_has_right_token')
 async def reg_token_right(callback: CallbackQuery, state: FSMContext):
     """Токен верный, переход к вводу email"""
     logger.info(f"Пользователь {callback.from_user.id} подтвердил верный токен")
     try:
-        await callback.answer('')
+        await callback.answer()
         await state.set_state(Reg_token.pd_consent)
 
-        # Операция чтения - получаем file_id
         async with async_session() as session:
             file_repo = FileRepository(session)
             file_id = await file_repo.get_file_id(FileType.CPD)
@@ -133,7 +145,6 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            # Получаем полную запись для логирования
             file_record = await file_repo.get_file_record(FileType.CPD)
             file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
 
@@ -154,21 +165,38 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
+        await callback.message.answer(
+            'Произошла ошибка при загрузке документа. Попробуйте позже или обратитесь к администратору.',
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.callback_query(F.data == 'pd_consent_token_false')
 async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
     """Согласие не дано, отмена регистрации"""
-    await callback.message.answer(
+    try:
+        await callback.answer()
+        await callback.message.answer(
             'К сожалению, регистрация без согласия на обработку персональных'
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
-            reply_markup=kb.inline_pd_consent_token)
+            reply_markup=kb.inline_pd_consent_token
+        )
+    except Exception as e:
+        logger.error(f"Ошибка при отказе от согласия: {e}", exc_info=True)
+        await callback.message.answer(
+            'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.callback_query(F.data == 'pd_consent_token_true')
 async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
     """Согласие дано, переход к вводу email"""
     logger.info(f"Пользователь {callback.from_user.id} дал согласие на обработку персональных данных")
     try:
-        await callback.answer('')
+        await callback.answer()
         await state.set_state(Reg_token.email)
         await callback.message.answer(
             'Давайте укажем те данные, которых у вас не хватает.\n\n'
@@ -178,6 +206,12 @@ async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка перехода к вводу email: {e}", exc_info=True)
+        await callback.message.answer(
+            'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.message(Reg_token.email)
 async def reg_token_email(message: Message, state: FSMContext):
@@ -197,6 +231,12 @@ async def reg_token_email(message: Message, state: FSMContext):
         await message.answer(str(e))
     except Exception as e:
         logger.error(f"Ошибка обработки email: {e}", exc_info=True)
+        await message.answer(
+            'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
+            reply_markup=kb.main
+        )
+        await state.clear()
+
 
 @router.message(Reg_token.phone)
 async def reg_token_end(message: Message, state: FSMContext):
@@ -226,7 +266,6 @@ async def reg_token_end(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # Операция записи - привязка Telegram и обновление данных
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 user_manager = UserManager(uow.session)
@@ -255,7 +294,6 @@ async def reg_token_end(message: Message, state: FSMContext):
                     logger.debug(f"Обновление данных пользователя {linked_user.id}: {list(update_data.keys())}")
                     await user_repo.update(linked_user.id, **update_data)
 
-                # Получаем обновленного пользователя
                 updated_user = await user_repo.get_by_id(linked_user.id)
 
                 birth_date_str = ""
@@ -282,6 +320,7 @@ async def reg_token_end(message: Message, state: FSMContext):
     except ValueError as e:
         logger.error(f"Ошибка валидации при регистрации по токену: {e}")
         await message.answer(str(e))
+        await state.clear()
     except Exception as e:
         logger.error(f"Ошибка завершения регистрации по токену: {e}", exc_info=True)
         await state.clear()

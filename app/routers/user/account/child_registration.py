@@ -48,6 +48,8 @@ async def reg_child(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала регистрации ребенка: {e}", exc_info=True)
+        await callback.message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.message(Reg_child.name)
 async def reg_child_surname(message: Message, state: FSMContext):
@@ -66,6 +68,10 @@ async def reg_child_surname(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидное имя ребенка от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при вводе имени ребенка: {e}", exc_info=True)
+        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.message(Reg_child.surname)
 async def reg_child_consent(message: Message, state: FSMContext):
@@ -80,6 +86,10 @@ async def reg_child_consent(message: Message, state: FSMContext):
         logger.warning(f"Невалидная фамилия ребенка от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
         return
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при валидации фамилии ребенка: {e}", exc_info=True)
+        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
     logger.info(f"Пользователь {message.from_user.id} перешел к согласию на обработку персональных данных ребенка")
 
@@ -135,14 +145,22 @@ async def reg_child_consent(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка в моменте согласия на обработку персональных данных ребенка: {e}", exc_info=True)
+        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.callback_query(F.data == 'pd_consent_child_false')
 async def reg_child_consest_false(callback: CallbackQuery, state: FSMContext):
     """Согласие не дано, отмена регистрации"""
-    await callback.message.answer(
+    try:
+        await callback.answer('')
+        await callback.message.edit_text(
             'К сожалению, регистрация без согласия на обработку персональных'
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
             reply_markup=kb.inline_pd_consent_child)
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка при отказе от согласия на обработку ПД ребенка: {e}", exc_info=True)
+        await callback.message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.callback_query(F.data == 'pd_consent_child_true')
 async def reg_child_consest_true(callback: CallbackQuery, state: FSMContext):
@@ -162,8 +180,9 @@ async def reg_child_consest_true(callback: CallbackQuery, state: FSMContext):
         logger.debug(f"Пользователь {callback.from_user.id} перешел к вводу даты рождения ребенка")
 
     except Exception as e:
-        logger.error(f"Ошибка перехода к вводу email: {e}", exc_info=True)
-
+        logger.error(f"Неизвестная ошибка при переходе к вводу даты рождения ребенка: {e}", exc_info=True)
+        await callback.message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.message(Reg_child.date_of_birth)
 async def reg_child_age(message: Message, state: FSMContext):
@@ -187,6 +206,10 @@ async def reg_child_age(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидная дата рождения от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка вводе даты рождения: {e}", exc_info=True)
+        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.message(Reg_child.weight)
 async def reg_child_weight(message: Message, state: FSMContext):
@@ -204,6 +227,10 @@ async def reg_child_weight(message: Message, state: FSMContext):
     except ValueError as e:
         logger.warning(f"Невалидный вес ребенка от пользователя {message.from_user.id}: {message.text}")
         await message.answer(str(e))
+    except Exception as e:
+        logger.error(f"Неизвестная ошибка вводе веса ребенка: {e}", exc_info=True)
+        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
+        await state.clear()
 
 @router.message(Reg_child.address)
 async def reg_child_address(message: Message, state: FSMContext):
@@ -242,7 +269,6 @@ async def reg_child_address(message: Message, state: FSMContext):
 
             logger.info(f"Создание ребенка: {final_child.surname} {final_child.name}")
 
-        # Сохраняем в БД напрямую через менеджер
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 user_manager = UserManager(uow.session)
@@ -279,5 +305,5 @@ async def reg_child_address(message: Message, state: FSMContext):
         await state.clear()
     except Exception as e:
         logger.error(f"Неизвестная ошибка при создании ребенка: {e}", exc_info=True)
-        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.err_reg)
+        await message.answer(f"Произошла ошибка: {str(e)}", reply_markup=kb.main)
         await state.clear()

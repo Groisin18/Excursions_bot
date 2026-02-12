@@ -5,18 +5,19 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta
 
-from app.admin_panel.states_adm import AdminStates
 from app.database.repositories import SlotRepository
 from app.database.managers import SlotManager
 from app.database.models import SlotStatus
 from app.database.session import async_session
-from app.utils.validation import validate_slot_date
+
+from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_view_options,
     schedule_date_management_menu, schedule_month_management_menu,
-    schedule_week_management_menu
+    schedule_week_management_menu, excursions_submenu
 )
 from app.middlewares import AdminMiddleware
+from app.utils.validation import validate_slot_date
 from app.utils.logging_config import get_logger
 
 
@@ -72,7 +73,7 @@ async def show_excursion_schedule(message: Message):
         )
     except Exception as e:
         logger.error(f"Ошибка в view_schedule: {e}", exc_info=True)
-        await message.answer("Произошла ошибка")
+        await message.answer("Произошла ошибка", reply_markup=excursions_submenu())
 
 @router.callback_query(F.data == "view_schedule_by_date")
 async def view_schedule_by_date(callback: CallbackQuery, state: FSMContext):
@@ -90,7 +91,7 @@ async def view_schedule_by_date(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка начала просмотра расписания по дате: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
 
 @router.message(AdminStates.waiting_for_schedule_date)
 async def handle_schedule_date_view(message: Message, state: FSMContext):
@@ -142,7 +143,7 @@ async def handle_schedule_date_view(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания по дате: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при получении расписания")
+        await message.answer("Произошла ошибка при получении расписания", reply_markup=excursions_submenu())
         await state.clear()
 
 @router.callback_query(F.data == "schedule_today")
@@ -181,7 +182,7 @@ async def schedule_today_callback(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на сегодня: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
 
 @router.callback_query(F.data == "schedule_tomorrow")
 async def schedule_tomorrow_callback(callback: CallbackQuery):
@@ -219,7 +220,7 @@ async def schedule_tomorrow_callback(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на завтра: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
 
 @router.callback_query(F.data == "schedule_week")
 async def schedule_week_callback(callback: CallbackQuery):
@@ -313,7 +314,8 @@ async def schedule_month_callback(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на месяц: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.callback_query(F.data == "show_more_month_dates")
 async def show_more_month_dates_callback(callback: CallbackQuery, state: FSMContext):
@@ -377,7 +379,8 @@ async def show_more_month_dates_callback(callback: CallbackQuery, state: FSMCont
 
     except Exception as e:
         logger.error(f"Ошибка показа продолжения расписания: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.callback_query(F.data == "back_to_month_menu")
 async def back_to_month_menu_callback(callback: CallbackQuery, state: FSMContext):
@@ -407,7 +410,8 @@ async def back_to_month_menu_callback(callback: CallbackQuery, state: FSMContext
 
     except Exception as e:
         logger.error(f"Ошибка возврата к меню месяца: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        await state.clear()
 
 @router.callback_query(F.data == "view_schedule")
 async def view_schedule_callback(callback: CallbackQuery):
@@ -423,4 +427,4 @@ async def view_schedule_callback(callback: CallbackQuery):
         )
     except Exception as e:
         logger.error(f"Ошибка в view_schedule: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка")
+        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())

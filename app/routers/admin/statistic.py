@@ -111,7 +111,7 @@ async def dashboard_handler(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения дашборда: {e}", exc_info=True)
-        await message.answer("Ошибка при получении данных дашборда")
+        await message.answer("Ошибка при получении данных дашборда", reply_markup=statistics_submenu())
 
 @router.message(F.text == "Сегодня")
 async def statistics_today(message: Message):
@@ -182,7 +182,7 @@ async def general_statistics(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка получения общей статистики: {e}", exc_info=True)
-        await message.answer("Ошибка при получении статистики", reply_markup=bookings_submenu())
+        await message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
 
 @router.message(F.text == "За период")
 async def statistics_period_start(message: Message, state: FSMContext):
@@ -200,6 +200,7 @@ async def statistics_period_start(message: Message, state: FSMContext):
         logger.debug(f"Пользователь {message.from_user.id} перешел в состояние ожидания периода")
     except Exception as e:
         logger.error(f"Ошибка начала выбора периода: {e}", exc_info=True)
+        await message.answer("Ошибка начала выбора периода", reply_markup=statistics_submenu())
 
 @router.message(AdminStates.waiting_for_statistics_period)
 async def statistics_period_process(message: Message, state: FSMContext):
@@ -291,7 +292,7 @@ async def show_near_slots_callback(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа ближайших слотов: {e}")
-        await callback.message.answer("Ошибка при получении слотов")
+        await callback.message.answer("Ошибка при получении слотов", reply_markup=statistics_submenu())
 
 @router.callback_query(F.data == "show_free_captains")
 async def show_free_captains_callback(callback: CallbackQuery):
@@ -317,7 +318,7 @@ async def show_free_captains_callback(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа капитанов: {e}")
-        await callback.message.answer("Ошибка при получении данных")
+        await callback.message.answer("Ошибка при получении данных", reply_markup=statistics_submenu())
 
 @router.callback_query(F.data == "show_unpaid_bookings")
 async def show_unpaid_bookings_callback(callback: CallbackQuery):
