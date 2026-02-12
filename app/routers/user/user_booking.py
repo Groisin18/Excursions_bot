@@ -1,15 +1,21 @@
-from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.database.requests import DatabaseManager
+
+from app.database.unit_of_work import UnitOfWork
+from app.database.managers import UserManager, SlotManager
+from app.database.repositories import (
+    SlotRepository, UserRepository, BookingRepository, ExcursionRepository
+)
 from app.database.models import SlotStatus
 from app.database.session import async_session
 
 from app.utils.logging_config import get_logger
 from app.user_panel.states import UserBookingStates
 from app.utils.datetime_utils import get_weekday_name
+from app.utils.validation import validate_weight
+from app.utils.calculators import WeightCalculator
 
 import app.user_panel.keyboards as kb
 
@@ -29,9 +35,13 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            slot_repo = SlotRepository(session)
+            user_repo = UserRepository(session)
+            booking_repo = BookingRepository(session)
+            excursion_repo = ExcursionRepository(session)
+            slot_manager = SlotManager(session)
 
-            slot = await db.get_slot_by_id(slot_id)
+            slot = await slot_repo.get_by_id(slot_id)
             if not slot:
                 logger.warning(f"Слот {slot_id} не найден для пользователя {user_telegram_id}")
                 await callback.message.answer(
@@ -48,7 +58,8 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            booked_places = await db.get_booked_places_for_slot(slot.id)
+            # Получаем количество забронированных мест
+            booked_places = await slot_manager.get_booked_places(slot.id)
             if booked_places >= slot.max_people:
                 logger.info(f"Нет свободных мест в слоте {slot_id} для пользователя {user_telegram_id}")
                 await callback.message.answer(
@@ -57,7 +68,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            user = await db.get_user_by_telegram_id(user_telegram_id)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
             if not user:
                 logger.error(f"Пользователь {user_telegram_id} не найден в БД")
                 await callback.message.answer(
@@ -66,7 +77,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            existing_booking = await db.get_user_active_booking_for_slot(user.id, slot.id)
+            existing_booking = await booking_repo.get_user_active_for_slot(user.id, slot.id)
             if existing_booking:
                 logger.info(f"У пользователя {user.id} уже есть активная бронь на слот {slot.id}")
                 await callback.message.answer(
@@ -75,8 +86,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            # Теперь slot.excursion точно загружен благодаря исправленному методу
-            excursion = slot.excursion
+            excursion = await excursion_repo.get_by_id(slot.excursion_id)
             if not excursion:
                 logger.error(f"Экскурсия не найдена для слота {slot.id}")
                 await callback.message.answer(
@@ -85,10 +95,10 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            current_weight = await db.get_current_weight_for_slot(slot.id)
+            current_weight = await slot_manager.get_current_weight(slot.id)
             available_weight = slot.max_weight - current_weight
 
-            user_has_children = await db.user_has_children(user.id)
+            user_has_children = await user_repo.user_has_children(user.id)
 
             weekday = get_weekday_name(slot.start_datetime)
 
@@ -98,7 +108,6 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 f"Время: {slot.start_datetime.strftime('%H:%M')}\n"
                 f"Экскурсия: {excursion.name}\n"
                 f"Продолжительность: {excursion.base_duration_minutes} мин.\n\n"
-
             )
 
             excursion_info += (
@@ -149,7 +158,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
     logger.info(f"Пользователь {user_telegram_id} на этапе проверки веса")
 
     try:
-        callback.answer('')
+        await callback.answer('')
         data = await state.get_data()
 
         # Получаем данные из state
@@ -169,7 +178,9 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
             return
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            # Операции чтения
+            slot_manager = SlotManager(session)
+            user_repo = UserRepository(session)
 
             # Если вес не указан в профиле, запрашиваем его
             if adult_weight is None:
@@ -191,7 +202,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                 )
 
                 # Получаем текущий занятый вес для полного сообщения
-                current_weight = await db.get_current_weight_for_slot(slot_id)
+                current_weight = await slot_manager.get_current_weight(slot_id)
 
                 await callback.message.answer(
                     f"Превышение общего допустимого веса на экскурсию:\n\n"
@@ -205,8 +216,6 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                 )
                 await state.clear()
                 return
-
-            # Вес проходит проверку
             logger.info(f"Вес пользователя {user_telegram_id} проверен: {adult_weight}кг из {available_weight}кг доступно")
 
             # Обновляем доступный вес в state (вычитаем вес взрослого)
@@ -224,7 +233,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
 
             if user_has_children:
                 # Получаем детей пользователя для информации
-                children = await db.get_children_users(user_id)
+                children = await user_repo.get_children_users(user_id)
                 children_count = len(children)
 
                 await callback.message.answer(
@@ -263,8 +272,6 @@ async def request_adult_weight(message: Message, state: FSMContext):
             await state.clear()
             return
 
-        # Валидация веса
-        from app.utils.validation import validate_weight
         try:
             weight = validate_weight(message.text)
         except ValueError as e:
@@ -272,25 +279,21 @@ async def request_adult_weight(message: Message, state: FSMContext):
             await message.answer(str(e))
             return
 
-        # Сохраняем вес в БД
         async with async_session() as session:
-            db = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
 
-            user = await db.get_user_by_telegram_id(user_telegram_id)
-            if user:
-                await db.update_user_data(user.id, weight=weight)
-                logger.info(f"Вес пользователя {user_telegram_id} сохранен в БД: {weight}кг")
+                user = await user_repo.get_by_telegram_id(user_telegram_id)
+                if user:
+                    await user_repo.update(user.id, weight=weight)
+                    logger.info(f"Вес пользователя {user_telegram_id} сохранен в БД: {weight}кг")
 
         # Обновляем вес в state
         await state.update_data({
             "adult_weight": weight,
             "awaiting_weight_input": False
         })
-
-        # Возвращаемся к проверке веса
         await state.set_state(UserBookingStates.checking_weight)
-
-        # Вызываем проверку веса снова
         await check_adult_weight(message, state)
 
     except Exception as e:
@@ -350,10 +353,9 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
         user_id = data.get("user_id")
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            user_repo = UserRepository(session)
 
-            # Получаем список детей пользователя
-            children = await db.get_children_users(user_id)
+            children = await user_repo.get_children_users(user_id)
 
             if not children:
                 logger.warning(f"У пользователя {user_telegram_id} нет зарегистрированных детей")
@@ -385,8 +387,6 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
 
             # Переходим к выбору конкретных детей
             await state.set_state(UserBookingStates.selecting_children)
-
-            # Показываем клавиатуру выбора детей
             await callback.message.answer(
                 f"У вас {len(children)} зарегистрированных детей.\n"
                 f"Выберите детей, которые поедут с вами (максимум 5):",
@@ -462,20 +462,20 @@ async def handle_child_selection(callback: CallbackQuery, state: FSMContext):
 
         # Обновляем клавиатуру с новым состоянием выбора
         async with async_session() as session:
-            db = DatabaseManager(session)
+            user_repo = UserRepository(session)
 
             # Получаем актуальные данные детей
             children_objects = []
             for child_data in available_children:
-                child_obj = await db.get_user_by_id(child_data["id"])
+                child_obj = await user_repo.get_by_id(child_data["id"])
                 if child_obj:
                     children_objects.append(child_obj)
 
-        await callback.message.edit_reply_markup(
-            reply_markup=await kb.create_children_selection_keyboard(children_objects, selected_ids)
-        )
+            await callback.message.edit_reply_markup(
+                reply_markup=await kb.create_children_selection_keyboard(children_objects, selected_ids)
+            )
 
-        await callback.answer(message_text)
+            await callback.answer(message_text)
 
     except ValueError as e:
         logger.error(f"Ошибка парсинга child_id для пользователя {user_telegram_id}: {e}")
@@ -531,18 +531,6 @@ async def process_to_promo_code(message: Message, state: FSMContext):
         reply_markup=await kb.create_promo_code_keyboard()
     )
 
-async def get_child_info_for_display(child_id: int, db: DatabaseManager) -> dict:
-    """Получает информацию о ребенке для отображения"""
-    child_user = await db.get_user_by_id(child_id)
-    if not child_user:
-        return None
-
-    return {
-        "id": child_user.id,
-        "full_name": child_user.full_name,
-        "age": child_user.age,
-        "weight": child_user.weight
-    }
 
 @router.callback_query(UserBookingStates.selecting_children, F.data == "finish_children_selection")
 async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
@@ -572,10 +560,10 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
         children_weights = data.get("children_weights", {})
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            user_manager = UserManager(session)
 
             for child_id in selected_ids:
-                child_info = await get_child_info_for_display(child_id, db)
+                child_info = await user_manager.get_child_info_for_display(child_id)
 
                 if child_info and child_info["weight"] is None and child_id not in children_weights:
                     children_without_weight.append({
@@ -689,11 +677,11 @@ async def request_child_weight(message: Message, state: FSMContext):
             await message.answer(str(e))
             return
 
-        # Сохраняем вес ребенка в БД
         async with async_session() as session:
-            db = DatabaseManager(session)
-            await db.update_user_data(current_child["id"], weight=weight)
-            logger.info(f"Вес ребенка {current_child['id']} сохранен в БД: {weight}кг")
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                await user_repo.update(current_child["id"], weight=weight)
+                logger.info(f"Вес ребенка {current_child['id']} сохранен в БД: {weight}кг")
 
         # Обновляем вес в state
         children_weights = data.get("children_weights", {})
@@ -744,6 +732,7 @@ async def request_child_weight(message: Message, state: FSMContext):
 @router.callback_query(UserBookingStates.requesting_child_weight, F.data.startswith("skip_child_weight:"))
 async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
     """Пропуск ввода веса ребенка (использование среднего веса с сохранением в БД)"""
+    await callback.answer()
     user_telegram_id = callback.from_user.id
 
     try:
@@ -768,40 +757,27 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
 
         # Получаем возраст ребенка из БД для точного расчета
         async with async_session() as session:
-            db = DatabaseManager(session)
-            child_user = await db.get_user_by_id(child_id)
+            # Операция чтения
+            user_repo = UserRepository(session)
+            child_user = await user_repo.get_by_id(child_id)
 
             if not child_user:
                 logger.error(f"Ребенок {child_id} не найден в БД")
                 await callback.answer("Ошибка: ребенок не найден", show_alert=True)
                 return
 
-            # Используем проперти age из модели
-            age = child_user.age
-
             # Рассчитываем средний вес в зависимости от возраста
-            if age is None:
-                # Если возраст неизвестен, используем средний вес 25 кг
-                average_weight = 25
-                weight_info = "средний вес 25 кг (возраст неизвестен)"
-            elif age <= 3:
-                average_weight = 15
-                weight_info = f"средний вес 15 кг для возраста {age} лет"
-            elif age <= 7:
-                average_weight = 25
-                weight_info = f"средний вес 25 кг для возраста {age} лет"
-            elif age <= 12:
-                average_weight = 40
-                weight_info = f"средний вес 40 кг для возраста {age} лет"
-            else:
-                average_weight = 50
-                weight_info = f"средний вес 50 кг для возраста {age} лет"
+            average_weight = WeightCalculator.calculate_average_child_weight(child_user.age)
+            weight_info = WeightCalculator.get_weight_info(child_user.age)
 
-            # Сохраняем средний вес в БД
-            await db.update_user_data(child_id, weight=average_weight)
-            logger.info(
-                f"Средний вес {average_weight}кг сохранен в БД для ребенка {child_id} (возраст: {age})"
-            )
+        # Операция записи - сохраняем средний вес в БД
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                await user_repo.update(child_id, weight=average_weight)
+                logger.info(
+                    f"Средний вес {average_weight}кг сохранен в БД для ребенка {child_id} (возраст: {child_user.age})"
+                )
 
         # Сохраняем вес в state
         children_weights = data.get("children_weights", {})
@@ -851,8 +827,6 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
             reply_markup=kb.main
         )
         await state.clear()
-
-    await callback.answer()
 
 @router.callback_query(UserBookingStates.requesting_child_weight, F.data == "cancel_booking")
 async def cancel_booking_during_weight(callback: CallbackQuery, state: FSMContext):

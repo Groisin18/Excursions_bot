@@ -424,3 +424,17 @@ class UserManager(BaseManager):
             .order_by(User.created_at.desc())
         )
         return result.scalars().all()
+
+
+    async def get_child_info_for_display(self, child_id: int) -> Optional[dict]:
+        """Получает информацию о ребенке для отображения"""
+        child_user = await self.user_repo.get_by_id(child_id)
+        if not child_user:
+            return None
+
+        return {
+            "id": child_user.id,
+            "full_name": child_user.full_name,
+            "age": child_user.age,
+            "weight": child_user.weight
+    }

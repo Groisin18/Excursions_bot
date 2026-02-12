@@ -478,7 +478,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
             weekday = get_weekday_name(slot.start_datetime)
 
             # Получаем цены через PriceCalculator
-            from app.utils.price_calculator import PriceCalculator
+            from app.utils.calculators import PriceCalculator
             base_price = slot.excursion.base_price
             price_categories = PriceCalculator.get_price_categories(base_price)
 

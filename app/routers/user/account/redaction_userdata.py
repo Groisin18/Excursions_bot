@@ -1,16 +1,18 @@
+from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
+
+import app.user_panel.keyboards as kb
 from app.user_panel.states import Red_user
+
+from app.database.unit_of_work import UnitOfWork
+from app.database.repositories import UserRepository
+from app.database.session import async_session
 from app.utils.validation import (validate_email, validate_phone, validate_name,
                                   validate_surname, validate_birthdate,
                                   validate_weight, validate_address
                                   )
-from datetime import datetime
-
-import app.user_panel.keyboards as kb
-from app.database.requests import DatabaseManager
-from app.database.session import async_session
 from app.utils.logging_config import get_logger
 
 router = Router(name="user_redaction")
@@ -25,8 +27,8 @@ async def redact_users_data(callback: CallbackQuery, state: FSMContext):
 
     try:
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(callback.from_user.id)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(callback.from_user.id)
 
             if not user:
                 logger.warning(f"Пользователь {callback.from_user.id} не найден при редактировании")
@@ -74,8 +76,8 @@ async def redact_name_two(message: Message, state: FSMContext):
         validated_name = validate_name(message.text)
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
             if not user:
                 logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении имени")
@@ -83,38 +85,38 @@ async def redact_name_two(message: Message, state: FSMContext):
                 await state.clear()
                 return
 
-            fullname = user.full_name
-            new_full_name = fullname.split()[0] + ' ' + validated_name
+            surname = user.full_name.split()[0]
+            new_full_name = surname + ' ' + validated_name
 
-            logger.debug(f"Обновление имени пользователя {message.from_user.id}: {fullname} -> {new_full_name}")
+            logger.debug(f"Обновление имени пользователя {message.from_user.id}: {user.full_name} -> {new_full_name}")
 
-            success = await db_manager.update_user_data(
-                id=user.id,
-                full_name=new_full_name
-            )
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, full_name=new_full_name)
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Имя пользователя {message.from_user.id} обновлено на: {updated_user.full_name}")
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Имя пользователя {message.from_user.id} обновлено на: {updated_user.full_name}")
 
-                await message.answer(
-                    "Имя обновено!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}",
-                    reply_markup=kb.inline_end_reg
-                )
-            else:
-                logger.warning(f"Не удалось обновить имя пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=kb.inline_end_reg)
+                    await message.answer(
+                        "Имя обновлено!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}",
+                        reply_markup=kb.inline_end_reg
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить имя пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=kb.inline_end_reg)
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидное имя от пользователя {message.from_user.id}: {message.text}")
@@ -147,8 +149,8 @@ async def redact_surname_two(message: Message, state: FSMContext):
         validated_surname = validate_surname(message.text)
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
             if not user:
                 logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении фамилии")
@@ -156,41 +158,38 @@ async def redact_surname_two(message: Message, state: FSMContext):
                 await state.clear()
                 return
 
-            fullname = user.full_name
-            if len(fullname.split()) >= 2:
-                new_full_name = validated_surname + ' ' + fullname.split()[1]
-            else:
-                new_full_name = validated_surname
+            name = user.full_name.split()[1]  # Имя (вторая часть)
+            new_full_name = validated_surname + ' ' + name
 
-            logger.debug(f"Обновление фамилии пользователя {message.from_user.id}: {fullname} -> {new_full_name}")
+            logger.debug(f"Обновление фамилии пользователя {message.from_user.id}: {user.full_name} -> {new_full_name}")
 
-            success = await db_manager.update_user_data(
-                id=user.id,
-                full_name=new_full_name
-            )
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, full_name=new_full_name)
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Фамилия пользователя {message.from_user.id} обновлена")
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Фамилия пользователя {message.from_user.id} обновлена")
 
-                await message.answer(
-                    "Фамилия обновлена!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}",
-                    reply_markup=kb.inline_end_reg
-                )
-            else:
-                logger.warning(f"Не удалось обновить фамилию пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=kb.inline_end_reg)
+                    await message.answer(
+                        "Фамилия обновлена!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}",
+                        reply_markup=kb.inline_end_reg
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить фамилию пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=kb.inline_end_reg)
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидная фамилия от пользователя {message.from_user.id}: {message.text}")
@@ -224,35 +223,42 @@ async def redact_phone_two(message: Message, state: FSMContext):
         logger.debug(f"Телефон валидирован: {validated_phone[:3]}...{validated_phone[-3:]}")
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-            success = await db_manager.update_user_data(
-                id=user.id,
-                phone_number=validated_phone
-            )
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Телефон пользователя {message.from_user.id} обновлен")
+            if not user:
+                logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении телефона")
+                await message.answer("Пользователь не найден")
+                await state.clear()
+                return
 
-                await message.answer(
-                    "Телефон обновлен!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}",
-                    reply_markup=kb.inline_end_reg
-                )
-            else:
-                logger.warning(f"Не удалось обновить телефон пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=kb.inline_end_reg)
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, phone_number=validated_phone)
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Телефон пользователя {message.from_user.id} обновлен")
+
+                    await message.answer(
+                        "Телефон обновлен!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}",
+                        reply_markup=kb.inline_end_reg
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить телефон пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=kb.inline_end_reg)
+
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидный телефон от пользователя {message.from_user.id}: {message.text}")
@@ -285,43 +291,46 @@ async def redact_birth_date_two(message: Message, state: FSMContext):
     logger.info(f"Пользователь {message.from_user.id} ввел новую дату рождения: '{message.text}'")
 
     try:
+        validated_date_str = validate_birthdate(message.text)
+        birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
+        logger.debug(f"Дата рождения валидирована: {validated_date_str} -> {birth_date_for_save}")
+
         async with async_session() as session:
-            validated_date_str = validate_birthdate(message.text)
-            birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
-            logger.debug(f"Дата рождения валидирована: {validated_date_str} -> {birth_date_for_save}")
+            if not user:
+                logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении даты рождения")
+                await message.answer("Пользователь не найден")
+                await state.clear()
+                return
 
-            db_manager = DatabaseManager(session)
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, date_of_birth=birth_date_for_save)
 
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-            success = await db_manager.update_user_data(
-                id=user.id,
-                date_of_birth=birth_date_for_save
-            )
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Дата рождения пользователя {message.from_user.id} обновлена")
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Дата рождения пользователя {message.from_user.id} обновлена")
+                    response_text = (
+                        "Дата рождения обновлена!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}"
+                    )
+                    await message.answer(response_text, reply_markup=kb.inline_end_reg)
+                else:
+                    logger.warning(f"Не удалось обновить дату рождения пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления", reply_markup=kb.inline_end_reg)
 
-                response_text = (
-                    "Дата рождения обновлена!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}"
-                )
-                keyboard = kb.inline_end_reg
-                await message.answer(response_text, reply_markup=keyboard)
-
-            else:
-                logger.warning(f"Не удалось обновить дату рождения пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления", reply_markup=kb.inline_end_reg)
-
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидная дата рождения от пользователя {message.from_user.id}: {message.text}")
@@ -355,35 +364,42 @@ async def redact_weight_two(message: Message, state: FSMContext):
         logger.debug(f"Вес валидирован: {validated_weight} кг")
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-            success = await db_manager.update_user_data(
-                id=user.id,
-                weight=validated_weight
-            )
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Вес пользователя {message.from_user.id} обновлен на {validated_weight} кг")
+            if not user:
+                logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении веса")
+                await message.answer("Пользователь не найден")
+                await state.clear()
+                return
 
-                await message.answer(
-                    "Вес обновлен!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}",
-                    reply_markup=kb.inline_end_reg
-                )
-            else:
-                logger.warning(f"Не удалось обновить вес пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=kb.inline_end_reg)
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, weight=validated_weight)
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Вес пользователя {message.from_user.id} обновлен на {validated_weight} кг")
+
+                    await message.answer(
+                        "Вес обновлен!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}",
+                        reply_markup=kb.inline_end_reg
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить вес пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=kb.inline_end_reg)
+
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидный вес от пользователя {message.from_user.id}: {message.text}")
@@ -417,35 +433,42 @@ async def redact_address_two(message: Message, state: FSMContext):
         logger.debug(f"Адрес валидирован (длина: {len(validated_address)} символов)")
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-            success = await db_manager.update_user_data(
-                id=user.id,
-                address=validated_address
-            )
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Адрес пользователя {message.from_user.id} обновлен")
+            if not user:
+                logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении адреса")
+                await message.answer("Пользователь не найден")
+                await state.clear()
+                return
 
-                await message.answer(
-                    "Адрес обновлен!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}",
-                    reply_markup=kb.inline_end_reg
-                )
-            else:
-                logger.warning(f"Не удалось обновить адрес пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=kb.inline_end_reg)
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, address=validated_address)
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Адрес пользователя {message.from_user.id} обновлен")
+
+                    await message.answer(
+                        "Адрес обновлен!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}",
+                        reply_markup=kb.inline_end_reg
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить адрес пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=kb.inline_end_reg)
+
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидный адрес от пользователя {message.from_user.id}: {message.text}")
@@ -479,35 +502,42 @@ async def redact_email_two(message: Message, state: FSMContext):
         logger.debug(f"Email валидирован: {validated_email}")
 
         async with async_session() as session:
-            db_manager = DatabaseManager(session)
-            user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-            success = await db_manager.update_user_data(
-                id=user.id,
-                email=validated_email
-            )
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
 
-            if success:
-                updated_user = await db_manager.get_user_by_telegram_id(message.from_user.id)
-                logger.info(f"Email пользователя {message.from_user.id} обновлен")
+            if not user:
+                logger.warning(f"Пользователь {message.from_user.id} не найден при обновлении email")
+                await message.answer("Пользователь не найден")
+                await state.clear()
+                return
 
-                await message.answer(
-                    "Email обновлен!\n\n"
-                    "Ваши данные:\n"
-                    f"Фамилия, имя: {updated_user.full_name}\n"
-                    f"Дата рождения: {updated_user.date_of_birth}\n"
-                    f"Вес: {updated_user.weight} кг\n"
-                    f"Адрес: {updated_user.address}\n"
-                    f"Телефон: {updated_user.phone_number}\n"
-                    f"Email: {updated_user.email}",
-                    reply_markup=kb.inline_end_reg
-                )
-            else:
-                logger.warning(f"Не удалось обновить email пользователя {message.from_user.id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=kb.inline_end_reg)
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(user.id, email=validated_email)
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
+                if success:
+                    updated_user = await user_repo.get_by_id(user.id)
+                    logger.info(f"Email пользователя {message.from_user.id} обновлен")
+
+                    await message.answer(
+                        "Email обновлен!\n\n"
+                        "Ваши данные:\n"
+                        f"Фамилия, имя: {updated_user.full_name}\n"
+                        f"Дата рождения: {updated_user.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_user.weight} кг\n"
+                        f"Адрес: {updated_user.address}\n"
+                        f"Телефон: {updated_user.phone_number}\n"
+                        f"Email: {updated_user.email}",
+                        reply_markup=kb.inline_end_reg
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить email пользователя {message.from_user.id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=kb.inline_end_reg)
+
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
 
     except ValueError as e:
         logger.warning(f"Невалидный email от пользователя {message.from_user.id}: {message.text}")

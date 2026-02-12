@@ -9,7 +9,8 @@ from app.utils.validation import (validate_name,
 from datetime import datetime
 
 import app.user_panel.keyboards as kb
-from app.database.requests import DatabaseManager
+from app.database.unit_of_work import UnitOfWork
+from app.database.repositories import UserRepository
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
 
@@ -26,15 +27,15 @@ async def redact_child_start(callback: CallbackQuery, state: FSMContext):
 
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
+            user_repo = UserRepository(session)
 
             # Проверяем права доступа
-            user = await db.get_user_by_telegram_id(user_telegram_id)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
             if not user:
                 await callback.answer("Пользователь не найден", show_alert=True)
                 return
 
-            child = await db.get_user_by_id(child_id)
+            child = await user_repo.get_by_id(child_id)
             if not child or child.linked_to_parent_id != user.id:
                 await callback.answer("Доступ запрещен", show_alert=True)
                 return
@@ -57,7 +58,7 @@ async def redact_child_start(callback: CallbackQuery, state: FSMContext):
                 "Данные ребенка на текущий момент:\n"
                 f"Имя: {child_name}\n"
                 f"Фамилия: {child_surname}\n"
-                f"Дата рождения: {child.date_of_birth}\n"
+                f"Дата рождения: {child.date_of_birth.strftime('%d.%m.%Y')}\n"
                 f"Вес: {child.weight} кг\n"
                 f"Адрес: {child.address}\n\n"
                 "Выберите пункт, который хотите поменять",
@@ -107,49 +108,50 @@ async def redact_child_name_two(message: Message, state: FSMContext):
             return
 
         async with async_session() as session:
-            db = DatabaseManager(session)
-            child = await db.get_user_by_id(child_id)
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                child = await user_repo.get_by_id(child_id)
 
-            if not child:
-                logger.warning(f"Ребенок {child_id} не найден при обновлении имени")
-                await message.answer("Ребенок не найден")
-                await state.clear()
-                return
+                if not child:
+                    logger.warning(f"Ребенок {child_id} не найден при обновлении имени")
+                    await message.answer("Ребенок не найден")
+                    await state.clear()
+                    return
 
-            name_parts = child.full_name.split()
-            current_surname = name_parts[0] if len(name_parts) > 1 else ""
-            if current_surname:
-                new_full_name = f"{current_surname} {validated_name}"
-            else:
-                new_full_name = validated_name
+                name_parts = child.full_name.split()
+                current_surname = name_parts[0] if len(name_parts) > 1 else ""
+                if current_surname:
+                    new_full_name = f"{current_surname} {validated_name}"
+                else:
+                    new_full_name = validated_name
 
-            logger.debug(f"Обновление имени ребенка {child_id}: {child.full_name} -> {new_full_name}")
+                logger.debug(f"Обновление имени ребенка {child_id}: {child.full_name} -> {new_full_name}")
 
-            success = await db.update_user_data(
-                id=child_id,
-                full_name=new_full_name
-            )
-
-            if success:
-                updated_child = await db.get_user_by_id(child_id)
-                logger.info(f"Имя ребенка {child_id} обновлено на: {updated_child.full_name}")
-
-                await message.answer(
-                    "Имя ребенка обновлено!\n\n"
-                    "Данные ребенка:\n"
-                    f"Имя, фамилия: {updated_child.full_name}\n"
-                    f"Дата рождения: {updated_child.date_of_birth}\n"
-                    f"Вес: {updated_child.weight} кг\n"
-                    f"Адрес: {updated_child.address}",
-                    reply_markup=await kb.redaction_child_builder()
+                success = await user_repo.update(
+                    child_id,
+                    full_name=new_full_name
                 )
-            else:
-                logger.warning(f"Не удалось обновить имя ребенка {child_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=await kb.redaction_child_builder())
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
+                if success:
+                    updated_child = await user_repo.get_by_id(child_id)
+                    logger.info(f"Имя ребенка {child_id} обновлено на: {updated_child.full_name}")
+
+                    await message.answer(
+                        "Имя ребенка обновлено!\n\n"
+                        "Данные ребенка:\n"
+                        f"Имя, фамилия: {updated_child.full_name}\n"
+                        f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_child.weight} кг\n"
+                        f"Адрес: {updated_child.address}",
+                        reply_markup=await kb.redaction_child_builder()
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить имя ребенка {child_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=await kb.redaction_child_builder())
+
+                await state.clear()
+                logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
 
     except ValueError as e:
         logger.warning(f"Невалидное имя ребенка от пользователя {user_telegram_id}: {message.text}")
@@ -198,34 +200,38 @@ async def redact_child_surname_two(message: Message, state: FSMContext):
             return
 
         async with async_session() as session:
-            db = DatabaseManager(session)
-            child = await db.get_user_by_id(child_id)
+            user_repo = UserRepository(session)
+            child = await user_repo.get_by_id(child_id)
 
             if not child:
                 logger.warning(f"Ребенок {child_id} не найден при обновлении фамилии")
                 await message.answer("Ребенок не найден")
                 await state.clear()
                 return
+
             name_parts = child.full_name.split()
             current_name = name_parts[1] if len(name_parts) > 1 else name_parts[0]
             new_full_name = f"{validated_surname} {current_name}"
 
             logger.debug(f"Обновление фамилии ребенка {child_id}: {child.full_name} -> {new_full_name}")
 
-            success = await db.update_user_data(
-                id=child_id,
-                full_name=new_full_name
-            )
+            async with UnitOfWork(session) as uow:
+                user_repo_write = UserRepository(uow.session)
+                success = await user_repo_write.update(
+                    user_id=child_id,
+                    full_name=new_full_name
+                )
 
             if success:
-                updated_child = await db.get_user_by_id(child_id)
+                # Получаем обновленные данные
+                updated_child = await user_repo.get_by_id(child_id)
                 logger.info(f"Фамилия ребенка {child_id} обновлена")
 
                 await message.answer(
                     "Фамилия ребенка обновлена!\n\n"
                     "Данные ребенка:\n"
                     f"Имя, фамилия: {updated_child.full_name}\n"
-                    f"Дата рождения: {updated_child.date_of_birth}\n"
+                    f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
                     f"Вес: {updated_child.weight} кг\n"
                     f"Адрес: {updated_child.address}",
                     reply_markup=await kb.redaction_child_builder()
@@ -286,38 +292,38 @@ async def redact_child_birth_date_two(message: Message, state: FSMContext):
             await state.clear()
             return
 
+        validated_date_str = validate_birthdate(message.text)
+        birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
+        logger.debug(f"Дата рождения ребенка валидирована: {validated_date_str} -> {birth_date_for_save}")
+
         async with async_session() as session:
-            validated_date_str = validate_birthdate(message.text)
-            birth_date_for_save = datetime.strptime(validated_date_str, "%d.%m.%Y").date()
-
-            logger.debug(f"Дата рождения ребенка валидирована: {validated_date_str} -> {birth_date_for_save}")
-
-            db = DatabaseManager(session)
-            success = await db.update_user_data(
-                id=child_id,
-                date_of_birth=birth_date_for_save
-            )
-
-            if success:
-                updated_child = await db.get_user_by_id(child_id)
-                logger.info(f"Дата рождения ребенка {child_id} обновлена")
-
-                await message.answer(
-                    "Дата рождения ребенка обновлена!\n\n"
-                    "Данные ребенка:\n"
-                    f"Имя, фамилия: {updated_child.full_name}\n"
-                    f"Дата рождения: {updated_child.date_of_birth}\n"
-                    f"Вес: {updated_child.weight} кг\n"
-                    f"Адрес: {updated_child.address}",
-                    reply_markup=await kb.redaction_child_builder()
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(
+                    child_id,
+                    date_of_birth=birth_date_for_save
                 )
-            else:
-                logger.warning(f"Не удалось обновить дату рождения ребенка {child_id}")
-                await message.answer("Ошибка обновления",
-                                   reply_markup=await kb.redaction_child_builder())
 
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
+                if success:
+                    updated_child = await user_repo.get_by_id(child_id)
+                    logger.info(f"Дата рождения ребенка {child_id} обновлена")
+
+                    await message.answer(
+                        "Дата рождения ребенка обновлена!\n\n"
+                        "Данные ребенка:\n"
+                        f"Имя, фамилия: {updated_child.full_name}\n"
+                        f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_child.weight} кг\n"
+                        f"Адрес: {updated_child.address}",
+                        reply_markup=await kb.redaction_child_builder()
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить дату рождения ребенка {child_id}")
+                    await message.answer("Ошибка обновления",
+                                       reply_markup=await kb.redaction_child_builder())
+
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
 
     except ValueError as e:
         logger.warning(f"Невалидная дата рождения ребенка от пользователя {user_telegram_id}: {message.text}")
@@ -366,32 +372,33 @@ async def redact_child_weight_two(message: Message, state: FSMContext):
             return
 
         async with async_session() as session:
-            db = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
 
-            logger.debug(f"Вес ребенка валидирован: {validated_weight} кг")
+                logger.debug(f"Вес ребенка валидирован: {validated_weight} кг")
 
-            success = await db.update_user_data(
-                id=child_id,
-                weight=validated_weight
-            )
-
-            if success:
-                updated_child = await db.get_user_by_id(child_id)
-                logger.info(f"Вес ребенка {child_id} обновлен на {validated_weight} кг")
-
-                await message.answer(
-                    "Вес ребенка обновлен!\n\n"
-                    "Данные ребенка:\n"
-                    f"Имя, фамилия: {updated_child.full_name}\n"
-                    f"Дата рождения: {updated_child.date_of_birth}\n"
-                    f"Вес: {updated_child.weight} кг\n"
-                    f"Адрес: {updated_child.address}",
-                    reply_markup=await kb.redaction_child_builder()
+                success = await user_repo.update(
+                    user_id=child_id,
+                    weight=validated_weight
                 )
-            else:
-                logger.warning(f"Не удалось обновить вес ребенка {child_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=await kb.redaction_child_builder())
+
+                if success:
+                    updated_child = await user_repo.get_by_id(child_id)
+                    logger.info(f"Вес ребенка {child_id} обновлен на {validated_weight} кг")
+
+                    await message.answer(
+                        "Вес ребенка обновлен!\n\n"
+                        "Данные ребенка:\n"
+                        f"Имя, фамилия: {updated_child.full_name}\n"
+                        f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_child.weight} кг\n"
+                        f"Адрес: {updated_child.address}",
+                        reply_markup=await kb.redaction_child_builder()
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить вес ребенка {child_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=await kb.redaction_child_builder())
 
             await state.clear()
             logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
@@ -403,6 +410,7 @@ async def redact_child_weight_two(message: Message, state: FSMContext):
         logger.error(f"Неожиданная ошибка при редактировании веса ребенка: {e}", exc_info=True)
         await message.answer("Произошла непредвиденная ошибка")
         await state.clear()
+
 
 @router.callback_query(F.data == 'redact_child_address')
 async def redact_child_address_one(callback: CallbackQuery, state: FSMContext):
@@ -442,36 +450,33 @@ async def redact_child_address_two(message: Message, state: FSMContext):
             await state.clear()
             return
 
+        logger.debug(f"Адрес ребенка валидирован (длина: {len(validated_address)} символов)")
+
         async with async_session() as session:
-            db = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                user_repo = UserRepository(uow.session)
+                success = await user_repo.update(child_id, address=validated_address)
 
-            logger.debug(f"Адрес ребенка валидирован (длина: {len(validated_address)} символов)")
+                if success:
+                    updated_child = await user_repo.get_by_id(child_id)
+                    logger.info(f"Адрес ребенка {child_id} обновлен")
 
-            success = await db.update_user_data(
-                id=child_id,
-                address=validated_address
-            )
+                    await message.answer(
+                        "Адрес ребенка обновлен!\n\n"
+                        "Данные ребенка:\n"
+                        f"Имя, фамилия: {updated_child.full_name}\n"
+                        f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
+                        f"Вес: {updated_child.weight} кг\n"
+                        f"Адрес: {updated_child.address}",
+                        reply_markup=await kb.redaction_child_builder()
+                    )
+                else:
+                    logger.warning(f"Не удалось обновить адрес ребенка {child_id}")
+                    await message.answer("Ошибка обновления",
+                                        reply_markup=await kb.redaction_child_builder())
 
-            if success:
-                updated_child = await db.get_user_by_id(child_id)
-                logger.info(f"Адрес ребенка {child_id} обновлен")
-
-                await message.answer(
-                    "Адрес ребенка обновлен!\n\n"
-                    "Данные ребенка:\n"
-                    f"Имя, фамилия: {updated_child.full_name}\n"
-                    f"Дата рождения: {updated_child.date_of_birth}\n"
-                    f"Вес: {updated_child.weight} кг\n"
-                    f"Адрес: {updated_child.address}",
-                    reply_markup=await kb.redaction_child_builder()
-                )
-            else:
-                logger.warning(f"Не удалось обновить адрес ребенка {child_id}")
-                await message.answer("Ошибка обновления",
-                                    reply_markup=await kb.redaction_child_builder())
-
-            await state.clear()
-            logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
+        await state.clear()
+        logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
 
     except ValueError as e:
         logger.warning(f"Невалидный адрес ребенка от пользователя {user_telegram_id}: {message.text}")

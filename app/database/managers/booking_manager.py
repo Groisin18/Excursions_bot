@@ -10,7 +10,7 @@ from app.database.repositories import (
 from app.database.models import (
     Booking, BookingStatus, SlotStatus, ClientStatus
 )
-from app.utils.price_calculator import PriceCalculator
+from app.utils.calculators import PriceCalculator
 
 
 class BookingManager(BaseManager):

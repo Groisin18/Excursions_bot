@@ -8,7 +8,7 @@ from aiogram.fsm.context import FSMContext
 import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_user
-from app.database.requests import DatabaseManager
+from app.database.repositories import UserRepository
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
 
@@ -25,11 +25,11 @@ async def registration_data(message: Message, state: FSMContext):
     logger.info(f"Пользователь {user_telegram_id} открыл личный кабинет")
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
-            user = await db.get_user_by_telegram_id(user_telegram_id)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
             if user:
                 logger.debug(f"Пользователь {user_telegram_id} зарегистрирован, показываем кабинет")
-                has_children = await db.user_has_children(user.id)
+                has_children = await user_repo.user_has_children(user.id)
                 keyboard = await kb.registration_data_menu_builder(has_children=has_children)
                 user_info = (
                     f"Ваш личный кабинет\n\n"
@@ -38,7 +38,7 @@ async def registration_data(message: Message, state: FSMContext):
                     f"Email: {user.email or 'Не указано'}\n"
                 )
                 if has_children:
-                    children = await db.get_children_users(user.id)
+                    children = await user_repo.get_children_users(user.id)
                     user_info += f"\nДетей зарегистрировано: {len(children)}"
                 await message.answer(user_info, reply_markup=keyboard)
             else:
@@ -64,14 +64,14 @@ async def child_choice(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
-            user = await db.get_user_by_telegram_id(user_telegram_id)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
 
             if not user:
                 await callback.answer("Пользователь не найден", show_alert=True)
                 return
 
-            children = await db.get_children_users(user.id)
+            children = await user_repo.get_children_users(user.id)
 
             if not children:
                 await callback.answer("У вас нет зарегистрированных детей", show_alert=True)
@@ -138,14 +138,14 @@ async def back_to_cabinet(callback: CallbackQuery):
 
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
+            user_repo = UserRepository(session)
 
-            user = await db.get_user_by_telegram_id(user_id)
+            user = await user_repo.get_by_telegram_id(user_id)
             if not user:
                 await callback.answer("Ошибка", show_alert=True)
                 return
 
-            has_children = await db.user_has_children(user.id)
+            has_children = await user_repo.user_has_children(user.id)
             keyboard = await kb.registration_data_menu_builder(has_children=has_children)
 
             user_info = (
@@ -156,7 +156,7 @@ async def back_to_cabinet(callback: CallbackQuery):
             )
 
             if has_children:
-                children = await db.get_children_users(user.id)
+                children = await user_repo.get_children_users(user.id)
                 user_info += f"\nДетей зарегистрировано: {len(children)}"
 
             await callback.message.edit_text(

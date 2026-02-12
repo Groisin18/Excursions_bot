@@ -6,11 +6,14 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
 import app.user_panel.keyboards as kb
-
 from app.user_panel.states import Reg_token
-from app.database.requests import DatabaseManager, FileManager
+
 from app.database.models import RegistrationType, FileType
+from app.database.unit_of_work import UnitOfWork
+from app.database.managers import UserManager
+from app.database.repositories import UserRepository, FileRepository
 from app.database.session import async_session
+
 from app.utils.validation import validate_email, validate_phone
 from app.utils.logging_config import get_logger
 
@@ -43,8 +46,8 @@ async def reg_is_token_right(message: Message, state: FSMContext):
 
     try:
         async with async_session() as session:
-            db = DatabaseManager(session)
-            user = await db.get_user_by_token(token)
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_token(token)
 
             if not user:
                 logger.warning(f"Неверный токен от пользователя {message.from_user.id}: {token[:8]}...")
@@ -64,7 +67,7 @@ async def reg_is_token_right(message: Message, state: FSMContext):
 
             creator_name = "администратор"
             if user.created_by_id:
-                creator = await db.get_user_by_id(user.created_by_id)
+                creator = await user_repo.get_by_id(user.created_by_id)
                 if creator:
                     creator_name = creator.full_name
                     if user.registration_type == RegistrationType.ADMIN:
@@ -109,9 +112,10 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
         await callback.answer('')
         await state.set_state(Reg_token.pd_consent)
 
+        # Операция чтения - получаем file_id
         async with async_session() as session:
-            file_manager = FileManager(session)
-            file_id = await file_manager.get_file_id(FileType.CPD)
+            file_repo = FileRepository(session)
+            file_id = await file_repo.get_file_id(FileType.CPD)
 
             if not file_id:
                 logger.error(f"File_id для согласия (CPD) не найден в базе данных для пользователя {callback.from_user.id}")
@@ -130,7 +134,7 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
                 return
 
             # Получаем полную запись для логирования
-            file_record = await file_manager.get_file_record(FileType.CPD)
+            file_record = await file_repo.get_file_record(FileType.CPD)
             file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
 
             await callback.message.answer_document(
@@ -222,54 +226,55 @@ async def reg_token_end(message: Message, state: FSMContext):
             await state.clear()
             return
 
+        # Операция записи - привязка Telegram и обновление данных
         async with async_session() as session:
-            db = DatabaseManager(session)
+            async with UnitOfWork(session) as uow:
+                user_manager = UserManager(uow.session)
+                user_repo = UserRepository(uow.session)
 
-            logger.info(f"Привязка Telegram ID {message.from_user.id} к пользователю по токену {token[:8]}...")
+                logger.info(f"Привязка Telegram ID {message.from_user.id} к пользователю по токену {token[:8]}...")
 
-            linked_user = await db.link_telegram_to_user(token, message.from_user.id)
+                linked_user = await user_manager.link_telegram_to_user(token, message.from_user.id)
 
-            if not linked_user:
-                logger.warning(f"Не удалось привязать пользователя по токену {token[:8]}...")
+                if not linked_user:
+                    logger.warning(f"Не удалось привязать пользователя по токену {token[:8]}...")
+                    await message.answer(
+                        'Токен недействителен или уже использован. Обратитесь к администратору.',
+                        reply_markup=kb.inline_in_menu
+                    )
+                    await state.clear()
+                    return
+
+                update_data = {}
+                if 'email' in data:
+                    update_data['email'] = data['email']
+                if 'phone' in data:
+                    update_data['phone_number'] = data['phone']
+
+                if update_data:
+                    logger.debug(f"Обновление данных пользователя {linked_user.id}: {list(update_data.keys())}")
+                    await user_repo.update(linked_user.id, **update_data)
+
+                # Получаем обновленного пользователя
+                updated_user = await user_repo.get_by_id(linked_user.id)
+
+                birth_date_str = ""
+                if updated_user.date_of_birth:
+                    birth_date_str = updated_user.date_of_birth.strftime("%d.%m.%Y")
+
+                logger.info(f"Пользователь {updated_user.id} успешно зарегистрирован по токену")
+
                 await message.answer(
-                    'Токен недействителен или уже использован. Обратитесь к администратору.',
-                    reply_markup=kb.inline_in_menu
+                    "Теперь вы сами управляете своими данными!\n\n"
+                    "Проверьте данные:\n"
+                    f"Фамилия, имя: {updated_user.full_name}\n"
+                    f"Дата рождения: {birth_date_str}\n"
+                    f"Вес: {updated_user.weight} кг\n"
+                    f"Адрес: {updated_user.address}\n"
+                    f"Телефон: {updated_user.phone_number}\n"
+                    f"Email: {updated_user.email}",
+                    reply_markup=await kb.registration_data_menu_builder()
                 )
-                await state.clear()
-                return
-
-            update_data = {}
-            if 'email' in data:
-                update_data['email'] = data['email']
-            if 'phone' in data:
-                update_data['phone_number'] = data['phone']
-
-            if update_data:
-                logger.debug(f"Обновление данных пользователя {linked_user.id}: {list(update_data.keys())}")
-                success_update = await db.update_user_data(
-                    telegram_id=message.from_user.id,
-                    **update_data
-                )
-
-            updated_user = await db.get_user_by_telegram_id(message.from_user.id)
-
-            birth_date_str = ""
-            if updated_user.date_of_birth:
-                birth_date_str = updated_user.date_of_birth.strftime("%d.%m.%Y")
-
-            logger.info(f"Пользователь {updated_user.id} успешно зарегистрирован по токену")
-
-            await message.answer(
-                "Теперь вы сами управляете своими данными!\n\n"
-                "Проверьте данные:\n"
-                f"Фамилия, имя: {updated_user.full_name}\n"
-                f"Дата рождения: {birth_date_str}\n"
-                f"Вес: {updated_user.weight} кг\n"
-                f"Адрес: {updated_user.address}\n"
-                f"Телефон: {updated_user.phone_number}\n"
-                f"Email: {updated_user.email}",
-                reply_markup=await kb.registration_data_menu_builder()
-            )
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")

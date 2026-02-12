@@ -7,12 +7,14 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.routers.user.account.models import Child
+from app.routers.user.account.models import ChildRegistrationData
 
 import app.user_panel.keyboards as kb
 
 from app.user_panel.states import Reg_child
-from app.database.requests import DatabaseManager, FileManager
+from app.database.repositories import UserRepository, FileRepository
+from app.database.managers import UserManager
+from app.database.unit_of_work import UnitOfWork
 from app.database.models import FileType
 from app.utils.validation import (validate_name,
                                   validate_surname, validate_birthdate,
@@ -85,11 +87,11 @@ async def reg_child_consent(message: Message, state: FSMContext):
 
     try:
         async with async_session() as session:
-            file_manager = FileManager(session)
-            file_id = await file_manager.get_file_id(FileType.CPD_MINOR)
+            user_repo = UserRepository(session)
+            file_repo = FileRepository(session)
 
-            db = DatabaseManager(session)
-            user = await db.get_user_by_telegram_id(message.from_user.id)
+            file_id = await file_repo.get_file_id(FileType.CPD_MINOR)
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
             data = await state.get_data()
             child_name = data.get('name')
             child_surname = data.get('surname')
@@ -111,7 +113,7 @@ async def reg_child_consent(message: Message, state: FSMContext):
                 return
 
             # Получаем информацию о файле для логирования
-            file_record = await file_manager.get_file_record(FileType.CPD_MINOR)
+            file_record = await file_repo.get_file_record(FileType.CPD_MINOR)
             file_info = f"{file_record.file_name} ({file_record.file_size} байт)" if file_record else "неизвестно"
 
             await message.answer_document(
@@ -228,28 +230,28 @@ async def reg_child_address(message: Message, state: FSMContext):
         child_data = await state.get_data()
         logger.debug(f"Данные ребенка для создания: {child_data}")
 
-        final_child = Child(**child_data)
-        full_child_name = final_child.surname + ' ' + final_child.name
-        date_of_birth = datetime.strptime(final_child.date_of_birth, "%d.%m.%Y").date()
-
-        logger.info(f"Создание ребенка: {full_child_name}, дата рождения: {date_of_birth}")
-
+        # Получаем родителя для parent_id
         async with async_session() as session:
-            db = DatabaseManager(session)
+            user_repo = UserRepository(session)
+            parent = await user_repo.get_by_telegram_id(message.from_user.id)
 
-            child, child_token = await db.create_child_user(
-                child_name=full_child_name,
-                parent_telegram_id=message.from_user.id,
-                date_of_birth=date_of_birth,
-                weight=final_child.weight,
-                address=final_child.address
-            )
+            if not parent:
+                logger.error(f"Родитель с Telegram ID {message.from_user.id} не найден")
+                raise ValueError("Родитель не найден")
 
-            if child:
-                logger.info(f"Ребенок создан: ID={child.id}, имя='{child.full_name}', токен={child_token}")
-            else:
-                logger.error("Ошибка создания ребенка: объект не возвращен")
-                raise ValueError('Ошибка создания ребенка')
+            child_data['parent_id'] = parent.id
+            final_child = ChildRegistrationData(**child_data)
+
+            logger.info(f"Создание ребенка: {final_child.surname} {final_child.name}")
+
+        # Сохраняем в БД напрямую через менеджер
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                user_manager = UserManager(uow.session)
+                child, child_token = await user_manager.create_child_user(
+                    child_data=final_child,
+                    parent_telegram_id=message.from_user.id
+                )
 
         await message.answer(
             "Регистрация ребенка завершена!\n\n"

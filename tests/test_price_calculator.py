@@ -1,7 +1,7 @@
 import pytest
 from datetime import date
 from unittest.mock import patch
-from app.utils.price_calculator import PriceCalculator, AgeCategories
+from app.utils.calculators import PriceCalculator, AgeCategories
 
 
 # ==================== Тесты для AgeCategories ====================
