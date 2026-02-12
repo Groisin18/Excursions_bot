@@ -2,7 +2,7 @@
 Роутер основных хэндлеров личного кабинета пользователя
 '''
 from aiogram import Router, F
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 
 import app.user_panel.keyboards as kb
@@ -23,33 +23,49 @@ async def registration_data(message: Message, state: FSMContext):
     """Обработчик личного кабинета - объединенная логика"""
     user_telegram_id = message.from_user.id
     logger.info(f"Пользователь {user_telegram_id} открыл личный кабинет")
+
     try:
+        # Отправляем временное сообщение, которое убирает реплай-клавиатуру
+        sent_message = await message.answer(
+            "Загружаем личный кабинет...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
         async with async_session() as session:
             user_repo = UserRepository(session)
             user = await user_repo.get_by_telegram_id(user_telegram_id)
+
             if user:
                 logger.debug(f"Пользователь {user_telegram_id} зарегистрирован, показываем кабинет")
                 has_children = await user_repo.user_has_children(user.id)
                 keyboard = await kb.registration_data_menu_builder(has_children=has_children)
+
                 user_info = (
                     f"Ваш личный кабинет\n\n"
                     f"Имя: {user.full_name or 'Не указано'}\n"
                     f"Телефон: {user.phone_number or 'Не указано'}\n"
                     f"Email: {user.email or 'Не указано'}\n"
                 )
+
                 if has_children:
                     children = await user_repo.get_children_users(user.id)
                     user_info += f"\nДетей зарегистрировано: {len(children)}"
-                await message.answer(user_info, reply_markup=keyboard)
+
+                await sent_message.edit_text(
+                    user_info,
+                    reply_markup=keyboard
+                )
             else:
                 logger.debug(f"Пользователь {user_telegram_id} не зарегистрирован, начало регистрации")
                 await state.set_state(Reg_user.is_token)
-                await message.answer(
+
+                await sent_message.edit_text(
                     'Для начала давайте зарегистрируемся!\n\n'
                     'Если вас ранее регистрировал другой человек, то выдается '
                     'специальный токен (набор символов). Есть ли он у вас?',
                     reply_markup=kb.inline_is_token
                 )
+
     except Exception as e:
         logger.error(f"Ошибка в личном кабинете для пользователя {user_telegram_id}: {e}", exc_info=True)
         await message.answer(

@@ -132,7 +132,7 @@ async def qu_startplace(callback: CallbackQuery):
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о месте старта")
     try:
         await callback.answer('')
-        await callback.message.answer(
+        await callback.message.edit_text(
             'Осенние экскурсии:\n'
             'Стартуем от адреса Пирогова 10.\n'
             'Одеваемся теплее, важна многослойность. '
@@ -156,7 +156,7 @@ async def qu_things_witn(callback: CallbackQuery):
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о вещах с собой")
     try:
         await callback.answer('')
-        await callback.message.answer(
+        await callback.message.edit_text(
             'На Ангаре холодно.\n'
             'По одежде штаны, кофта, головной убор, кроссовки на удобной подошве.\n'
             'Куртка (желательно, непромокаемая).\n'
@@ -176,7 +176,7 @@ async def qu_discount(callback: CallbackQuery):
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос о скидках")
     try:
         await callback.answer('')
-        await callback.message.answer(
+        await callback.message.edit_text(
             'У нас есть скидки детям:\n'
             'Дети до 3 лет бесплатно.\n'
             '4-7 лет - скидка 60%;\n'
@@ -195,7 +195,7 @@ async def qu_self_co(callback: CallbackQuery):
     logger.info(f"Пользователь {callback.from_user.id} выбрал вопрос об индивидуальных экскурсиях")
     try:
         await callback.answer('')
-        await callback.message.answer(
+        await callback.message.edit_text(
             'Хотите отдохнуть только своей компанией?\n'
             'Мы готовы предоставить вам экскурсию.\n'
             'Если вы хотите пойти на экскурсию исключительно своей компанией,'

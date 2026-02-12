@@ -6,7 +6,7 @@ from aiogram.types import (
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-from app.database.repositories.excursion_repository import ExcursionRepository
+from app.database.repositories import ExcursionRepository
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.datetime_utils import get_weekday_short_name
@@ -186,7 +186,7 @@ async def all_excursions_inline() -> InlineKeyboardMarkup:
             excursion_repo = ExcursionRepository(session)
 
             # Получаем экскурсии
-            excursions = await excursion_repo.get_all_excursions(active_only=True)
+            excursions = await excursion_repo.get_all(active_only=True)
 
             if not excursions:
                 return None
@@ -427,8 +427,7 @@ async def get_excursion_schedule_keyboard(slots: list) -> InlineKeyboardMarkup:
 
 inline_feedback = InlineKeyboardMarkup(
     inline_keyboard=[
-        [InlineKeyboardButton(text='Группа с отзывами', url="https://t.me/+W8tkMz0Jz3A2ZTIy?clckid=cc64aa67"),
-         InlineKeyboardButton(text='В главное меню', callback_data='back_to_main')],
+        [InlineKeyboardButton(text='Группа с отзывами', url="https://t.me/+W8tkMz0Jz3A2ZTIy?clckid=cc64aa67")],
     ]
 )
 
@@ -437,7 +436,6 @@ inline_about_us = InlineKeyboardMarkup(
         [InlineKeyboardButton(text="Группа с отзывами", url="https://t.me/+W8tkMz0Jz3A2ZTIy?clckid=cc64aa67")],
         [InlineKeyboardButton(text="Группа ВКонтакте", url="https://vk.com/angarariver38")],
         [InlineKeyboardButton(text="Телеграм-канал", url="https://t.me/po_angare")],
-        [InlineKeyboardButton(text='В главное меню', callback_data='back_to_main')],
     ]
 )
 
