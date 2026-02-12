@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field, field_validator, ValidationError
 from typing import Optional
 
 from app.database.repositories import ExcursionRepository, UserRepository
-from app.database.managers.slot_manager import SlotManager
+from app.database.managers import SlotManager
 from app.database.unit_of_work import UnitOfWork
 from app.database.session import async_session
 

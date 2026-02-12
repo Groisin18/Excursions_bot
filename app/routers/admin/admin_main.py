@@ -1,7 +1,9 @@
 import asyncio
 
 from aiogram import F, Router
-from aiogram.types import Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    Message, CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup
+)
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 from datetime import datetime
@@ -11,11 +13,11 @@ import app.user_panel.keyboards as main_kb
 
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, excursions_submenu, captains_submenu, clients_submenu,
-    bookings_submenu, statistics_submenu, finances_submenu, notifications_submenu,
-    settings_submenu
+    bookings_submenu, statistics_submenu, finances_submenu,
+    notifications_submenu, settings_submenu
 )
 from app.database.models import User
-from app.database.repositories.user_repository import UserRepository
+from app.database.repositories import UserRepository
 from app.database.session import engine, async_session
 
 from app.middlewares import AdminMiddleware

@@ -323,8 +323,7 @@ async def concent_send_other_file(callback: CallbackQuery):
             # Отправляем файл
             await callback.message.answer_document(
                 document=file_record.file_telegram_id,
-                caption=f"{file_record.file_name}\nЗагружен:
-                {file_record.uploaded_at.strftime('%d.%m.%Y %H:%M') if file_record.uploaded_at else 'неизвестно'}"
+                caption=f"{file_record.file_name}\nЗагружен: {file_record.uploaded_at.strftime('%d.%m.%Y %H:%M') if file_record.uploaded_at else 'неизвестно'}"
             )
 
             # Показываем информацию

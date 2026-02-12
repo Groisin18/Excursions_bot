@@ -4,7 +4,7 @@ from aiogram.fsm.context import FSMContext
 from pydantic import BaseModel, Field
 from typing import Optional
 
-from app.database.repositories.excursion_repository import ExcursionRepository
+from app.database.repositories import ExcursionRepository
 from app.database.unit_of_work import UnitOfWork
 from app.database.session import async_session
 

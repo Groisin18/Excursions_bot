@@ -1,7 +1,10 @@
+"""Pydantic модели для пользовательских данных"""
+
 from pydantic import BaseModel, Field, EmailStr
 
 
 class UserRegistrationData(BaseModel):
+    """Данные для регистрации взрослого пользователя"""
     name: str = Field(..., min_length=1, max_length=50, description="Имя")
     surname: str = Field(..., min_length=1, max_length=50, description="Фамилия")
     date_of_birth: str = Field(..., description="Дата рождения")
@@ -11,7 +14,9 @@ class UserRegistrationData(BaseModel):
     phone: str = Field(..., description="Номер телефона")
     email: EmailStr = Field(..., description="Email адрес")
 
+
 class ChildRegistrationData(BaseModel):
+    """Данные для регистрации ребенка"""
     name: str = Field(..., min_length=1, max_length=50, description="Имя")
     surname: str = Field(..., min_length=1, max_length=50, description="Фамилия")
     date_of_birth: str = Field(..., description="Дата рождения")

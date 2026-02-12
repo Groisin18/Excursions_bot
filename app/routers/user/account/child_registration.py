@@ -1,13 +1,11 @@
 '''
 Роутер для регистрации пользователем своего ребенка
 '''
-from datetime import datetime
-
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.routers.user.account.models import ChildRegistrationData
+from app.schemas.user import ChildRegistrationData
 
 import app.user_panel.keyboards as kb
 

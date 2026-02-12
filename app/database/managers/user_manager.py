@@ -16,7 +16,7 @@ from .salary_manager import SalaryManager
 from ..repositories.user_repository import UserRepository
 from ..models import User, UserRole, RegistrationType
 
-from app.routers.user.account.models import UserRegistrationData, ChildRegistrationData
+from app.schemas.user import UserRegistrationData, ChildRegistrationData
 
 
 class UserManager(BaseManager):

@@ -4,7 +4,7 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.routers.user.account.models import UserRegistrationData
+from app.schemas.user import UserRegistrationData
 
 import app.user_panel.keyboards as kb
 

@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 
 from app.database.models import PaymentStatus
-from app.database.managers.slot_manager import SlotManager
+from app.database.managers import SlotManager
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
