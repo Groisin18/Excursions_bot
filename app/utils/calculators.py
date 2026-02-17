@@ -1,7 +1,8 @@
 from datetime import date
 from typing import Dict, Tuple, List, Optional
 from app.utils.datetime_utils import calculate_age
-
+from app.database.repositories import UserRepository
+from app.database.session import async_session
 
 class AgeCategories:
     """Константы возрастных категорий для детских билетов"""
@@ -197,33 +198,96 @@ class BookingCalculator:
     """Калькулятор для расчетов при бронировании"""
 
     @staticmethod
-    def calculate_total_price(
-        base_price: int,
-        participants_count: int,
-        discount_percent: int = 0,
-        promo_discount: int = 0
-    ) -> int:
+    async def calculate_booking_total(
+        adult_price: int,
+        children_ids: list,
+        promo_code_data: dict = None,
+        session=None
+    ) -> dict:
         """
-        Рассчитать итоговую стоимость бронирования
+        Рассчитать итоговую стоимость бронирования с детальной информацией
 
         Args:
-            base_price: базовая цена экскурсии
-            participants_count: количество участников
-            discount_percent: процент скидки (0-100)
-            promo_discount: фиксированная скидка по промокоду
+            adult_price: базовая цена экскурсии
+            children_ids: список ID детей
+            promo_code_data: данные промокода
+                        {'type': 'percent'/'fixed', 'value': int, 'code': str}
+            session: сессия БД (если есть)
 
         Returns:
-            int: итоговая цена
+            dict: {
+                'final_price': int,  # итоговая цена
+                'children_prices': list,  # данные о детях для сохранения в state
+                'children_details': list,  # строки для отображения
+                'promo_details': str  # строка с информацией о промокоде
+            }
         """
-        total = base_price * participants_count
 
-        if discount_percent > 0:
-            total = total * (100 - discount_percent) // 100
+        total = adult_price  # взрослый всегда 1
+        children_prices = []
+        children_details = []
 
-        if promo_discount > 0:
-            total = max(0, total - promo_discount)
+        # Функция для обработки одного ребенка
+        async def process_child(child_id, repo):
+            child = await repo.get_by_id(child_id)
+            if child and child.date_of_birth:
+                child_price, category = PriceCalculator.calculate_child_price(
+                    adult_price,
+                    child.date_of_birth
+                )
+                return {
+                    'id': child_id,
+                    'name': child.full_name,
+                    'price': child_price,
+                    'category': category
+                }, f"{child.full_name}: {child_price} руб. ({category})"
+            return None, None
 
-        return total
+        # Если есть дети, добавляем их цены
+        if children_ids:
+            if session:
+                user_repo = UserRepository(session)
+                for child_id in children_ids:
+                    result = await process_child(child_id, user_repo)
+                    if result[0]:
+                        child_data, detail = result
+                        children_prices.append(child_data)
+                        children_details.append(detail)
+                        total += child_data['price']
+            else:
+                async with async_session() as new_session:
+                    user_repo = UserRepository(new_session)
+                    for child_id in children_ids:
+                        result = await process_child(child_id, user_repo)
+                        if result[0]:
+                            child_data, detail = result
+                            children_prices.append(child_data)
+                            children_details.append(detail)
+                            total += child_data['price']
+
+        # Применяем промокод, если есть
+        promo_details = ""
+        if promo_code_data and promo_code_data.get('value', 0) > 0:
+            promo_type = promo_code_data.get('type')
+            promo_value = promo_code_data.get('value')
+            promo_code = promo_code_data.get('code', '')
+
+            if promo_type == "percent":
+                discount = int(total * promo_value / 100)
+                discount_text = f"{promo_value}%"
+            else:  # fixed
+                discount = min(promo_value, total)
+                discount_text = f"{promo_value} руб."
+
+            total -= discount
+            promo_details = f"Промокод {promo_code}: скидка {discount_text}"
+
+        return {
+            'final_price': total,
+            'children_prices': children_prices,
+            'children_details': children_details,
+            'promo_details': promo_details
+        }
 
     @staticmethod
     def calculate_available_weight(

@@ -8,8 +8,9 @@ from app.database.repositories import (
     BookingRepository, SlotRepository, UserRepository, PromoCodeRepository
 )
 from app.database.models import (
-    Booking, BookingStatus, SlotStatus, ClientStatus
+    Booking, BookingStatus, SlotStatus, ClientStatus, BookingChild
 )
+from app.database.managers import SlotManager
 from app.utils.calculators import PriceCalculator
 
 
@@ -26,19 +27,19 @@ class BookingManager(BaseManager):
     async def create_booking(
         self,
         slot_id: int,
-        client_id: int,
-        people_count: int,
+        adult_user_id: int,
         children_count: int,
         total_price: int,
         admin_creator_id: int = None,
         promo_code_id: int = None,
-        children_data: Optional[list] = None
+        children_data: Optional[list] = None,
+        total_weight: Optional[int] = None
     ) -> Tuple[Optional[Booking], str]:
         """Создать бронирование с проверками"""
         self._log_operation_start("create_booking",
                                  slot_id=slot_id,
-                                 client_id=client_id,
-                                 people_count=people_count)
+                                 adult_user_id=adult_user_id,
+                                 people_count=children_count+1)
 
         try:
             # Проверяем существование слота
@@ -55,8 +56,8 @@ class BookingManager(BaseManager):
                 return None, error_msg
 
             # Проверяем существование клиента
-            client = await self.user_repo.get_by_id(client_id)
-            if not client:
+            adult_user = await self.user_repo.get_by_id(adult_user_id)
+            if not adult_user:
                 error_msg = "Клиент не найден"
                 self.logger.warning(error_msg)
                 return None, error_msg
@@ -64,28 +65,43 @@ class BookingManager(BaseManager):
             # Проверяем доступность промокода
             if promo_code_id:
                 promo = await self.promo_repo.get_by_id(promo_code_id)
-                if not promo or not promo.is_valid():
+                if not promo or not promo.is_valid:
                     error_msg = "Промокод недействителен"
                     self.logger.warning(error_msg)
                     return None, error_msg
 
             # Проверяем, нет ли уже активной брони
-            existing_booking = await self.booking_repo.get_user_active_for_slot(client_id, slot_id)
+            existing_booking = await self.booking_repo.get_user_active_for_slot(adult_user_id, slot_id)
             if existing_booking:
                 error_msg = "У вас уже есть активная бронь на этот слот"
                 self.logger.warning(error_msg)
                 return None, error_msg
 
-            # Проверяем доступность мест и веса
-            # (нужен SlotManager для проверки доступности)
-            # TODO: добавить проверку через SlotManager
+            slot_manager = SlotManager(self.session)
+
+            # Проверяем количество мест
+            booked_places = await slot_manager.get_booked_places(slot_id)
+            total_people = 1 + children_count  # 1 взрослый + дети
+            if booked_places + total_people > slot.max_people:
+                error_msg = f"Недостаточно свободных мест. Свободно: {slot.max_people - booked_places}, требуется: {total_people}"
+                self.logger.warning(error_msg)
+                return None, error_msg
+
+            # Проверяем вес, если он передан
+            if total_weight is not None:
+                current_weight = await slot_manager.get_current_weight(slot_id)
+
+                if current_weight + total_weight > slot.max_weight:
+                    error_msg = f"Превышение допустимого веса. Доступно: {slot.max_weight - current_weight} кг, вес заявки: {total_weight} кг"
+                    self.logger.warning(error_msg)
+                    return None, error_msg
+
+                self.logger.info(f"Проверка веса пройдена: текущий {current_weight}кг + новый {total_weight}кг <= макс {slot.max_weight}кг")
 
             # Создаем бронирование
             booking = await self.booking_repo.create(
                 slot_id=slot_id,
-                client_id=client_id,
-                people_count=people_count,
-                children_count=children_count,
+                adult_user_id=adult_user_id,
                 total_price=total_price,
                 admin_creator_id=admin_creator_id,
                 promo_code_id=promo_code_id
@@ -93,11 +109,17 @@ class BookingManager(BaseManager):
 
             # Добавляем детей если есть данные
             if children_data:
-                from app.database.models import BookingChild
                 for child_data in children_data:
+                    # Проверяем, что age_category есть
+                    age_category = child_data.get('age_category')
+                    if not age_category:
+                        self.logger.error(f"Отсутствует age_category для ребенка {child_data.get('child_id')}")
+                        return None, "Ошибка: не указана возрастная категория ребенка"
+
                     child = BookingChild(
                         booking_id=booking.id,
                         child_user_id=child_data['child_id'],
+                        age_category=age_category,
                         calculated_price=child_data.get('price', 0)
                     )
                     self.session.add(child)
@@ -214,7 +236,7 @@ class BookingManager(BaseManager):
             discount_info = {}
             if promo_code:
                 promo = await self.promo_repo.get_by_code(promo_code)
-                if promo and promo.is_valid():
+                if promo and promo.is_valid:
                     if promo.discount_type == 'percent':
                         discount = total_price * promo.discount_value / 100
                     else:  # fixed
@@ -268,7 +290,7 @@ class BookingManager(BaseManager):
                                         booking_id=booking_id,
                                         by_admin=cancelled_by_admin,
                                         slot_id=booking.slot_id,
-                                        client_id=booking.client_id)
+                                        adult_user_id=booking.adult_user_id)
                 return True, ""
             else:
                 error_msg = "Не удалось отменить бронирование"
@@ -299,7 +321,7 @@ class BookingManager(BaseManager):
                 'booking': booking,
                 'calculated_price': calculated_price,
                 'slot_info': await self.slot_repo.get_with_bookings(booking.slot_id),
-                'client': booking.adult_user,
+                'adult_user': booking.adult_user,
                 'payments': booking.payments
             }
 

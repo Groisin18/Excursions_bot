@@ -286,17 +286,17 @@ def public_schedule_date_menu(slots: list, target_date: date) -> InlineKeyboardM
 
         # Получаем свободные места (нужен доступ к БД, поэтому просто время и название)
         button_text = f"{start_time} - {excursion_name}"
-        if len(button_text) > 30:
-            button_text = button_text[:27] + "..."
+        if len(button_text) > 40:
+            button_text = button_text[:37] + "..."
 
         builder.button(
             text=button_text,
             callback_data=f"public_view_slot:{slot.id}"
         )
-        builder.button(
-            text="Назад к расписанию",
-            callback_data="public_back_to_date_schedule"
-        )
+    builder.button(
+        text="Назад к расписанию",
+        callback_data="public_back_to_date_schedule"
+    )
     builder.adjust(1)
 
     return builder.as_markup()
@@ -483,6 +483,14 @@ async def create_promo_code_keyboard() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+async def create_confirmation_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения бронирования"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Подтвердить бронирование", callback_data="confirm_booking")
+    builder.button(text="Отменить", callback_data="cancel_booking")
+    builder.adjust(1)
+    return builder.as_markup()
+
 async def create_children_selection_keyboard(children: list, selected_ids: list = None) -> InlineKeyboardMarkup:
     """Создает клавиатуру для выбора детей"""
     builder = InlineKeyboardBuilder()
@@ -509,7 +517,6 @@ async def create_children_selection_keyboard(children: list, selected_ids: list 
 
     # Кнопки управления
     builder.button(text="Завершить выбор", callback_data="finish_children_selection")
-    builder.button(text="Назад", callback_data="back_to_participants")
     builder.button(text="Отменить бронирование", callback_data="cancel_booking")
     builder.adjust(1)
 

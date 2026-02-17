@@ -431,7 +431,7 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
                 exc_repo = ExcursionRepository(uow.session)
                 slot_manager = SlotManager(uow.session)
 
-                slot = await slot_manager.create_slot(
+                slot, error_msg = await slot_manager.create_slot(
                     excursion_id=slot_data.excursion_id,
                     start_datetime=slot_data.start_datetime,
                     max_people=slot_data.max_people,
@@ -440,12 +440,11 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
                 )
 
                 if not slot:
-                    logger.error("Ошибка создания слота")
+                    logger.error(f"Ошибка создания слота: {error_msg}")
                     await state.clear()
                     await callback.message.answer(
                         "Ошибка добавления экскурсии в расписание!\n"
-                        "Возможно, на данное время уже назначена данная экскурсия, "
-                        "или произошла другая ошибка.\n"
+                        f"{error_msg}\n"
                         "Пожалуйста, попробуйте назначить экскурсию заново.",
                         reply_markup=schedule_back_menu()
                     )

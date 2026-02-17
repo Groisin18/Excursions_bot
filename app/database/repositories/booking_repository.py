@@ -25,7 +25,7 @@ class BookingRepository(BaseRepository):
             .options(
                 selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
                 selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
-                selectinload(Booking.client),
+                selectinload(Booking.adult_user),
                 selectinload(Booking.payments)
             )
             .where(Booking.id == booking_id)
@@ -80,7 +80,7 @@ class BookingRepository(BaseRepository):
             query = (
                 select(Booking)
                 .options(
-                    selectinload(Booking.client),
+                    selectinload(Booking.adult_user),
                     selectinload(Booking.slot).selectinload(ExcursionSlot.excursion)
                 )
                 .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
@@ -104,10 +104,8 @@ class BookingRepository(BaseRepository):
     async def get_booked_people_count(self, slot_id: int) -> int:
         """Получить количество забронированных людей в слоте"""
         try:
-            from sqlalchemy import select, func, and_
-            from app.database.models import BookingStatus
-
-            query = select(func.sum(Booking.people_count)).where(
+            # Получаем все активные брони на слот
+            query = select(Booking).where(
                 and_(
                     Booking.slot_id == slot_id,
                     Booking.booking_status == BookingStatus.active
@@ -115,8 +113,10 @@ class BookingRepository(BaseRepository):
             )
 
             result = await self._execute_query(query)
-            count = result.scalar()
-            return count or 0
+            bookings = result.scalars().all()
+
+            total_people = sum(booking.people_count for booking in bookings)
+            return total_people
 
         except Exception as e:
             self.logger.error(f"Ошибка получения количества забронированных людей: {e}")
@@ -125,9 +125,7 @@ class BookingRepository(BaseRepository):
     async def create(
         self,
         slot_id: int,
-        client_id: int,
-        people_count: int,
-        children_count: int,
+        adult_user_id: int,
         total_price: int,
         admin_creator_id: int = None,
         promo_code_id: int = None
@@ -135,10 +133,8 @@ class BookingRepository(BaseRepository):
         """Создать бронирование"""
         booking_data = {
             'slot_id': slot_id,
-            'client_id': client_id,
+            'adult_user_id': adult_user_id,
             'admin_creator_id': admin_creator_id,
-            'people_count': people_count,
-            'children_count': children_count,
             'total_price': total_price,
             'promo_code_id': promo_code_id
         }
@@ -155,7 +151,7 @@ class BookingRepository(BaseRepository):
         """Создать бронирование с токеном (CRUD операция)"""
         try:
             booking = Booking(
-                client_id=user_id,
+                adult_user_id=user_id,
                 slot_id=slot_id,
                 booking_token=token,
                 booked_by_id=booked_by_id,

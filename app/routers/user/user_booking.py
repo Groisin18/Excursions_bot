@@ -4,18 +4,21 @@ from aiogram.fsm.context import FSMContext
 
 
 from app.database.unit_of_work import UnitOfWork
-from app.database.managers import UserManager, SlotManager
+from app.database.managers import UserManager, SlotManager, BookingManager
 from app.database.repositories import (
-    SlotRepository, UserRepository, BookingRepository, ExcursionRepository
+    SlotRepository, UserRepository, BookingRepository, ExcursionRepository,
+    PromoCodeRepository
 )
-from app.database.models import SlotStatus
+from app.database.models import SlotStatus, DiscountType
 from app.database.session import async_session
 
 from app.utils.logging_config import get_logger
 from app.user_panel.states import UserBookingStates
 from app.utils.datetime_utils import get_weekday_name
 from app.utils.validation import validate_weight
-from app.utils.calculators import WeightCalculator
+from app.utils.calculators import (
+    WeightCalculator, PriceCalculator, BookingCalculator
+)
 
 import app.user_panel.keyboards as kb
 
@@ -129,7 +132,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 "adult_price": excursion.base_price
             })
 
-            await callback.message.answer(excursion_info, reply_markup=await kb.booking_start_confirm_keyboard())
+            await callback.message.edit_text(excursion_info, reply_markup=await kb.booking_start_confirm_keyboard())
             await state.set_state(UserBookingStates.checking_weight)
 
             logger.info(
@@ -187,7 +190,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                 logger.info(f"Вес пользователя {user_telegram_id} не указан, запрашиваем")
                 await state.update_data({"awaiting_weight_input": True})
                 await state.set_state(UserBookingStates.requesting_adult_weight)
-                await callback.message.answer(
+                await callback.message.edit_text(
                     "Ваш вес не указан в профиле.\n"
                     "Пожалуйста, введите ваш вес в кг (только цифры, например: 75):\n\n"
                     "Или нажмите /cancel для отмены бронирования"
@@ -236,13 +239,13 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                 children = await user_repo.get_children_users(user_id)
                 children_count = len(children)
 
-                await callback.message.answer(
+                await callback.message.edit_text(
                     f"У вас зарегистрировано детей: {children_count}\n"
                     f"Вы хотите записаться на экскурсию:",
                     reply_markup=await kb.create_participants_keyboard(user_has_children)
                 )
             else:
-                await callback.message.answer(
+                await callback.message.edit_text(
                     f"Вы хотите записаться на экскурсию:",
                     reply_markup=await kb.create_participants_keyboard(user_has_children)
                 )
@@ -359,7 +362,7 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
 
             if not children:
                 logger.warning(f"У пользователя {user_telegram_id} нет зарегистрированных детей")
-                await callback.message.answer(
+                await callback.message.edit_text(
                     "У вас нет зарегистрированных детей в системе.\n"
                     "Пожалуйста, зарегистрируйте детей (Главное меню -> Личный кабинет) или выберите 'Записываюсь только я'.",
                     reply_markup=await kb.create_participants_keyboard(True)
@@ -387,7 +390,7 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
 
             # Переходим к выбору конкретных детей
             await state.set_state(UserBookingStates.selecting_children)
-            await callback.message.answer(
+            await callback.message.edit_text(
                 f"У вас {len(children)} зарегистрированных детей.\n"
                 f"Выберите детей, которые поедут с вами (максимум 5):",
                 reply_markup=await kb.create_children_selection_keyboard(children, [])
@@ -449,6 +452,8 @@ async def handle_child_selection(callback: CallbackQuery, state: FSMContext):
             if child_info:
                 age_info = f", {child_info['age']} лет" if child_info.get('age') else ""
                 message_text = f"Добавлен: {child_info['full_name']}{age_info}. Выбрано: {len(selected_ids)}/5"
+                if child_info.get('weight') is not None:
+                    children_weights[child_id] = child_info['weight']
             else:
                 message_text = f"Ребенок добавлен. Выбрано: {len(selected_ids)}/5"
 
@@ -523,7 +528,7 @@ async def process_to_promo_code(message: Message, state: FSMContext):
     if total_children > 0:
         participants_text += f" и {total_children} детей"
 
-    await message.answer(
+    await message.edit_text(
         f"Вы выбрали: {participants_text}\n"
         f"Общий вес участников: {total_weight} кг\n\n"
         f"Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
@@ -601,23 +606,6 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
             reply_markup=kb.main
         )
         await state.clear()
-
-    await callback.answer()
-
-@router.callback_query(UserBookingStates.selecting_children, F.data == "back_to_participants")
-async def back_to_participants(callback: CallbackQuery, state: FSMContext):
-    """Возврат к выбору типа участия"""
-    logger.info(f"Пользователь {callback.from_user.id} вернулся к выбору участников")
-
-    data = await state.get_data()
-    user_has_children = data.get("user_has_children", False)
-
-    await state.set_state(UserBookingStates.selecting_participants)
-
-    await callback.message.answer(
-        "Выберите тип участия:",
-        reply_markup=await kb.create_participants_keyboard(user_has_children)
-    )
 
     await callback.answer()
 
@@ -831,6 +819,360 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
         )
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
+
+@router.message(UserBookingStates.applying_promo_code)
+async def process_promo_code(message: Message, state: FSMContext):
+    """Обработка ввода промокода"""
+    user_telegram_id = message.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} вводит промокод")
+
+    try:
+        if message.text.lower() == "/cancel":
+            await message.answer(
+                "Бронирование отменено.",
+                reply_markup=kb.main
+            )
+            await state.clear()
+            return
+
+        promo_code = message.text.strip().upper()
+
+        if not promo_code:
+            await message.answer(
+                "Пожалуйста, введите промокод или нажмите кнопку 'Пропустить'.",
+                reply_markup=await kb.create_promo_code_keyboard()
+            )
+            return
+
+        async with async_session() as session:
+            promo_repo = PromoCodeRepository(session)
+            promocode = await promo_repo.get_valid_by_code(promo_code)
+
+            if not promocode:
+                logger.info(f"Пользователь {user_telegram_id} ввел недействительный промокод: {promo_code}")
+                await message.answer(
+                    "Промокод недействителен, истек или достиг лимита использований.\n\n"
+                    "Пожалуйста, проверьте правильность ввода или пропустите этот шаг:",
+                    reply_markup=await kb.create_promo_code_keyboard()
+                )
+                return
+
+            logger.info(f"Пользователь {user_telegram_id} применил промокод: {promocode.code}")
+
+            # Сохраняем информацию о промокоде в state
+            await state.update_data({
+                "promo_code": promocode.code,
+                "promo_id": promocode.id,
+                "promo_discount_type": promocode.discount_type.value,
+                "promo_discount_value": promocode.discount_value,
+                "promo_code_applied": True
+            })
+
+            discount_text = f"{promocode.discount_value}%" if promocode.discount_type == DiscountType.percent else f"{promocode.discount_value} руб."
+
+            await message.answer(
+                f"Промокод {promocode.code} успешно применен!\n"
+                f"Скидка: {discount_text}\n\n"
+                f"Переходим к расчету стоимости..."
+            )
+
+            # Переходим к расчету и сразу вызываем его
+            await state.set_state(UserBookingStates.calculating_total)
+
+            # Вызываем расчет напрямую
+            await calculate_total_from_message(message, state)
+
+    except Exception as e:
+        logger.error(f"Ошибка обработки промокода для {user_telegram_id}: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при проверке промокода. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
+
+@router.callback_query(UserBookingStates.selecting_children, F.data == "finish_children_selection")
+async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
+    """Завершение выбора детей и переход к проверке веса"""
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} завершил выбор детей")
+
+    try:
+        data = await state.get_data()
+        selected_ids = data.get("selected_children_ids", [])
+
+        if not selected_ids:
+            await callback.answer(
+                "Вы не выбрали ни одного ребенка. Пожалуйста, выберите детей или нажмите 'Назад'.",
+                show_alert=True
+            )
+            return
+
+        await state.update_data({
+            "selected_children_ids": selected_ids,
+            "total_children": len(selected_ids)
+        })
+
+        # Проверяем, нужно ли запрашивать вес для кого-то из детей
+        children_without_weight = []
+        children_weights = data.get("children_weights", {})
+
+        async with async_session() as session:
+            user_manager = UserManager(session)
+
+            for child_id in selected_ids:
+                child_info = await user_manager.get_child_info_for_display(child_id)
+
+                if child_info and child_info["weight"] is None and child_id not in children_weights:
+                    children_without_weight.append({
+                        "id": child_id,
+                        "full_name": child_info["full_name"]
+                    })
+
+        if children_without_weight:
+            await state.update_data({
+                "children_without_weight": children_without_weight,
+                "current_child_weight_index": 0
+            })
+            await state.set_state(UserBookingStates.requesting_child_weight)
+
+            first_child = children_without_weight[0]
+            await callback.message.answer(
+                f"У ребенка {first_child['full_name']} не указан вес в профиле.\n\n"
+                f"Пожалуйста, введите вес в кг (только цифры, например: 25):\n"
+                f"Или нажмите кнопку для использования среднего веса.",
+                reply_markup=await kb.create_child_weight_keyboard(first_child["id"])
+            )
+        else:
+            # У всех детей есть вес - переходим к расчету стоимости
+            await state.set_state(UserBookingStates.calculating_total)
+            await calculate_total_from_callback(callback, state)
+
+    except Exception as e:
+        logger.error(f"Ошибка завершения выбора детей для пользователя {user_telegram_id}: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
+    finally:
+        await callback.answer()
+
+@router.callback_query(UserBookingStates.applying_promo_code, F.data == "skip_promo_code")
+async def skip_promo_code(callback: CallbackQuery, state: FSMContext):
+    """Пропуск ввода промокода"""
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} пропустил ввод промокода")
+
+    try:
+        await callback.answer()
+        await state.update_data({"promo_code": None, "promo_discount": 0})
+        await state.set_state(UserBookingStates.calculating_total)
+        await calculate_total_from_callback(callback, state)
+
+    except Exception as e:
+        logger.error(f"Ошибка при пропуске промокода для {user_telegram_id}: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
+
+async def calculate_total_from_message(message: Message, state: FSMContext):
+    """Расчет стоимости из message-хэндлера"""
+    try:
+        data = await state.get_data()
+
+        adult_price = data.get("adult_price", 0)
+        adult_weight = data.get("adult_weight", 0)
+        selected_children_ids = data.get("selected_children_ids", [])
+        promo_code = data.get("promo_code")
+        promo_discount_type = data.get("promo_discount_type")
+        promo_discount_value = data.get("promo_discount_value", 0)
+
+        async with async_session() as session:
+            calculation_result = await BookingCalculator.calculate_booking_total(
+                adult_price=adult_price,
+                children_ids=selected_children_ids,
+                promo_code_data={
+                    'type': promo_discount_type,
+                    'value': promo_discount_value,
+                    'code': promo_code
+                } if promo_code else None,
+                session=session
+            )
+
+        # Формируем сообщение из данных, которые вернул калькулятор
+        price_details = [f"Взрослый: {adult_price} руб."]
+
+        if calculation_result['children_details']:
+            price_details.append("Дети:")
+            price_details.extend(calculation_result['children_details'])
+
+        if calculation_result['promo_details']:
+            price_details.append(calculation_result['promo_details'])
+
+        price_details.append(f"ИТОГО: {calculation_result['final_price']} руб.")
+
+        total_weight = data.get("total_weight", adult_weight)
+        weight_info = f"Общий вес участников: {total_weight} кг"
+
+        summary = (
+            "Проверьте данные бронирования:\n\n"
+            f"{chr(10).join(price_details)}\n\n"
+            f"{weight_info}\n\n"
+            "Все верно?"
+        )
+
+        await state.update_data({
+            "children_prices": calculation_result['children_prices'],
+            "final_price": calculation_result['final_price']
+        })
+
+        await state.set_state(UserBookingStates.confirming_booking)
+
+        await message.answer(
+            summary,
+            reply_markup=await kb.create_confirmation_keyboard()
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка расчета стоимости: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при расчете стоимости. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+        await state.clear()
+
+async def calculate_total_from_callback(callback: CallbackQuery, state: FSMContext):
+    """Расчет стоимости из callback-хэндлера"""
+    await calculate_total_from_message(callback.message, state)
+
+@router.callback_query(UserBookingStates.confirming_booking, F.data == "confirm_booking")
+async def confirm_booking(callback: CallbackQuery, state: FSMContext):
+    """Подтверждение и создание бронирования"""
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} подтверждает бронирование")
+
+    try:
+        await callback.answer()
+
+        data = await state.get_data()
+
+        # Получаем данные из state
+        slot_id = data.get("slot_id")
+        user_id = data.get("user_id")
+        adult_price = data.get("adult_price", 0)
+        final_price = data.get("final_price")
+        promo_id = data.get("promo_id")
+        children_prices = data.get("children_prices", [])
+        total_weight = data.get("total_weight")
+        adult_weight = data.get("adult_weight")
+        children_weights = data.get("children_weights", {})
+        promo_code = data.get("promo_code")
+        promo_discount_type = data.get("promo_discount_type")
+        promo_discount_value = data.get("promo_discount_value", 0)
+
+        if not all([slot_id, user_id, final_price]):
+            logger.error(f"Недостаточно данных в state для пользователя {user_telegram_id}")
+            await callback.message.answer(
+                "Ошибка: недостаточно данных. Начните бронирование заново.",
+                reply_markup=kb.main
+            )
+            await state.clear()
+            return
+
+        # Используем созданные ранее Pydantic модели
+        from app.schemas.booking import BookingCreationData, BookingChildData
+
+        # Подготавливаем данные детей
+        children_models = []
+        for child in children_prices:
+            children_models.append(
+                BookingChildData(
+                    child_id=child['id'],
+                    full_name=child['name'],
+                    price=child['price'],
+                    age_category=child['category'],
+                    weight=children_weights.get(child['id'])
+                )
+            )
+
+        # Валидируем все данные через Pydantic
+        booking_data = BookingCreationData(
+            slot_id=slot_id,
+            user_id=user_id,
+            adult_price=adult_price,
+            final_price=final_price,
+            adult_weight=adult_weight,
+            children=children_models,
+            promo_code_id=promo_id,
+            promo_code=promo_code,
+            promo_discount_type=promo_discount_type,
+            promo_discount_value=promo_discount_value,
+            total_weight=total_weight
+        )
+
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                booking_manager = BookingManager(uow.session)
+
+                # Создаем бронирование
+                booking, error_msg = await booking_manager.create_booking(
+                    slot_id=booking_data.slot_id,
+                    adult_user_id=booking_data.user_id,
+                    children_count=booking_data.children_count,
+                    total_price=booking_data.final_price,
+                    promo_code_id=booking_data.promo_code_id,
+                    children_data=booking_data.children_data_for_repo,
+                    total_weight=booking_data.total_weight
+                )
+
+                if not booking:
+                    logger.error(f"Ошибка создания бронирования: {error_msg}")
+                    await callback.message.answer(
+                        f"Ошибка при создании бронирования: {error_msg}",
+                        reply_markup=kb.main
+                    )
+                    await state.clear()
+                    return
+
+                # Если был промокод, увеличиваем счетчик использований
+                if booking_data.promo_code_id:
+                    await booking_manager.promo_repo.increment_usage(booking_data.promo_code_id)
+                    logger.info(f"Увеличен счетчик использований промокода {booking_data.promo_code_id}")
+
+                # Формируем сообщение об успешном бронировании
+                success_message = (
+                    f"Бронирование №{booking.id} создано!\n\n"
+                    f"Сумма к оплате: {booking_data.final_price} руб.\n"
+                )
+
+                if booking_data.children:
+                    children_names = [child.full_name for child in booking_data.children]
+                    success_message += f"Дети: {', '.join(children_names)}\n"
+
+                success_message += (
+                    f"\nСтатус: ожидает оплаты\n"
+                    f"Оплатить нужно в течение 24 часов.\n\n"
+                    f"После оплаты бронь станет активной.\n"
+                    f"Вы можете посмотреть свои бронирования в Личном кабинете."
+                )
+
+                await callback.message.answer(
+                    success_message,
+                    reply_markup=kb.main
+                )
+
+                logger.info(f"Бронирование {booking.id} успешно создано для пользователя {user_telegram_id}")
+                await state.clear()
+
+    except Exception as e:
+        logger.error(f"Ошибка подтверждения бронирования для {user_telegram_id}: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при создании бронирования. Попробуйте позже.",
             reply_markup=kb.main
         )
         await state.clear()

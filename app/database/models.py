@@ -37,6 +37,7 @@ class SlotStatus(enum.Enum):
 
 class BookingStatus(enum.Enum):
     """Статусы бронирований"""
+    pending_payment = "pending_payment"
     active = "active"
     cancelled = "cancelled"
     completed = "completed"

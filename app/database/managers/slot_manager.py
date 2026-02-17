@@ -302,12 +302,19 @@ class SlotManager(BaseManager):
         date_from = datetime.combine(target_date, datetime.min.time())
         date_to = datetime.combine(target_date, datetime.max.time())
 
-        # Получаем слоты с расписанием
-        slots = await self.slot_repo.get_schedule(
-            date_from=date_from,
-            date_to=date_to,
-            include_cancelled=False
+        # Получаем слоты с расписанием, предзагружаем экскурсию
+        query = (
+            select(ExcursionSlot)
+            .options(selectinload(ExcursionSlot.excursion))
+            .options(selectinload(ExcursionSlot.captain))  # если нужен капитан
+            .where(ExcursionSlot.start_datetime >= date_from)
+            .where(ExcursionSlot.start_datetime <= date_to)
+            .where(ExcursionSlot.status != SlotStatus.cancelled)  # include_cancelled=False
+            .order_by(ExcursionSlot.start_datetime)
         )
+
+        result = await self.session.execute(query)
+        slots = result.scalars().all()
 
         if not slots:
             return ""
@@ -317,7 +324,6 @@ class SlotManager(BaseManager):
         for slot in slots:
             excursion_name = slot.excursion.name if slot.excursion else "Неизвестная экскурсия"
 
-            # Статус слота
             status_text = {
                 SlotStatus.scheduled: "Запланирована",
                 SlotStatus.in_progress: "В процессе",
@@ -325,11 +331,9 @@ class SlotManager(BaseManager):
                 SlotStatus.cancelled: "Отменена"
             }.get(slot.status, "Неизвестно")
 
-            # Получаем информацию о занятости
             booked_places = await self.get_booked_places(slot.id)
             current_weight = await self.get_current_weight(slot.id)
 
-            # Форматируем время
             start_time = slot.start_datetime.strftime("%H:%M")
             end_time = slot.end_datetime.strftime("%H:%M") if slot.end_datetime else "?"
 
@@ -342,29 +346,31 @@ class SlotManager(BaseManager):
                 f"({status_text})\n"
             )
 
-            # Информация о капитане, если есть
-            if slot.captain_id:
-                captain = await self.user_repo.get_by_id(slot.captain_id)
-                if captain:
-                    response += f"  Капитан: {captain.full_name}\n"
+            if slot.captain_id and slot.captain:
+                response += f"  Капитан: {slot.captain.full_name}\n"
 
             response += "\n"
 
         return response
 
     async def get_weekly_schedule(self, days_ahead: int = 7) -> Tuple[str, Dict[date, List]]:
-        """Получить расписание на неделю вперед
-        (либо другое количество дней через явное days_ahead)"""
+        """Получить расписание на неделю вперед"""
 
         date_from = datetime.now()
         date_to = date_from + timedelta(days=days_ahead)
 
-        # Получаем слоты с расписанием
-        slots = await self.slot_repo.get_schedule(
-            date_from=date_from,
-            date_to=date_to,
-            include_cancelled=False
+        query = (
+            select(ExcursionSlot)
+            .options(selectinload(ExcursionSlot.excursion))
+            .options(selectinload(ExcursionSlot.captain))
+            .where(ExcursionSlot.start_datetime >= date_from)
+            .where(ExcursionSlot.start_datetime <= date_to)
+            .where(ExcursionSlot.status != SlotStatus.cancelled)
+            .order_by(ExcursionSlot.start_datetime)
         )
+
+        result = await self.session.execute(query)
+        slots = result.scalars().all()
 
         if not slots:
             return "", {}
@@ -377,7 +383,6 @@ class SlotManager(BaseManager):
                 slots_by_date[date_key] = []
             slots_by_date[date_key].append(slot)
 
-        # Формируем текст
         response = f"Расписание на ближайшие {days_ahead} дней:\n\n"
 
         for slot_date, date_slots in sorted(slots_by_date.items()):
@@ -457,16 +462,6 @@ class SlotManager(BaseManager):
     ) -> Union[Tuple[Optional[str], List], Tuple[Optional[str], Dict]]:
         """
         Универсальный метод получения расписания
-
-        Args:
-            period_type: тип периода из SchedulePeriod
-            target_date: целевая дата (для DATE)
-            days_ahead: количество дней вперед (для WEEK/MONTH)
-            max_slots_per_day: ограничение слотов на день (только для MONTH)
-
-        Returns:
-            Для DATE: (formatted_text, list_of_slots)
-            Для WEEK/MONTH: (formatted_text, slots_by_date_dict)
         """
         # Определяем временной диапазон
         if period_type == SchedulePeriod.DATE:
@@ -482,8 +477,8 @@ class SlotManager(BaseManager):
         else:
             raise ValueError(f"Неизвестный тип периода: {period_type}")
 
-        # Получаем слоты
-        result = await self.session.execute(
+        # Получаем слоты с предзагрузкой экскурсии
+        query = (
             select(ExcursionSlot)
             .options(selectinload(ExcursionSlot.excursion))
             .where(ExcursionSlot.start_datetime >= date_from)
@@ -491,6 +486,8 @@ class SlotManager(BaseManager):
             .where(ExcursionSlot.status == SlotStatus.scheduled)
             .order_by(ExcursionSlot.start_datetime)
         )
+
+        result = await self.session.execute(query)
         slots = result.scalars().all()
 
         if not slots:
@@ -624,9 +621,6 @@ class SlotManager(BaseManager):
         if period_type == SchedulePeriod.DATE:
             if not slots:
                 return excursion, None, []
-
-            # Форматирование для конкретной даты
-            from app.utils.datetime_utils import get_weekday_name
 
             text = (
                 f"Экскурсия: {excursion.name}\n"

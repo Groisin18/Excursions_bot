@@ -39,7 +39,7 @@ async def back_to_schedule_menu(callback: CallbackQuery, state: FSMContext):
     try:
         await callback.answer()
         await state.clear()
-        await callback.message.answer(
+        await callback.message.edit_text(
             "Выберите действие:",
             reply_markup=schedule_exc_management_menu()
         )
@@ -101,7 +101,7 @@ async def handle_schedule_date_view(message: Message, state: FSMContext):
     try:
         if message.text.lower() == "/cancel":
             await state.clear()
-            await message.answer(
+            await message.edit_text(
                 "Просмотр расписания отменен.",
                 reply_markup=schedule_exc_management_menu()
             )
