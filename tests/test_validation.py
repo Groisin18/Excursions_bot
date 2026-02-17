@@ -164,10 +164,10 @@ class TestValidateBirthdate:
     def test_valid_dates(self):
         """Корректные даты рождения."""
         test_cases = [
-            ("01.01.1990", "01.01.1990"),
-            ("1.1.90", "01.01.1990"),  # двухзначный год
-            ("31.12.2020", "31.12.2020"),
-            ("15.08.85", "15.08.1985"),
+            ("01.01.1990", date(1990, 1, 1)),
+            ("1.1.90", date(1990, 1, 1)),
+            ("31.12.2020", date(2020, 12, 31)),
+            ("15.08.85", date(1985, 8, 15)),
         ]
 
         for input_date, expected in test_cases:
@@ -212,24 +212,17 @@ class TestValidateBirthdate:
 
     def test_two_digit_year_conversion(self):
         """Тест преобразования двухзначных годов."""
-        # Проверяем, что функция вообще работает с двухзначными годами
-        try:
-            result = validate_birthdate("01.01.90")
-            # Проверяем формат
-            assert re.match(r'\d{2}\.\d{2}\.\d{4}', result)
-            day, month, year = result.split('.')
-            # Год должен быть четырехзначным
-            assert len(year) == 4
-            assert year.isdigit()
-        except ValueError:
-            pass
+        # 90 год -> 1990
+        result = validate_birthdate("01.01.90")
+        assert result == date(1990, 1, 1)
 
-        # Проверяем другой случай
+        # 25 год -> 2025 (если не в будущем)
         try:
             result = validate_birthdate("01.01.25")
-            assert re.match(r'\d{2}\.\d{2}\.\d{4}', result)
+            assert result == date(2025, 1, 1)
         except ValueError as e:
-            assert "не может быть в будущем" in str(e) or "Навряд ли" in str(e)
+            # Если тест запущен в 2026+, 01.01.25 уже в прошлом
+            assert "будущем" in str(e) or "раньше" in str(e)
 
 
 # ==================== Тесты для validate_slot_date ====================
@@ -696,7 +689,8 @@ class TestPydanticValidators:
 
     def test_pydantic_birthdate_validator(self):
         """Pydantic валидатор для даты рождения."""
-        assert pydantic_validate_birthdate("01.01.1990") == "01.01.1990"
+        result = pydantic_validate_birthdate("01.01.1990")
+        assert result == date(1990, 1, 1)
 
         with pytest.raises(ValueError):
             pydantic_validate_birthdate("invalid")
@@ -854,7 +848,7 @@ class TestIntegration:
         assert validated_data["surname"] == "Иванов"
         assert validated_data["email"] == "test@example.com"
         assert validated_data["phone"] == "+79161234567"
-        assert validated_data["birthdate"] == "15.05.1990"
+        assert validated_data["birthdate"] == date(1990, 5, 15)
         assert validated_data["address"] == "ул. Ленина, д. 10"
         assert validated_data["weight"] == 70
 

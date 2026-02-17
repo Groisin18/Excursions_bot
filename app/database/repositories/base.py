@@ -88,7 +88,7 @@ class BaseRepository:
             query = select(model_class)
             if conditions:
                 query = query.where(*conditions)
-            if order_by:
+            if order_by is not None:
                 query = query.order_by(order_by)
             if limit:
                 query = query.limit(limit)

@@ -77,7 +77,6 @@ class SlotManager(BaseManager):
             slot = await self.slot_repo.create(
                 excursion_id=excursion_id,
                 start_datetime=start_datetime,
-                end_datetime=end_datetime,
                 max_people=max_people,
                 max_weight=max_weight,
                 captain_id=captain_id,

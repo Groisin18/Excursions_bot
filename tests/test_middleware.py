@@ -5,7 +5,7 @@ from datetime import datetime
 
 from app.middlewares.admin_middleware import AdminMiddleware, is_user_admin
 from app.database.models import UserRole
-from app.database.repositories.user_repository import UserRepository
+from app.database.repositories import UserRepository
 
 
 # ==================== Фикстуры ====================
@@ -33,13 +33,13 @@ class TestIsUserAdmin:
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.admin
                 mock_user.full_name = "Admin User"
-                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                mock_repo.get_by_telegram_id.return_value = mock_user
                 MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is True
-                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_false_client(self):
@@ -55,13 +55,13 @@ class TestIsUserAdmin:
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.client
                 mock_user.full_name = "Client User"
-                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                mock_repo.get_by_telegram_id.return_value = mock_user
                 MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_false_captain(self):
@@ -77,13 +77,13 @@ class TestIsUserAdmin:
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.captain
                 mock_user.full_name = "Captain User"
-                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                mock_repo.get_by_telegram_id.return_value = mock_user
                 MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_user_not_found(self):
@@ -97,13 +97,13 @@ class TestIsUserAdmin:
             with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
                 mock_repo = AsyncMock()
                 # Возвращаем None - пользователь не найден
-                mock_repo.get_user_by_telegram_id.return_value = None
+                mock_repo.get_by_telegram_id.return_value = None
                 MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_database_error(self):
@@ -116,13 +116,13 @@ class TestIsUserAdmin:
 
             with patch('app.middlewares.admin_middleware.UserRepository') as MockUserRepo:
                 mock_repo = AsyncMock()
-                mock_repo.get_user_by_telegram_id.side_effect = Exception("DB Connection Error")
+                mock_repo.get_by_telegram_id.side_effect = Exception("DB Connection Error")
                 MockUserRepo.return_value = mock_repo
 
                 result = await is_user_admin(telegram_id)
 
                 assert result is False
-                mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+                mock_repo.get_by_telegram_id.assert_called_once_with(telegram_id)
 
     @pytest.mark.asyncio
     async def test_is_user_admin_session_error(self):
@@ -444,7 +444,7 @@ class TestLogging:
                 mock_user = AsyncMock()
                 mock_user.role = UserRole.admin
                 mock_user.full_name = "Admin User"
-                mock_repo.get_user_by_telegram_id.return_value = mock_user
+                mock_repo.get_by_telegram_id.return_value = mock_user
                 MockUserRepo.return_value = mock_repo
 
                 with patch('app.middlewares.admin_middleware.logger') as mock_logger:
@@ -474,14 +474,14 @@ async def test_is_user_admin_simple():
             mock_repo = AsyncMock()
             mock_user = AsyncMock()
             mock_user.role = UserRole.admin
-            mock_repo.get_user_by_telegram_id.return_value = mock_user
+            mock_repo.get_by_telegram_id.return_value = mock_user
             MockUserRepo.return_value = mock_repo
 
             result = await is_user_admin(telegram_id)
 
             assert result is not None
             assert result is True
-            mock_repo.get_user_by_telegram_id.assert_called_once_with(telegram_id)
+            mock_repo.get_by_telegram_id.assert_called_once_with(telegram_id)
 
 
 if __name__ == "__main__":

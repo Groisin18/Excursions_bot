@@ -6,17 +6,19 @@ import pytest
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
+from sqlalchemy.pool import NullPool
+from sqlalchemy import text
 
 # ========== НАСТРОЙКА ПУТЕЙ ИМПОРТА ==========
 project_root = Path(__file__).parent.parent
 sys.path.insert(0, str(project_root))
 
 try:
-    from app.database.models import Base, DatabaseConfig, User, UserRole
+    from app.database.models import Base, User, UserRole
+    from app.database.session import DatabaseConfig
     from app.database.unit_of_work import UnitOfWork
     from app.database.repositories.user_repository import UserRepository
     from app.database.managers.user_manager import UserManager
-
     from app.middlewares.admin_middleware import AdminMiddleware
 except ImportError as e:
     print(f"Ошибка импорта: {e}")
@@ -73,23 +75,34 @@ def event_loop(event_loop_policy):
 
 @pytest.fixture(scope="session")
 async def async_engine():
-    """
-    Создает асинхронный движок для тестовой БД.
-    Используем SQLite в памяти для скорости и изоляции.
-    """
+    import tempfile
+    import os
+
+    # Создаем временный файл для БД
+    db_fd, db_path = tempfile.mkstemp(suffix='.db')
+    os.close(db_fd)
+
+    print(f"\n=== СОЗДАЕМ ТЕСТОВУЮ БД: {db_path} ===")
     engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
+        f"sqlite+aiosqlite:///{db_path}",  # файловая БД
         echo=False,
-        poolclass=DatabaseConfig.POOL_CLASS
+        poolclass=NullPool
     )
 
     async with engine.begin() as conn:
-        # Создаем все таблицы
+        print("--- Создаем таблицы ---")
         await conn.run_sync(Base.metadata.create_all)
+        print("--- Таблицы созданы ---")
 
     yield engine
 
+    # Удаляем файл после тестов
     await engine.dispose()
+    try:
+        os.unlink(db_path)
+        print(f"--- Тестовая БД удалена: {db_path} ---")
+    except:
+        pass
 
 
 @pytest.fixture
@@ -220,28 +233,30 @@ async def test_data(db_session):
     Создает тестовые данные в БД.
     Использует flush() вместо commit() для изоляции тестов.
     """
+    print("\n=== ЗАПОЛНЯЕМ ТЕСТОВЫМИ ДАННЫМИ ===")
+
+    # Очищаем существующих пользователей
+    await db_session.execute(text("DELETE FROM users"))
+    await db_session.commit()
     # Создаем тестовых пользователей
     admin = User(
         telegram_id=1001,
-        name="Admin",
-        surname="Test",
-        phone="+79001112233",
+        full_name="Admin Test",  # вместо first_name/last_name
+        phone_number="+79001112233",  # вместо phone
         role=UserRole.admin
     )
 
     captain = User(
         telegram_id=1002,
-        name="Captain",
-        surname="Test",
-        phone="+79002223344",
+        full_name="Captain Test",
+        phone_number="+79002223344",
         role=UserRole.captain
     )
 
     client = User(
         telegram_id=1003,
-        name="Client",
-        surname="Test",
-        phone="+79003334455",
+        full_name="Client Test",
+        phone_number="+79003334455",
         role=UserRole.client
     )
 

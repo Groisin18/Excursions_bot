@@ -561,6 +561,6 @@ def pydantic_validate_phone(v: str) -> str:
     return validate_phone(v)
 
 
-def pydantic_validate_birthdate(v: str) -> str:
+def pydantic_validate_birthdate(v: str) -> date:
     """Pydantic валидатор для даты рождения"""
     return validate_birthdate(v)

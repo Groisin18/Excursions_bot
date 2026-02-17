@@ -1,7 +1,7 @@
 """Репозиторий для работы со слотами (CRUD операции)"""
 
 from typing import List, Optional
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -135,7 +135,7 @@ class SlotRepository(BaseRepository):
             .options(
                 selectinload(ExcursionSlot.excursion),
                 selectinload(ExcursionSlot.captain),
-                selectinload(ExcursionSlot.bookings).selectinload(Booking.client)
+                selectinload(ExcursionSlot.bookings).selectinload(Booking.adult_user)
             )
             .where(ExcursionSlot.id == slot_id)
         )
@@ -154,7 +154,7 @@ class SlotRepository(BaseRepository):
             select(ExcursionSlot)
             .options(
                 selectinload(ExcursionSlot.excursion),
-                selectinload(ExcursionSlot.bookings).selectinload(Booking.client)
+                selectinload(ExcursionSlot.bookings).selectinload(Booking.adult_user)
             )
             .join(User, ExcursionSlot.captain_id == User.id)
             .where(
@@ -246,10 +246,18 @@ class SlotRepository(BaseRepository):
         status: SlotStatus = SlotStatus.scheduled
     ) -> ExcursionSlot:
         """Создать новый слот в расписании"""
+        from app.database.repositories.excursion_repository import ExcursionRepository
+        excursion_repo = ExcursionRepository(self.session)
+        excursion = await excursion_repo.get_by_id(excursion_id)
+
+        if not excursion:
+            raise ValueError(f"Экскурсия с id {excursion_id} не найдена")
+        end_datetime = start_datetime + timedelta(minutes=excursion.base_duration_minutes)
         slot_data = {
             'excursion_id': excursion_id,
             'captain_id': captain_id,
             'start_datetime': start_datetime,
+            'end_datetime': end_datetime,
             'max_people': max_people,
             'max_weight': max_weight,
             'status': status
@@ -280,6 +288,14 @@ class SlotRepository(BaseRepository):
         clean_data = {k: v for k, v in data.items() if v is not None}
         if not clean_data:
             return False
+
+        # Если обновляем start_datetime, нужно пересчитать end_datetime
+        if 'start_datetime' in clean_data:
+            # Получаем слот чтобы узнать экскурсию
+            slot = await self.get_by_id(slot_id)
+            if slot and slot.excursion:
+                clean_data['end_datetime'] = clean_data['start_datetime'] + \
+                    timedelta(minutes=slot.excursion.base_duration_minutes)
 
         updated = await self._update(ExcursionSlot, ExcursionSlot.id == slot_id, **clean_data)
         return updated > 0

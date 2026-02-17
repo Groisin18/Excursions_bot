@@ -6,29 +6,29 @@
 Примеры использования скрипта:
 
 1. ВСЕ ТЕСТЫ:
-   python run_tests.py
-   python run_tests.py --all
+   python tests/run_tests.py
+   python tests/run_tests.py --all
 
 2. КОНКРЕТНЫЕ ФАЙЛЫ:
-   python run_tests.py test_validation.py
-   python run_tests.py test_validation.py test_datetime_utils.py
-   python run_tests.py test_middleware.py
+   python tests/run_tests.py test_validation.py
+   python tests/run_tests.py test_validation.py test_datetime_utils.py
+   python tests/run_tests.py test_middleware.py
 
 3. ПО ШАБЛОНУ:
-   python run_tests.py test_*.py
-   python run_tests.py *validation*.py
+   python tests/run_tests.py test_*.py
+   python tests/run_tests.py *validation*.py
 
 4. СПИСОК ВСЕХ ТЕСТОВ:
-   python run_tests.py --list
+   python tests/run_tests.py --list
 
 5. БЕЗ ОТЧЕТОВ:
-   python run_tests.py test_validation.py --no-html --no-txt
+   python tests/run_tests.py test_validation.py --no-html --no-txt
 
 6. ТОЛЬКО HTML ОТЧЕТ:
-   python run_tests.py test_validation.py --no-txt
+   python tests/run_tests.py test_validation.py --no-txt
 
 7. ТОЛЬКО ТЕКСТОВЫЙ ОТЧЕТ:
-   python run_tests.py test_validation.py --no-html
+   python tests/run_tests.py test_validation.py --no-html
 """
 
 import subprocess
@@ -79,11 +79,11 @@ def parse_arguments():
 
 
 def find_all_test_files():
-    """Находит все тестовые файлы в папке tests."""
+    """Находит все тестовые файлы в папке tests и всех подпапках."""
     test_files = []
     tests_path = Path("tests")
 
-    for test_file in tests_path.glob("test_*.py"):
+    for test_file in tests_path.rglob("test_*.py"):
         if test_file.name != "__init__.py":
             test_files.append(str(test_file))
 
@@ -125,26 +125,22 @@ def resolve_test_files(args):
         return None
 
     if args.test_files:
-        # Пользователь указал конкретные файлы
         resolved_files = []
         tests_path = Path("tests")
 
         for pattern in args.test_files:
-            # Если указан полный путь
             if Path(pattern).exists():
                 resolved_files.append(pattern)
-            # Ищем в папке tests
-            elif (tests_path / pattern).exists():
-                resolved_files.append(str(tests_path / pattern))
-            # Ищем по шаблону
             else:
-                for file_path in tests_path.glob(pattern):
+                for file_path in tests_path.rglob(pattern):
                     if file_path.name != "__init__.py":
                         resolved_files.append(str(file_path))
+                for file_path in tests_path.rglob(f"*{pattern}*"):
+                    if file_path.name != "__init__.py" and file_path.suffix == ".py":
+                        if str(file_path) not in resolved_files:
+                            resolved_files.append(str(file_path))
 
-        return list(set(resolved_files))  # Убираем дубли
-
-    # По умолчанию - все тесты
+        return list(set(resolved_files))
     return find_all_test_files()
 
 
