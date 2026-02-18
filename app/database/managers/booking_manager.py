@@ -1,14 +1,19 @@
 """Менеджер для бизнес-логики бронирований"""
 
-from typing import Tuple, Optional, Dict
+from datetime import datetime
+from typing import Tuple, Optional, Dict, List
+from sqlalchemy import select, and_, or_
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
+
 
 from .base import BaseManager
 from app.database.repositories import (
     BookingRepository, SlotRepository, UserRepository, PromoCodeRepository
 )
 from app.database.models import (
-    Booking, BookingStatus, SlotStatus, ClientStatus, BookingChild
+    Booking, BookingStatus, SlotStatus, ClientStatus, BookingChild,
+    ExcursionSlot
 )
 from app.database.managers import SlotManager
 from app.utils.calculators import PriceCalculator
@@ -260,49 +265,6 @@ class BookingManager(BaseManager):
             self.logger.error(f"Ошибка расчета стоимости: {e}", exc_info=True)
             return 0, {}
 
-    async def cancel_booking(self, booking_id: int, cancelled_by_admin: bool = False) -> Tuple[bool, str]:
-        """Отменить бронирование"""
-        self._log_operation_start("cancel_booking",
-                                 booking_id=booking_id,
-                                 by_admin=cancelled_by_admin)
-
-        try:
-            booking = await self.booking_repo.get_by_id(booking_id)
-            if not booking:
-                error_msg = "Бронирование не найдено"
-                self.logger.warning(error_msg)
-                return False, error_msg
-
-            # Бизнес-правила: можно ли отменять?
-            if booking.booking_status == BookingStatus.cancelled:
-                error_msg = "Бронирование уже отменено"
-                self.logger.warning(error_msg)
-                return False, error_msg
-
-            # TODO: Проверка времени до начала экскурсии
-            # TODO: Проверка оплаты и возврата средств
-
-            cancelled = await self.booking_repo.cancel(booking_id)
-
-            if cancelled:
-                self._log_operation_end("cancel_booking", success=True)
-                self._log_business_event("booking_cancelled",
-                                        booking_id=booking_id,
-                                        by_admin=cancelled_by_admin,
-                                        slot_id=booking.slot_id,
-                                        adult_user_id=booking.adult_user_id)
-                return True, ""
-            else:
-                error_msg = "Не удалось отменить бронирование"
-                self.logger.error(error_msg)
-                return False, error_msg
-
-        except Exception as e:
-            self._log_operation_end("cancel_booking", success=False)
-            error_msg = f"Ошибка отмены бронирования: {str(e)}"
-            self.logger.error(error_msg, exc_info=True)
-            return False, error_msg
-
     async def get_full_info(self, booking_id: int) -> Optional[Dict]:
         """Получить полную информацию о бронировании"""
         try:
@@ -339,3 +301,208 @@ class BookingManager(BaseManager):
         booking.client_status = ClientStatus.arrived
         await self.booking_repo.update(booking)
         return True
+
+
+    async def get_user_active_bookings(self, user_id: int) -> List[Booking]:
+        """
+        Получить активные бронирования пользователя.
+
+        Активными считаются бронирования со статусом active,
+        у которых слот ещё не начался.
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            List[Booking]: Список активных бронирований,
+                        отсортированных по дате слота (ближайшие сверху)
+        """
+        self._log_operation_start("get_user_active_bookings", user_id=user_id)
+
+        try:
+
+            # Запрос на получение активных бронирований
+            query = (
+                select(Booking)
+                .options(
+                    selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                    selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
+                    selectinload(Booking.payments),
+                    selectinload(Booking.booking_children)
+                )
+                .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+                .where(
+                    and_(
+                        Booking.adult_user_id == user_id,
+                        Booking.booking_status == BookingStatus.active,
+                        ExcursionSlot.start_datetime > datetime.now()  # Слот в будущем
+                    )
+                )
+                .order_by(ExcursionSlot.start_datetime.asc())  # Сначала ближайшие
+            )
+
+            result = await self.session.execute(query)
+            bookings = list(result.scalars().all())
+
+            self._log_operation_end(
+                "get_user_active_bookings",
+                success=True,
+                count=len(bookings)
+            )
+
+            return bookings
+
+        except Exception as e:
+            self._log_operation_end("get_user_active_bookings", success=False)
+            self.logger.error(f"Ошибка получения активных бронирований: {e}", exc_info=True)
+            return []
+
+    async def get_user_history_bookings(self, user_id: int) -> List[Booking]:
+        """
+        Получить историю бронирований пользователя.
+
+        Историей считаются бронирования со статусом:
+        - cancelled (отменённые)
+        - completed (завершённые)
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            List[Booking]: Список бронирований из истории,
+                        отсортированных по дате слота (новые сверху)
+        """
+        self._log_operation_start("get_user_history_bookings", user_id=user_id)
+
+        try:
+            query = (
+                select(Booking)
+                .options(
+                    selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                    selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
+                    selectinload(Booking.payments),
+                    selectinload(Booking.booking_children)
+                )
+                .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+                .where(
+                    and_(
+                        Booking.adult_user_id == user_id,
+                        Booking.booking_status.in_([
+                            BookingStatus.cancelled,
+                            BookingStatus.completed
+                        ])
+                    )
+                )
+                .order_by(ExcursionSlot.start_datetime.desc())  # Сначала новые
+            )
+
+            result = await self.session.execute(query)
+            bookings = list(result.scalars().all())
+
+            self._log_operation_end(
+                "get_user_history_bookings",
+                success=True,
+                count=len(bookings)
+            )
+            return bookings
+
+        except Exception as e:
+            self._log_operation_end("get_user_history_bookings", success=False)
+            self.logger.error(f"Ошибка получения истории бронирований: {e}", exc_info=True)
+            return []
+
+    async def cancel_booking(
+        self,
+        booking_id: int,
+        auto_refund: bool = True
+    ) -> Tuple[bool, str, Optional[Dict]]:
+        """
+        Отменить бронирование.
+
+        Args:
+            booking_id: ID бронирования
+            auto_refund: Автоматически инициировать возврат если возможно
+
+        Returns:
+            Tuple[bool, str, Optional[Dict]]:
+                - Успех операции
+                - Сообщение
+                - Данные для возврата (если требуется и auto_refund=True)
+        """
+        self._log_operation_start(
+            "cancel_booking",
+            booking_id=booking_id,
+            auto_refund=auto_refund
+        )
+
+        try:
+            # Получаем бронирование
+            booking = await self.booking_repo.get_by_id(booking_id)
+
+            if not booking:
+                error_msg = "Бронирование не найдено"
+                self.logger.warning(error_msg)
+                return False, error_msg, None
+
+            # Проверяем, можно ли отменить
+            if booking.booking_status == BookingStatus.cancelled:
+                error_msg = "Бронирование уже отменено"
+                self.logger.warning(error_msg)
+                return False, error_msg, None
+
+            if booking.booking_status == BookingStatus.completed:
+                error_msg = "Нельзя отменить завершённое бронирование"
+                self.logger.warning(error_msg)
+                return False, error_msg, None
+
+            # Меняем статус бронирования
+            await self.booking_repo.update(
+                booking_id,
+                booking_status=BookingStatus.cancelled
+            )
+
+            self._log_business_event(
+                "booking_cancelled",
+                booking_id=booking_id,
+                slot_id=booking.slot_id,
+                was_paid=booking.is_paid
+            )
+
+            # Проверяем необходимость возврата
+            refund_data = None
+
+            if auto_refund and booking.is_paid:
+                # TODO Проверяем возможность возврата через PaymentManager
+                # (PaymentManager будет добавлен позже)
+                refund_data = {
+                    "booking_id": booking_id,
+                    "amount": booking.total_price,
+                    "reason": "user_cancelled",
+                    "needs_refund": True
+                }
+
+                self.logger.info(
+                    f"Требуется возврат для бронирования {booking_id}, "
+                    f"сумма: {booking.total_price}"
+                )
+
+            self._log_operation_end(
+                "cancel_booking",
+                success=True,
+                needs_refund=refund_data is not None
+            )
+
+            return True, "Бронирование отменено", refund_data
+
+        except Exception as e:
+            self._log_operation_end("cancel_booking", success=False)
+            error_msg = f"Ошибка отмены бронирования: {str(e)}"
+            self.logger.error(error_msg, exc_info=True)
+            return False, error_msg, None
+
+
+# TODO: Создать отдельный процесс (фоновую задачу), который:
+# 1. Находит активные бронирования на прошедшие слоты (start_datetime < now())
+# 2. Для неоплаченных - автоматически отменяет их (booking_status = cancelled)
+# 3. Для оплаченных - возможно, меняет статус на completed?
+# 4. Логирует все изменения

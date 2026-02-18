@@ -6,6 +6,7 @@ from .token_registration import router as token_registration_router
 from .child_registration import router as child_registration_router
 from .redaction_userdata import router as user_redaction_router
 from .redaction_childdata import router as child_redaction_router
+from .my_bookings import router as user_bookings_router
 
 
 router = Router(name="account_main")
@@ -17,3 +18,4 @@ router.include_router(token_registration_router)
 router.include_router(child_registration_router)
 router.include_router(user_redaction_router)
 router.include_router(child_redaction_router)
+router.include_router(user_bookings_router)

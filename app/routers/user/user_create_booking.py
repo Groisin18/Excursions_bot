@@ -17,13 +17,13 @@ from app.user_panel.states import UserBookingStates
 from app.utils.datetime_utils import get_weekday_name
 from app.utils.validation import validate_weight
 from app.utils.calculators import (
-    WeightCalculator, PriceCalculator, BookingCalculator
+    WeightCalculator, BookingCalculator
 )
 
 import app.user_panel.keyboards as kb
 
 
-router = Router(name="user_booking")
+router = Router(name="user_create_booking")
 logger = get_logger(__name__)
 
 
@@ -1160,7 +1160,7 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
                     f"После оплаты бронь станет активной.\n"
                     f"Вы можете посмотреть свои бронирования в Личном кабинете."
                 )
-
+# TODO добавить возможность оплатить сразу
                 await callback.message.answer(
                     success_message,
                     reply_markup=kb.main

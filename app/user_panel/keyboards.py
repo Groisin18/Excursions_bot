@@ -1,5 +1,5 @@
 from datetime import date
-
+from typing import List
 from aiogram.types import (
                         ReplyKeyboardMarkup, KeyboardButton,
                         InlineKeyboardMarkup, InlineKeyboardButton
@@ -59,6 +59,10 @@ async def registration_data_menu_builder(has_children: bool = False):
         callback_data='reg_child'
     ))
     builder.add(InlineKeyboardButton(
+        text='Мои бронирования',
+        callback_data='user_booking'
+    ))
+    builder.add(InlineKeyboardButton(
         text='В главное меню',
         callback_data='back_to_main'
     ))
@@ -80,6 +84,110 @@ err_reg = ReplyKeyboardMarkup(
     ],
     resize_keyboard=True
 )
+
+# ===== КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЙ ПОЛЬЗОВАТЕЛЯ =====
+
+def bookings_main_menu_keyboard() -> InlineKeyboardMarkup:
+    """Главное меню раздела 'Мои бронирования'"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Активные бронирования", callback_data="my_active_bookings")
+    builder.button(text="История бронирований", callback_data="my_history_bookings")
+    builder.button(text="Назад в кабинет", callback_data="back_to_cabinet")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def empty_bookings_keyboard(back_callback: str = "user_booking") -> InlineKeyboardMarkup:
+    """Клавиатура для случая, когда бронирований нет"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад в меню", callback_data=back_callback)
+    builder.button(text="В главное меню", callback_data="back_to_main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def bookings_list_keyboard(
+    bookings: List,
+    callback_prefix: str,
+    back_callback: str = "user_booking"
+) -> InlineKeyboardMarkup:
+    """
+    Клавиатура со списком бронирований
+
+    Args:
+        bookings: список бронирований
+        callback_prefix: префикс для callback_data (например "booking_detail:")
+        back_callback: callback для кнопки "Назад"
+    """
+    builder = InlineKeyboardBuilder()
+
+    for booking in bookings:
+        slot = booking.slot
+        excursion = slot.excursion if slot else None
+
+        if slot and excursion:
+            date_str = slot.start_datetime.strftime("%d.%m.%Y")
+            button_text = f"{excursion.name} ({date_str})"
+            builder.button(
+                text=button_text,
+                callback_data=f"{callback_prefix}{booking.id}"
+            )
+
+    builder.button(text="Назад в меню", callback_data=back_callback)
+    builder.button(text="В главное меню", callback_data="back_to_main")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+
+def booking_detail_keyboard(
+    booking_id: int,
+    show_cancel: bool = False,
+    show_refund_info: bool = False,
+    show_pay: bool = False
+) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для деталей бронирования
+
+    Args:
+        booking_id: ID бронирования
+        show_cancel: показывать кнопку отмены
+        show_refund_info: показывать кнопку информации о возврате
+        show_pay: показывать кнопку оплаты (в разработке)
+    """
+    builder = InlineKeyboardBuilder()
+
+    if show_cancel:
+        builder.button(text="Отменить бронирование", callback_data=f"cancel_booking:{booking_id}")
+
+    if show_refund_info:
+        builder.button(text="Информация о возврате", callback_data=f"refund_info:{booking_id}")
+
+    if show_pay:
+        builder.button(text="Оплатить", callback_data=f"pay_booking:{booking_id}")
+
+    builder.button(text="Назад к списку", callback_data="user_booking")
+    builder.button(text="В главное меню", callback_data="back_to_main")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+
+def cancel_confirmation_keyboard(booking_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения отмены"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Да, отменить", callback_data=f"confirm_cancel:{booking_id}")
+    builder.button(text="Нет, вернуться", callback_data=f"booking_detail:{booking_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_booking_keyboard(booking_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура с кнопкой возврата к бронированию"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад к бронированию", callback_data=f"booking_detail:{booking_id}")
+    builder.adjust(1)
+    return builder.as_markup()
 
 
 # ===== РЕДАКТИРОВАНИЕ ДАННЫХ =====

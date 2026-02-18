@@ -26,7 +26,8 @@ class BookingRepository(BaseRepository):
                 selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
                 selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
                 selectinload(Booking.adult_user),
-                selectinload(Booking.payments)
+                selectinload(Booking.payments),
+                selectinload(Booking.booking_children)
             )
             .where(Booking.id == booking_id)
         )
@@ -40,7 +41,8 @@ class BookingRepository(BaseRepository):
             select(Booking)
             .options(
                 selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
-                selectinload(Booking.slot).selectinload(ExcursionSlot.captain)
+                selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
+                selectinload(Booking.booking_children)
             )
             .join(User, Booking.adult_user_id == User.id)
             .where(User.telegram_id == user_telegram_id)
@@ -105,10 +107,16 @@ class BookingRepository(BaseRepository):
         """Получить количество забронированных людей в слоте"""
         try:
             # Получаем все активные брони на слот
-            query = select(Booking).where(
-                and_(
-                    Booking.slot_id == slot_id,
-                    Booking.booking_status == BookingStatus.active
+            query = (
+                select(Booking)
+                .options(
+                    selectinload(Booking.booking_children)
+                )
+                .where(
+                    and_(
+                        Booking.slot_id == slot_id,
+                        Booking.booking_status == BookingStatus.active
+                    )
                 )
             )
 
