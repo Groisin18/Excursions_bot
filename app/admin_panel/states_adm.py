@@ -2,7 +2,7 @@ from aiogram.fsm.state import State, StatesGroup
 
 
 class AdminStates(StatesGroup):
-    """Состояния для администратора"""
+    """Общие состояния для админ-панели"""
     waiting_for_statistics_period = State()
     waiting_for_booking_search = State()
     waiting_for_client_search = State()
@@ -24,6 +24,19 @@ class AdminCreateBooking(StatesGroup):
     waiting_for_time = State()            # Выбор времени
     waiting_for_people_count = State()    # Количество людей
     waiting_for_confirmation = State()    # Подтверждение
+
+class AdminClientEdit(StatesGroup):
+    """Состояния для редактирования клиента администратором"""
+    waiting_for_client_selection = State()
+    waiting_for_target_selection = State()
+    waiting_for_field_selection = State()
+    waiting_for_new_surname = State()
+    waiting_for_new_name = State()
+    waiting_for_new_phone = State()
+    waiting_for_new_birth_date = State()
+    waiting_for_new_email = State()
+    waiting_for_new_address = State()
+    waiting_for_new_weight = State()
 
 class AddToSchedule(StatesGroup):
     """Состояния для добавления экскурсии в расписание"""

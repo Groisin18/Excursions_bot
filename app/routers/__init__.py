@@ -11,6 +11,7 @@ from .admin.slots import router as admin_slots_router
 from .admin.new_slot import router as admin_new_slot_router
 from .admin.bookings import router as admin_bookings_router
 from .admin.clients import router as admin_clients_routher
+from .admin.client_redaction import router as admin_client_redaction_routher
 from .admin.captains import router as admin_captains_router
 from .admin.finances import router as admin_finances_router
 from .admin.notification import router as admin_notification_router
@@ -35,6 +36,7 @@ __all__ = [
     'admin_new_slot_router',
     'admin_bookings_router',
     'admin_clients_routher',
+    'admin_client_redaction_routher',
     'admin_captains_router',
     'admin_finances_router',
     'admin_notification_router',
@@ -61,6 +63,7 @@ def setup_routers(dp):
     dp.include_router(admin_new_slot_router)
     dp.include_router(admin_bookings_router)
     dp.include_router(admin_clients_routher)
+    dp.include_router(admin_client_redaction_routher)
     dp.include_router(admin_captains_router)
     dp.include_router(admin_finances_router)
     dp.include_router(admin_notification_router)

@@ -144,17 +144,6 @@ async def add_client(message: Message):
         logger.error(f"Ошибка: {e}", exc_info=True)
 
 
-@router.message(F.text == "Редактировать клиента")
-async def edit_client(message: Message):
-    """Редактирование данных клиента"""
-    logger.info(f"Администратор {message.from_user.id} хочет редактировать клиента")
-
-    try:
-        await message.answer("Функция 'Редактировать клиента' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
 @router.callback_query(F.data.startswith("arrived:"))
 async def mark_arrived(callback: CallbackQuery):
     """Отметить прибытие клиента"""

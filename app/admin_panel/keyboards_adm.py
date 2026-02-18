@@ -8,7 +8,7 @@ from aiogram.types import (
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
 from datetime import date
 
-from app.database.models import SlotStatus, TelegramFile, FileType
+from app.database.models import SlotStatus, TelegramFile, FileType, User
 
 
 # ===== ГЛАВНОЕ МЕНЮ =====
@@ -222,6 +222,123 @@ def schedule_captains_management_menu():
 
     builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
+
+
+# ===== РЕДАКТИРОВАНИЕ КЛИЕНТА =====
+
+def client_selection_menu(clients: list) -> InlineKeyboardMarkup:
+    """
+    Меню выбора клиента из результатов поиска
+
+    Args:
+        clients: Список объектов User (найденные клиенты)
+    """
+    builder = InlineKeyboardBuilder()
+
+    for client in clients:
+        # Текст кнопки: ID и имя (обрезаем если слишком длинное)
+        name = client.full_name
+        if len(name) > 25:
+            name = name[:22] + "..."
+
+        builder.button(
+            text=f"{client.id}: {name}",
+            callback_data=f"select_client_for_edit:{client.id}"
+        )
+
+    builder.button(
+        text="Новый поиск",
+        callback_data="search_client_again"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_client_edit"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def client_or_child_selection_menu(client: User, children: list) -> InlineKeyboardMarkup:
+    """
+    Меню выбора: редактировать самого клиента или его ребенка
+
+    Args:
+        client: Объект User (клиент)
+        children: Список объектов User (дети клиента)
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Кнопка для редактирования самого клиента
+    client_name = client.full_name
+    if len(client_name) > 30:
+        client_name = client_name[:27] + "..."
+
+    builder.button(
+        text=f"Самого клиента: {client_name}",
+        callback_data=f"edit_target:client:{client.id}"
+    )
+
+    # Кнопки для каждого ребенка
+    for child in children:
+        child_name = child.full_name
+        if len(child_name) > 25:
+            child_name = child_name[:22] + "..."
+
+        age_text = f"{child.age} лет" if child.age else "возраст неизвестен"
+        builder.button(
+            text=f"Ребенок: {child_name} ({age_text})",
+            callback_data=f"edit_target:child:{child.id}"
+        )
+
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_client_edit"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def client_edit_fields_menu(target_id: int, target_type: str, has_phone: bool = True) -> InlineKeyboardMarkup:
+    """
+    Меню выбора поля для редактирования
+
+    Args:
+        target_id: ID пользователя (клиента или ребенка)
+        target_type: Тип цели ("client" или "child")
+        has_phone: Есть ли поле телефона (для клиентов есть, для детей нет)
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Базовые поля для всех
+    fields = [
+        ("Фамилия", f"edit_field:{target_id}:{target_type}:surname"),
+        ("Имя", f"edit_field:{target_id}:{target_type}:name"),
+        ("Дата рождения", f"edit_field:{target_id}:{target_type}:birth_date"),
+        ("Email", f"edit_field:{target_id}:{target_type}:email"),
+        ("Адрес", f"edit_field:{target_id}:{target_type}:address"),
+        ("Вес", f"edit_field:{target_id}:{target_type}:weight")
+    ]
+
+    # Добавляем телефон только для клиентов
+    if has_phone:
+        fields.insert(2, ("Телефон", f"edit_field:{target_id}:{target_type}:phone"))
+
+    for text, callback in fields:
+        builder.button(text=text, callback_data=callback)
+
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_client_edit"
+    )
+
+    builder.adjust(2)
+    return builder.as_markup()
+
+def cancel_inline_button() -> InlineKeyboardMarkup:
+    """Инлайн-кнопка Отмена"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Отмена", callback_data="cancel_client_edit")
+    return builder.as_markup()
 
 
 # ===== УПРАВЛЕНИЕ ВИДАМИ ЭКСКУРСИЙ =====
