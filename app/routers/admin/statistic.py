@@ -6,11 +6,11 @@ from datetime import datetime, timedelta
 
 from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
-    admin_main_menu, bookings_submenu, statistics_submenu, cancel_button,
+    admin_main_menu, statistics_submenu, cancel_button,
     dashboard_quick_actions
 )
 from app.database.repositories import UserRepository, SlotRepository
-from app.database.managers import StatisticsManager
+from app.database.managers import StatisticsManager, UserManager
 from app.database.models import UserRole
 from app.database.session import async_session
 
@@ -359,9 +359,51 @@ async def statistics_by_captains(message: Message):
     logger.info(f"Администратор {message.from_user.id} запросил статистику по капитанам")
 
     try:
-        await message.answer("Функция 'Статистика по капитанам' в разработке")
+        async with async_session() as session:
+            user_manager = UserManager(session)
+
+            # Получаем статистику за текущий месяц
+            captains_data = await user_manager.get_captains_with_stats()
+
+            if not captains_data:
+                logger.debug("Нет данных для статистики по капитанам")
+                await message.answer(
+                    "Нет данных о капитанах за текущий месяц",
+                    reply_markup=statistics_submenu()
+                )
+                return
+
+            # Получаем период
+            period_info = "текущий месяц"
+            if captains_data and captains_data[0]['stats'].get('period_start'):
+                start = captains_data[0]['stats']['period_start']
+                end = captains_data[0]['stats']['period_end']
+                period_info = f"{start.strftime('%d.%m.%Y')} - {end.strftime('%d.%m.%Y')}"
+
+            response = f"Статистика по капитанам за {period_info}:\n\n"
+
+            for data in captains_data:
+                captain = data['captain']
+                stats = data['stats']
+
+                response += (
+                    f"{captain.full_name}:\n"
+                    f"  Рейсов: {stats.get('total_bookings', 0)}\n"
+                    f"  Людей: {stats.get('total_people', 0)}\n"
+                    f"  Выручка: {stats.get('total_revenue', 0)} руб.\n"
+                    f"  Зарплата: {stats.get('total_amount', 0)} руб.\n"
+                    f"---\n"
+                )
+
+            await message.answer(response, reply_markup=statistics_submenu())
+            logger.debug(f"Статистика по капитанам отправлена администратору {message.from_user.id}")
+
     except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        logger.error(f"Ошибка получения статистики по капитанам: {e}", exc_info=True)
+        await message.answer(
+            "Ошибка при получении статистики",
+            reply_markup=statistics_submenu()
+        )
 
 @router.message(F.text == "Отказы и неявки")
 async def statistics_cancellations(message: Message):

@@ -21,16 +21,40 @@ class SalaryManager(BaseManager):
         self.slot_repo = SlotRepository(session)
         self.salary_repo = SalaryRepository(session)
 
-    async def calculate_captain_salary(self, captain_id: int, period: date) -> Dict:
-        """Рассчитать зарплату капитана за период"""
-        self._log_operation_start("calculate_captain_salary",
-                                 captain_id=captain_id,
-                                 period=period)
+    async def calculate_captain_salary(
+        self,
+        captain_id: int,
+        period_start: date,
+        period_end: date = None
+    ) -> Dict:
+        """Рассчитать зарплату капитана за период
+
+        Args:
+            captain_id: ID капитана
+            period_start: Начало периода
+            period_end: Конец периода (по умолчанию - последний день месяца period_start)
+
+        Returns:
+            Dict: Словарь со статистикой
+        """
+        if period_end is None:
+            # Последний день месяца period_start
+            next_month = period_start.replace(day=28) + timedelta(days=4)
+            period_end = next_month - timedelta(days=next_month.day)
+
+        self._log_operation_start(
+            "calculate_captain_salary",
+            captain_id=captain_id,
+            period_start=period_start,
+            period_end=period_end
+        )
 
         try:
             # Получаем завершенные слоты капитана за период
             slots = await self.slot_repo.get_captain_completed_slots_for_period(
-                captain_id, period, period + timedelta(days=30)
+                captain_id,
+                period_start,
+                period_end
             )
 
             total_bookings = 0
@@ -52,7 +76,8 @@ class SalaryManager(BaseManager):
 
             result = {
                 'captain_id': captain_id,
-                'period': period,
+                'period_start': period_start,
+                'period_end': period_end,
                 'base_salary': base_salary,
                 'bonus': bonus,
                 'total_amount': total_amount,

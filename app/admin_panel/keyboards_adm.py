@@ -207,21 +207,11 @@ def cancel_button():
 
 # ===== УПРАВЛЕНИЕ КАПИТАНАМИ =====
 
-def schedule_captains_management_menu():
-    """Меню управления графиком"""
-    builder = ReplyKeyboardBuilder()
-
-    buttons = [
-        "Назначить смену", "Изменить смену",
-        "Отменить смену", "Расписание на неделю",
-        "Назад"
-    ]
-
-    for button in buttons:
-        builder.add(KeyboardButton(text=button))
-
-    builder.adjust(2, 2, 1)
-    return builder.as_markup(resize_keyboard=True)
+def find_client_for_captains() -> InlineKeyboardMarkup:
+    """Инлайн-кнопка перехода к поиску клиента для произведения в капитаны"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Найти клиента", callback_data="new_client_search")
+    return builder.as_markup()
 
 
 # ===== ДОБАВЛЕНИЕ КЛИЕНТА =====
@@ -404,7 +394,6 @@ def client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
     builder.adjust(1)  # Все кнопки в столбик
     return builder.as_markup()
 
-
 def client_list_keyboard(clients: list) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора клиента из списка
@@ -444,7 +433,6 @@ def client_list_keyboard(clients: list) -> InlineKeyboardMarkup:
 
     return builder.as_markup()
 
-
 def client_role_change_keyboard(client_id: int, current_role: str) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора новой роли для клиента
@@ -481,7 +469,6 @@ def client_role_change_keyboard(client_id: int, current_role: str) -> InlineKeyb
 
     builder.adjust(1)
     return builder.as_markup()
-
 
 def back_to_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
     """

@@ -13,7 +13,7 @@ from app.database.session import async_session
 from app.admin_panel.states_adm import AddToSchedule
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_back_menu,
-    captains_selection_menu, time_slot_menu, schedule_captains_management_menu,
+    captains_selection_menu, time_slot_menu,
     excursions_selection_menu_for_schedule, no_captains_options_menu
 )
 from app.middlewares import AdminMiddleware
@@ -604,7 +604,7 @@ async def handle_cancel_slot_creation(callback: CallbackQuery, state: FSMContext
         await state.clear()
         await callback.message.answer(
             "Создание слота отменено.",
-            reply_markup=schedule_captains_management_menu()
+            reply_markup=schedule_exc_management_menu()
         )
 
     except Exception as e:

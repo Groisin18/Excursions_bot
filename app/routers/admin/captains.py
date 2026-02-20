@@ -4,7 +4,7 @@ from aiogram.types import Message
 from app.database.managers import UserManager
 from app.database.session import async_session
 from app.middlewares import AdminMiddleware
-from app.admin_panel.keyboards_adm import admin_main_menu, captains_submenu
+from app.admin_panel.keyboards_adm import find_client_for_captains, captains_submenu
 from app.utils.logging_config import get_logger
 
 
@@ -42,7 +42,6 @@ async def show_captains_list(message: Message):
                 response += (
                     f"Имя: {captain.full_name}\n"
                     f"Телефон: {captain.phone_number}\n"
-                    f"Рейсов: {stats.get('total_bookings', 0)}\n"
                     f"---\n"
                 )
 
@@ -83,7 +82,8 @@ async def add_captain(message: Message):
 
     try:
         await message.answer("Для добавления нового капитана ему сначала нужно зарегистрироваться в качестве клиента.\n"
-                             "Затем через админ-панель, Клиенты -> Поиск клиента найдите его запись по фамилии-имени или номеру телефона.\n"
-                             "Далее в клавиатуре нажмите пункт 'Изменить статус' и выберите роль капитана.\n")
+                             "Затем найдите его запись по фамилии-имени или номеру телефона.\n"
+                             "Далее в клавиатуре нажмите пункт 'Изменить статус' и выберите роль капитана.\n",
+                             reply_markup=find_client_for_captains())
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)

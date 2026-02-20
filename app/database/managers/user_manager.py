@@ -369,18 +369,35 @@ class UserManager(BaseManager):
             self.logger.error(f"Ошибка получения токена пользователя {user_id}: {e}", exc_info=True)
             return None
 
-    async def get_captains_with_stats(self, period_start=None):
-        """Получить список капитанов со статистикой"""
+    async def get_captains_with_stats(self, period_start=None, period_end=None):
+        """Получить список капитанов со статистикой за период
 
+        Args:
+            period_start: Начало периода для статистики (по умолчанию - первый день текущего месяца)
+            period_end: Конец периода для статистики (по умолчанию - последний день текущего месяца)
+
+        Returns:
+            List[Dict]: Список словарей с ключами 'captain' (объект User) и 'stats' (словарь со статистикой)
+        """
         if period_start is None:
             period_start = date.today().replace(day=1)
 
+        if period_end is None:
+            # Последний день текущего месяца
+            next_month = period_start.replace(day=28) + timedelta(days=4)
+            period_end = next_month - timedelta(days=next_month.day)
+
+        # Получаем всех капитанов с активным Telegram ID
         result = await self.session.execute(
             select(User)
             .where(User.role == UserRole.captain)
             .where(User.telegram_id.isnot(None))
+            .order_by(User.full_name)
         )
         captains = result.scalars().all()
+
+        if not captains:
+            return []
 
         # Добавляем статистику для каждого капитана
         captains_with_stats = []
@@ -388,8 +405,10 @@ class UserManager(BaseManager):
             salary_manager = SalaryManager(self.session)
             captain_stats = await salary_manager.calculate_captain_salary(
                 captain.id,
-                period_start
+                period_start,
+                period_end
             )
+
             captains_with_stats.append({
                 'captain': captain,
                 'stats': captain_stats
@@ -457,7 +476,6 @@ class UserManager(BaseManager):
             .order_by(User.created_at.desc())
         )
         return result.scalars().all()
-
 
     async def get_child_info_for_display(self, child_id: int) -> Optional[dict]:
         """Получает информацию о ребенке для отображения"""
