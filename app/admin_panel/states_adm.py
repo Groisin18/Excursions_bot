@@ -13,6 +13,7 @@ class AdminStates(StatesGroup):
     waiting_for_schedule_date = State()
     waiting_for_schedule_time = State()
     waiting_for_schedule_capacity = State()
+    waiting_for_client_selection = State()
 
 class AdminCreateBooking(StatesGroup):
     """Состояния для создания записи администратором"""

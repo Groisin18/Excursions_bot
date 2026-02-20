@@ -60,7 +60,7 @@ async def search_client_for_edit(message: Message, state: FSMContext):
     try:
         async with async_session() as session:
             user_manager = UserManager(session)
-            all_clients = await user_manager.search_clients(search_query, limit=10)
+            all_clients = await user_manager.search_users(search_query, limit=10)
 
             clients = [
                 client for client in all_clients

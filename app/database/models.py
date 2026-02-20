@@ -670,7 +670,6 @@ async def init_models():
 
             # Создаем дополнительные индексы
             indexes_sql = [
-                "CREATE INDEX IF NOT EXISTS idx_bookings_client_id_status ON bookings(client_id, booking_status)",
                 "CREATE INDEX IF NOT EXISTS idx_bookings_created_at_status ON bookings(created_at, booking_status)",
                 "CREATE INDEX IF NOT EXISTS idx_excursion_slots_start_status ON excursion_slots(start_datetime, status)",
                 "CREATE INDEX IF NOT EXISTS idx_payments_created_at_status ON payments(created_at, status)",

@@ -153,7 +153,7 @@ class UserManager(BaseManager):
                 date_of_birth=date_of_birth,
                 weight=weight,
                 address=address,
-                consent_to_pd=False,
+                consent_to_pd=True,
                 is_virtual=True,
                 verification_token=token,
                 registration_type=registration_type,
@@ -397,20 +397,53 @@ class UserManager(BaseManager):
 
         return captains_with_stats
 
-    async def search_clients(self, search_query: str, limit: int = 5):
-        """Поиск клиентов по имени или телефону"""
+    async def search_users(self, search_query: str, limit: int = 10):
+        """
+        Поиск пользователей по имени или телефону (все роли)
 
-        result = await self.session.execute(
-            select(User)
-            .where(User.role == UserRole.client)
-            .where(
-                (User.full_name.ilike(f"%{search_query}%")) |
-                (User.phone_number.ilike(f"%{search_query}%"))
+        Args:
+            search_query: строка поиска
+            limit: максимальное количество результатов
+
+        Returns:
+            List[User]: список найденных пользователей
+        """
+        self._log_operation_start("search_users", query=search_query, limit=limit)
+
+        try:
+            result = await self.session.execute(
+                select(User)
+                .where(
+                    (User.full_name.ilike(f"%{search_query}%")) |
+                    (User.phone_number.ilike(f"%{search_query}%"))
+                )
+                .order_by(
+                    User.role,  # Сначала клиенты (порядок в Enum: client, captain, admin)
+                    User.full_name
+                )
             )
-        )
-        clients = result.scalars().all()
+            users = result.scalars().all()
 
-        return clients[:limit] if limit else clients
+            # Логируем результаты по ролям
+            roles_count = {
+                "client": sum(1 for u in users if u.role == UserRole.client),
+                "captain": sum(1 for u in users if u.role == UserRole.captain),
+                "admin": sum(1 for u in users if u.role == UserRole.admin)
+            }
+
+            self._log_operation_end(
+                "search_users",
+                success=True,
+                total=len(users),
+                **roles_count
+            )
+
+            return users[:limit] if limit else users
+
+        except Exception as e:
+            self._log_operation_end("search_users", success=False)
+            self.logger.error(f"Ошибка поиска пользователей '{search_query}': {e}", exc_info=True)
+            raise
 
     async def get_new_clients(self, days_ago: int = 7):
         """Получить новых клиентов за последние N дней"""

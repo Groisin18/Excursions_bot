@@ -369,6 +369,156 @@ def cancel_inline_button() -> InlineKeyboardMarkup:
     return builder.as_markup()
 
 
+# ===== РАБОТА С КЛИЕНТАМИ =====
+
+def client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура действий с выбранным клиентом
+
+    Args:
+        client_id: ID клиента
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Изменить статус (повысить/понизить)",
+        callback_data=f"change_client_role:{client_id}"
+    )
+    builder.button(
+        text="Редактировать данные",
+        callback_data=f"edit_client:{client_id}"
+    )
+    builder.button(
+        text="Отправить сообщение",
+        callback_data=f"send_message_to_client:{client_id}"
+    )
+    builder.button(
+        text="Показать детей",
+        callback_data=f"show_client_children:{client_id}"
+    )
+    builder.button(
+        text="Назад в меню",
+        callback_data="back_to_clients_menu"
+    )
+
+    builder.adjust(1)  # Все кнопки в столбик
+    return builder.as_markup()
+
+
+def client_list_keyboard(clients: list) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора клиента из списка
+
+    Args:
+        clients: Список объектов User (только с ролью client)
+    """
+    builder = InlineKeyboardBuilder()
+
+    for client in clients:
+        name = client.full_name
+        if len(name) > 25:
+            name = name[:22] + "..."
+
+        phone = client.phone_number
+        if len(phone) > 15:
+            phone = phone[:12] + "..."
+
+        button_text = f"{client.id}: {name} ({phone})"
+        builder.button(
+            text=button_text,
+            callback_data=f"select_client:{client.id}"
+        )
+
+    builder.button(
+        text="Новый поиск",
+        callback_data="new_client_search"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_client_search"
+    )
+
+    # Каждая кнопка клиента в отдельном ряду, управляющие кнопки вместе
+    rows = [1] * len(clients) + [2]
+    builder.adjust(*rows)
+
+    return builder.as_markup()
+
+
+def client_role_change_keyboard(client_id: int, current_role: str) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора новой роли для клиента
+
+    Args:
+        client_id: ID клиента
+        current_role: Текущая роль (client, captain, admin)
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Доступные роли
+    roles = [
+        ("Клиент", "client"),
+        ("Капитан", "captain"),
+        ("Администратор", "admin")
+    ]
+
+    for role_name, role_value in roles:
+        # Отмечаем текущую роль
+        if role_value == current_role:
+            text = f"✓ {role_name} (текущая)"
+        else:
+            text = role_name
+
+        builder.button(
+            text=text,
+            callback_data=f"set_client_role:{client_id}:{role_value}"
+        )
+
+    builder.button(
+        text="Отмена",
+        callback_data=f"client_actions:{client_id}"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
+    """
+    Кнопка возврата к действиям с клиентом
+
+    Args:
+        client_id: ID клиента
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Назад к действиям",
+        callback_data=f"client_actions:{client_id}"
+    )
+    return builder.as_markup()
+
+def client_virtual_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура действий с виртуальным клиентом
+
+    Args:
+        client_id: ID клиента
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Редактировать данные",
+        callback_data=f"edit_client:{client_id}"
+    )
+    builder.button(
+        text="Назад в меню клиентов",
+        callback_data="back_to_clients_menu"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+
 # ===== УПРАВЛЕНИЕ ВИДАМИ ЭКСКУРСИЙ =====
 
 def excursions_list_keyboard(all_excursions: list, active_only: bool) -> InlineKeyboardMarkup:
