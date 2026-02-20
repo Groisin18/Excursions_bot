@@ -224,6 +224,34 @@ def schedule_captains_management_menu():
     return builder.as_markup(resize_keyboard=True)
 
 
+# ===== ДОБАВЛЕНИЕ КЛИЕНТА =====
+
+def add_client_confirmation_keyboard(client_data: dict) -> InlineKeyboardMarkup:
+    """
+    Клавиатура подтверждения данных клиента перед сохранением
+
+    Args:
+        client_data: Словарь с данными клиента (имя, фамилия, телефон, дата рождения, вес)
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Подтвердить",
+        callback_data="confirm_add_client"
+    )
+    builder.button(
+        text="Изменить данные",
+        callback_data="edit_client_data"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_add_client"
+    )
+
+    builder.adjust(2, 1)
+    return builder.as_markup()
+
+
 # ===== РЕДАКТИРОВАНИЕ КЛИЕНТА =====
 
 def client_selection_menu(clients: list) -> InlineKeyboardMarkup:

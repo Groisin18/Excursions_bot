@@ -2,7 +2,7 @@ from aiogram import F, Router
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-from app.admin_panel.states_adm import AdminClientEdit
+from app.admin_panel.states_adm import AdminEditClient
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, clients_submenu, cancel_button,
     client_selection_menu, client_or_child_selection_menu,
@@ -39,7 +39,7 @@ async def start_client_edit(message: Message, state: FSMContext):
             "Для поиска введите Фамилию и имя клиента через пробел; или номер телефона:",
             reply_markup=cancel_button()
         )
-        await state.set_state(AdminClientEdit.waiting_for_client_selection)
+        await state.set_state(AdminEditClient.waiting_for_client_selection)
         logger.debug(f"Администратор {message.from_user.id} перешел в состояние поиска клиента")
 
     except Exception as e:
@@ -51,7 +51,7 @@ async def start_client_edit(message: Message, state: FSMContext):
         await state.clear()
 
 
-@router.message(AdminClientEdit.waiting_for_client_selection)
+@router.message(AdminEditClient.waiting_for_client_selection)
 async def search_client_for_edit(message: Message, state: FSMContext):
     """Поиск клиента для редактирования"""
     search_query = message.text
@@ -148,7 +148,7 @@ async def select_client_for_edit(callback: CallbackQuery, state: FSMContext):
                     f"У клиента есть дети. Кого редактируем?",
                     reply_markup=client_or_child_selection_menu(client, children)
                 )
-                await state.set_state(AdminClientEdit.waiting_for_target_selection)
+                await state.set_state(AdminEditClient.waiting_for_target_selection)
             else:
                 # Если детей нет, сразу показываем меню выбора поля для клиента
                 await show_client_edit_menu(callback.message, client_id, "client", state)
@@ -218,7 +218,7 @@ async def show_client_edit_menu(message: Message, target_id: int, target_type: s
             response,
             reply_markup=client_edit_fields_menu(target_id, target_type, has_phone)
         )
-        await state.set_state(AdminClientEdit.waiting_for_field_selection)
+        await state.set_state(AdminEditClient.waiting_for_field_selection)
 
 
 @router.callback_query(F.data.startswith("edit_target:"))
@@ -275,13 +275,13 @@ async def select_field_to_edit(callback: CallbackQuery, state: FSMContext):
 
     # Устанавливаем соответствующее состояние в зависимости от поля
     state_mapping = {
-        "surname": AdminClientEdit.waiting_for_new_surname,
-        "name": AdminClientEdit.waiting_for_new_name,
-        "phone": AdminClientEdit.waiting_for_new_phone,
-        "birth_date": AdminClientEdit.waiting_for_new_birth_date,
-        "email": AdminClientEdit.waiting_for_new_email,
-        "address": AdminClientEdit.waiting_for_new_address,
-        "weight": AdminClientEdit.waiting_for_new_weight
+        "surname": AdminEditClient.waiting_for_new_surname,
+        "name": AdminEditClient.waiting_for_new_name,
+        "phone": AdminEditClient.waiting_for_new_phone,
+        "birth_date": AdminEditClient.waiting_for_new_birth_date,
+        "email": AdminEditClient.waiting_for_new_email,
+        "address": AdminEditClient.waiting_for_new_address,
+        "weight": AdminEditClient.waiting_for_new_weight
     }
 
     await callback.message.edit_text(
@@ -291,7 +291,7 @@ async def select_field_to_edit(callback: CallbackQuery, state: FSMContext):
     await state.set_state(state_mapping[field_name])
 
 
-@router.message(AdminClientEdit.waiting_for_new_surname)
+@router.message(AdminEditClient.waiting_for_new_surname)
 async def process_new_surname(message: Message, state: FSMContext):
     """Обработка ввода новой фамилии"""
     logger.info(f"Администратор {message.from_user.id} ввел новую фамилию: '{message.text}'")
@@ -345,7 +345,7 @@ async def process_new_surname(message: Message, state: FSMContext):
             reply_markup=cancel_button()
         )
 
-@router.message(AdminClientEdit.waiting_for_new_name)
+@router.message(AdminEditClient.waiting_for_new_name)
 async def process_new_name(message: Message, state: FSMContext):
     """Обработка ввода нового имени"""
     logger.info(f"Администратор {message.from_user.id} ввел новое имя: '{message.text}'")
@@ -400,7 +400,7 @@ async def process_new_name(message: Message, state: FSMContext):
             reply_markup=cancel_button()
         )
 
-@router.message(AdminClientEdit.waiting_for_new_phone)
+@router.message(AdminEditClient.waiting_for_new_phone)
 async def process_new_phone(message: Message, state: FSMContext):
     """Обработка ввода нового телефона"""
     logger.info(f"Администратор {message.from_user.id} ввел новый телефон: '{message.text}'")
@@ -451,7 +451,7 @@ async def process_new_phone(message: Message, state: FSMContext):
             reply_markup=cancel_button()
         )
 
-@router.message(AdminClientEdit.waiting_for_new_birth_date)
+@router.message(AdminEditClient.waiting_for_new_birth_date)
 async def process_new_birth_date(message: Message, state: FSMContext):
     """Обработка ввода новой даты рождения"""
     logger.info(f"Администратор {message.from_user.id} ввел новую дату рождения: '{message.text}'")
@@ -492,7 +492,7 @@ async def process_new_birth_date(message: Message, state: FSMContext):
         )
 
 
-@router.message(AdminClientEdit.waiting_for_new_email)
+@router.message(AdminEditClient.waiting_for_new_email)
 async def process_new_email(message: Message, state: FSMContext):
     """Обработка ввода нового email"""
     logger.info(f"Администратор {message.from_user.id} ввел новый email: '{message.text}'")
@@ -533,7 +533,7 @@ async def process_new_email(message: Message, state: FSMContext):
         )
 
 
-@router.message(AdminClientEdit.waiting_for_new_address)
+@router.message(AdminEditClient.waiting_for_new_address)
 async def process_new_address(message: Message, state: FSMContext):
     """Обработка ввода нового адреса"""
     logger.info(f"Администратор {message.from_user.id} ввел новый адрес: '{message.text}'")
@@ -573,7 +573,7 @@ async def process_new_address(message: Message, state: FSMContext):
             reply_markup=cancel_button()
         )
 
-@router.message(AdminClientEdit.waiting_for_new_weight)
+@router.message(AdminEditClient.waiting_for_new_weight)
 async def process_new_weight(message: Message, state: FSMContext):
     """Обработка ввода нового веса"""
     logger.info(f"Администратор {message.from_user.id} ввел новый вес: '{message.text}'")
@@ -624,7 +624,7 @@ async def search_client_again(callback: CallbackQuery, state: FSMContext):
             "Введите Фамилию и имя клиента или номер телефона для поиска:",
             reply_markup=cancel_inline_button()
         )
-        await state.set_state(AdminClientEdit.waiting_for_client_selection)
+        await state.set_state(AdminEditClient.waiting_for_client_selection)
     except Exception as e:
         logger.error(f"Ошибка при обновлении веса: {e}", exc_info=True)
         await callback.message.answer(
@@ -633,14 +633,14 @@ async def search_client_again(callback: CallbackQuery, state: FSMContext):
         )
 
 @router.callback_query(F.data == "cancel_client_edit")
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_client_selection)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_surname)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_name)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_phone)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_birth_date)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_email)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_address)
-@router.message(F.text == "Отмена", AdminClientEdit.waiting_for_new_weight)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_client_selection)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_surname)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_name)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_phone)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_birth_date)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_email)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_address)
+@router.message(F.text == "Отмена", AdminEditClient.waiting_for_new_weight)
 async def cancel_client_edit(message: Message | CallbackQuery, state: FSMContext):
     """Отмена редактирования клиента"""
 

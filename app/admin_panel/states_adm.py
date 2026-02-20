@@ -25,7 +25,16 @@ class AdminCreateBooking(StatesGroup):
     waiting_for_people_count = State()    # Количество людей
     waiting_for_confirmation = State()    # Подтверждение
 
-class AdminClientEdit(StatesGroup):
+class AdminAddClient(StatesGroup):
+    """Состояния для добавления клиента администратором"""
+    waiting_for_name = State()
+    waiting_for_surname = State()
+    waiting_for_phone = State()
+    waiting_for_birthdate = State()
+    waiting_for_weight = State()
+    waiting_for_confirmation = State()
+
+class AdminEditClient(StatesGroup):
     """Состояния для редактирования клиента администратором"""
     waiting_for_client_selection = State()
     waiting_for_target_selection = State()

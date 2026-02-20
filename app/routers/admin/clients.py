@@ -133,17 +133,6 @@ async def show_new_clients(message: Message):
         await message.answer("Ошибка при получении списка клиентов", reply_markup=clients_submenu())
 
 
-@router.message(F.text == "Добавить клиента")
-async def add_client(message: Message):
-    """Добавление нового клиента"""
-    logger.info(f"Администратор {message.from_user.id} хочет добавить клиента")
-
-    try:
-        await message.answer("Функция 'Добавить клиента' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
 @router.callback_query(F.data.startswith("arrived:"))
 async def mark_arrived(callback: CallbackQuery):
     """Отметить прибытие клиента"""
