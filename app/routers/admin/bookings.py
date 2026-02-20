@@ -81,8 +81,11 @@ async def show_unpaid_bookings(message: Message):
             for booking in bookings:
                 response += (
                     f"ID: {booking.id}\n"
-                    f"Клиент: {booking.adult_user.full_name} ({booking.adult_user.phone_number})\n"
+                    f"Клиент: {booking.adult_user.full_name}\n"
                     f"Экскурсия: {booking.slot.excursion.name}\n"
+                    f"Время: {booking.slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n"
+                    f"Капитан: {booking.slot.captain.full_name}\n"
+                    f"Людей: {booking.people_count}\n"
                     f"Сумма: {booking.total_price} руб.\n"
                     f"---\n"
                 )

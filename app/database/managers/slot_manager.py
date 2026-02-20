@@ -276,9 +276,12 @@ class SlotManager(BaseManager):
         """Получить все активные бронирования с джойнами"""
         result = await self.session.execute(
             select(Booking)
-            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
-            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.captain))
-            .options(selectinload(Booking.adult_user))
+            .options(
+            selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+            selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
+            selectinload(Booking.adult_user),
+            selectinload(Booking.booking_children)
+            )
             .where(Booking.booking_status == BookingStatus.active)
             .order_by(Booking.created_at.desc())
         )
@@ -286,11 +289,13 @@ class SlotManager(BaseManager):
 
     async def get_unpaid_bookings(self):
         """Получить все неоплаченные активные бронирования"""
-
         result = await self.session.execute(
             select(Booking)
-            .options(selectinload(Booking.adult_user))
-            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
+            .options(
+                selectinload(Booking.adult_user),
+                selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                selectinload(Booking.booking_children)
+            )
             .where(Booking.payment_status != PaymentStatus.paid)
             .where(Booking.booking_status == BookingStatus.active)
         )
