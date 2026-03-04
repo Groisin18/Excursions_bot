@@ -88,6 +88,7 @@ class RegistrationType(enum.Enum):
     SELF = "self"
     ADMIN = "admin"
     PARENT = "parent"
+    VIRTUAL_CHILD = "virtual_child"
 
 class FileType(enum.Enum):
     """Типы файлов в таблице с file_id"""

@@ -1362,3 +1362,312 @@ def dashboard_quick_actions():
     builder.adjust(2)  # 2 кнопки в ряд
 
     return builder.as_markup()
+
+
+# ===== СОЗДАНИЕ БРОНИРОВАНИЯ НА СЛОТ =====
+
+
+def create_booking_client_choice_keyboard() -> ReplyKeyboardMarkup:
+    """Клавиатура выбора типа клиента для создания записи"""
+    builder = ReplyKeyboardBuilder()
+
+    buttons = [
+        "Найти существующего",
+        "Создать нового",
+        "Последние клиенты",
+        "Отмена"
+    ]
+
+    for button in buttons:
+        builder.add(KeyboardButton(text=button))
+
+    builder.adjust(1)
+    return builder.as_markup(resize_keyboard=True)
+
+def client_list_for_booking_keyboard(clients: list) -> InlineKeyboardMarkup:
+    """Клавиатура выбора клиента из списка для создания записи"""
+    builder = InlineKeyboardBuilder()
+
+    for client in clients:
+        name = client.full_name
+        if len(name) > 25:
+            name = name[:22] + "..."
+
+        phone = client.phone_number
+        if len(phone) > 15:
+            phone = phone[:12] + "..."
+
+        button_text = f"{client.id}: {name} ({phone})"
+        builder.button(
+            text=button_text,
+            callback_data=f"select_client_for_booking:{client.id}"
+        )
+
+    builder.button(
+        text="Новый поиск",
+        callback_data="new_client_search_for_booking"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def excursion_list_for_booking_keyboard(excursions: list) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора экскурсии для создания записи
+
+    Args:
+        excursions: Список объектов Excursion (только активные)
+    """
+    builder = InlineKeyboardBuilder()
+
+    for excursion in excursions:
+        text = f"{excursion.name} ({excursion.base_price} руб.)"
+        builder.button(
+            text=text,
+            callback_data=f"select_excursion_for_booking:{excursion.id}"
+        )
+
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def slot_list_for_booking_keyboard(slots: list, excursion_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора слота для создания записи
+
+    Args:
+        slots: Список объектов ExcursionSlot
+        excursion_id: ID экскурсии для возврата
+    """
+    builder = InlineKeyboardBuilder()
+
+    for slot in slots:
+
+        # Форматируем время
+        time_str = slot.start_datetime.strftime("%H:%M")
+        date_str = slot.start_datetime.strftime("%d.%m")
+
+        # Получаем капитана
+        captain_name = slot.captain.full_name if slot.captain else "без капитана"
+
+        # Получаем свободные места (будет обновлено позже)
+        text = f"{date_str} {time_str} - {captain_name}"
+
+        builder.button(
+            text=text,
+            callback_data=f"select_slot_for_booking:{slot.id}"
+        )
+
+    builder.button(
+        text="Другая дата",
+        callback_data=f"another_date_for_booking:{excursion_id}"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_children_selection_keyboard(children: list, selected_ids: list = None, max_children: int = None) -> InlineKeyboardMarkup:
+    """
+    Клавиатура выбора детей для бронирования (админ-версия)
+    Args:
+        children: Список объектов User (дети)
+        selected_ids: Список уже выбранных ID детей
+        max_children: Максимальное количество детей для выбора
+    """
+    builder = InlineKeyboardBuilder()
+
+    if selected_ids is None:
+        selected_ids = []
+
+    # Информация о количестве (если есть ограничение)
+    if max_children:
+        builder.button(
+            text=f"Выбрано детей: {len(selected_ids)}/{max_children}",
+            callback_data="no_action"
+        )
+
+    # Кнопки существующих детей
+    for child in children:
+        # Возраст для информации
+        age_info = ""
+        if child.date_of_birth:
+            today = date.today()
+            age = today.year - child.date_of_birth.year
+            age_info = f" ({age} лет)"
+
+        # Вес если есть
+        weight_info = f", вес: {child.weight}кг" if child.weight else ""
+
+        # Отметка выбранного
+        prefix = "✓ " if child.id in selected_ids else ""
+        button_text = f"{prefix}{child.full_name}{age_info}{weight_info}"
+
+        builder.button(
+            text=button_text,
+            callback_data=f"admin_toggle_child:{child.id}"
+        )
+
+    # Кнопка создания виртуального ребенка
+    builder.button(
+        text="Создать виртуального ребенка",
+        callback_data="admin_create_virtual_child"
+    )
+
+    # Кнопка завершения
+    builder.button(
+        text="Завершить выбор детей",
+        callback_data="admin_finish_children_selection"
+    )
+
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    # Настройка расположения
+    if max_children:
+        builder.adjust(1, *([1] * len(children)), 1, 1, 1)
+    else:
+        builder.adjust(*([1] * len(children)), 1, 1, 1)
+
+    return builder.as_markup()
+
+def admin_child_weight_keyboard(child_index: int, total_children: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для ввода веса ребенка (админ-версия)
+
+    Args:
+        child_index: Индекс текущего ребенка (для навигации)
+        total_children: Общее количество детей
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Пропустить (вес не указывать)",
+        callback_data=f"admin_skip_child_weight:{child_index}"
+    )
+
+    if child_index < total_children - 1:
+        builder.button(
+            text="Далее",
+            callback_data=f"admin_next_child_weight:{child_index + 1}"
+        )
+
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_virtual_child_form_navigation() -> InlineKeyboardMarkup:
+    """Клавиатура навигации при создании виртуального ребенка"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Отмена",
+        callback_data="admin_cancel_virtual_child"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_confirm_virtual_child_keyboard() -> InlineKeyboardMarkup:
+    """Клавиатура подтверждения создания виртуального ребенка"""
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Подтвердить",
+        callback_data="admin_confirm_virtual_child"
+    )
+    builder.button(
+        text="Изменить данные",
+        callback_data="admin_edit_virtual_child"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="admin_cancel_virtual_child"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def create_virtual_child() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Создать виртуального ребенка",
+        callback_data="admin_create_virtual_child"
+    )
+    builder.button(
+        text="Только взрослый (без детей)",
+        callback_data="admin_no_children"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def cancel_create_virtual_child() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Отмена",
+        callback_data="admin_cancel_virtual_child"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def continue_booking_with_excess_weight() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Продолжить (игнорировать вес)", callback_data="admin_continue_booking")
+    builder.button(text="Изменить выбор детей", callback_data="admin_back_to_children_selection")
+    builder.button(text="Отмена", callback_data="cancel_booking_creation")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def confirm_booking() -> InlineKeyboardMarkup:
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Подтвердить и создать запись", callback_data="admin_confirm_booking_final")
+    builder.button(text="Изменить данные", callback_data="admin_back_to_children_selection")
+    builder.button(text="Отмена", callback_data="cancel_booking_creation")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def slot_already_booked_keyboard(excursion_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для случая, когда у клиента уже есть бронь на этот слот
+
+    Args:
+        excursion_id: ID экскурсии для возврата к выбору другой даты
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Выбрать другой слот",
+        callback_data=f"another_date_for_booking:{excursion_id}"
+    )
+    builder.button(
+        text="Отмена",
+        callback_data="cancel_booking_creation"
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()

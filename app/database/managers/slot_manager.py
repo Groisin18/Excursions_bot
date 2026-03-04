@@ -230,8 +230,8 @@ class SlotManager(BaseManager):
             # Вес клиентов из активных бронирований
             for booking in slot.bookings:
                 if booking.booking_status == BookingStatus.active:
-                    if booking.client and booking.client.weight:
-                        total_weight += booking.client.weight
+                    if booking.adult_user and booking.adult_user.weight:
+                        total_weight += booking.adult_user.weight
 
             return total_weight
 

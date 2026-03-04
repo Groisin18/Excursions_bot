@@ -135,7 +135,10 @@ class SlotRepository(BaseRepository):
             .options(
                 selectinload(ExcursionSlot.excursion),
                 selectinload(ExcursionSlot.captain),
-                selectinload(ExcursionSlot.bookings).selectinload(Booking.adult_user)
+                selectinload(ExcursionSlot.bookings)
+                .selectinload(Booking.adult_user),
+                selectinload(ExcursionSlot.bookings)
+                .selectinload(Booking.booking_children)
             )
             .where(ExcursionSlot.id == slot_id)
         )

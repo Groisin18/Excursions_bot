@@ -85,6 +85,7 @@ err_reg = ReplyKeyboardMarkup(
     resize_keyboard=True
 )
 
+
 # ===== КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЙ ПОЛЬЗОВАТЕЛЯ =====
 
 def bookings_main_menu_keyboard() -> InlineKeyboardMarkup:
@@ -96,7 +97,6 @@ def bookings_main_menu_keyboard() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-
 def empty_bookings_keyboard(back_callback: str = "user_booking") -> InlineKeyboardMarkup:
     """Клавиатура для случая, когда бронирований нет"""
     builder = InlineKeyboardBuilder()
@@ -104,7 +104,6 @@ def empty_bookings_keyboard(back_callback: str = "user_booking") -> InlineKeyboa
     builder.button(text="В главное меню", callback_data="back_to_main")
     builder.adjust(1)
     return builder.as_markup()
-
 
 def bookings_list_keyboard(
     bookings: List,
@@ -139,7 +138,6 @@ def bookings_list_keyboard(
 
     return builder.as_markup()
 
-
 def booking_detail_keyboard(
     booking_id: int,
     show_cancel: bool = False,
@@ -172,7 +170,6 @@ def booking_detail_keyboard(
 
     return builder.as_markup()
 
-
 def cancel_confirmation_keyboard(booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура подтверждения отмены"""
     builder = InlineKeyboardBuilder()
@@ -180,7 +177,6 @@ def cancel_confirmation_keyboard(booking_id: int) -> InlineKeyboardMarkup:
     builder.button(text="Нет, вернуться", callback_data=f"booking_detail:{booking_id}")
     builder.adjust(1)
     return builder.as_markup()
-
 
 def back_to_booking_keyboard(booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура с кнопкой возврата к бронированию"""

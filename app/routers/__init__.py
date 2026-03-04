@@ -10,6 +10,7 @@ from .admin.schedule import router as admin_schedule_router
 from .admin.slots import router as admin_slots_router
 from .admin.new_slot import router as admin_new_slot_router
 from .admin.bookings import router as admin_bookings_router
+from .admin.create_booking import router as admin_create_booking_router
 from .admin.clients import router as admin_clients_routher
 from .admin.add_client import router as admin_add_client_router
 from .admin.client_redaction import router as admin_client_redaction_routher
@@ -36,6 +37,7 @@ __all__ = [
     'admin_slots_router',
     'admin_new_slot_router',
     'admin_bookings_router',
+    'admin_create_booking_router',
     'admin_clients_routher',
     'admin_add_client_router',
     'admin_client_redaction_routher',
@@ -65,6 +67,7 @@ def setup_routers(dp):
     dp.include_router(admin_schedule_router)
     dp.include_router(admin_slots_router)
     dp.include_router(admin_new_slot_router)
+    dp.include_router(admin_create_booking_router)
     dp.include_router(admin_bookings_router)
     dp.include_router(admin_clients_routher)
     dp.include_router(admin_add_client_router)

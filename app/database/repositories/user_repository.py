@@ -205,3 +205,8 @@ class UserRepository(BaseRepository):
         except Exception as e:
             self.logger.error(f"Ошибка проверки доступности капитана: {e}", exc_info=True)
             return True  # В случае ошибки считаем, что капитан занят
+
+    async def delete(self, user_id: int) -> bool:
+        """Удалить пользователя по ID"""
+        deleted_count = await self._delete(User, User.id == user_id)
+        return deleted_count > 0

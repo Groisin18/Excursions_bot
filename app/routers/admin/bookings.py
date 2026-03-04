@@ -98,17 +98,6 @@ async def show_unpaid_bookings(message: Message):
         await message.answer("Ошибка при получении списка неоплаченных записей", reply_markup=bookings_submenu())
 
 
-@router.message(F.text == "Создать запись")
-async def create_booking(message: Message):
-    """Создание новой записи"""
-    logger.info(f"Администратор {message.from_user.id} хочет создать запись")
-
-    try:
-        await message.answer("Функция 'Создать запись' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
 @router.message(F.text == "Изменить запись")
 async def edit_booking(message: Message):
     """Изменение существующей записи"""

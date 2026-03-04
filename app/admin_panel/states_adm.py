@@ -19,12 +19,16 @@ class AdminCreateBooking(StatesGroup):
     """Состояния для создания записи администратором"""
     waiting_for_client_choice = State()  # Выбор: поиск/новый/последние
     waiting_for_client_search = State()   # Поиск клиента
-    waiting_for_client_create = State()   # Создание нового клиента
     waiting_for_excursion = State()       # Выбор экскурсии
     waiting_for_date = State()            # Выбор даты
-    waiting_for_time = State()            # Выбор времени
+    waiting_for_slot = State()            # Выбор слота
     waiting_for_people_count = State()    # Количество людей
-    waiting_for_confirmation = State()    # Подтверждение
+    waiting_for_children_selection = State()  # Выбор существующих детей
+    waiting_for_virtual_child_name = State()  # Имя виртуального ребенка
+    waiting_for_virtual_child_age = State()   # Возраст виртуального ребенка
+    waiting_for_virtual_child_weight = State()  # Вес виртуального ребенка
+    waiting_for_adult_weight = State()      # Вес взрослого
+    waiting_for_confirmation = State()      # Подтверждение
 
 class AdminAddClient(StatesGroup):
     """Состояния для добавления клиента администратором"""

@@ -17,6 +17,7 @@ from ..repositories.user_repository import UserRepository
 from ..models import User, UserRole, RegistrationType
 
 from app.schemas.user import UserRegistrationData, ChildRegistrationData
+from app.utils.validation import generate_virtual_phone
 
 
 class UserManager(BaseManager):
@@ -136,7 +137,7 @@ class UserManager(BaseManager):
 
         try:
             # Генерация короткого токена
-            token = secrets.token_urlsafe(4)
+            token = secrets.token_urlsafe(5)
 
             # Виртуальный телефон для детей
             if linked_to_parent_id and not phone_number:
@@ -194,7 +195,6 @@ class UserManager(BaseManager):
                 self.logger.warning(error_msg)
                 raise ValueError(error_msg)
 
-            # Создаем виртуального пользователя через новый protected метод
             user, token = await self._create_virtual_user(
                 full_name=full_name,
                 created_by_id=admin_id,
@@ -293,6 +293,71 @@ class UserManager(BaseManager):
             self._log_operation_end("create_child_user", success=False)
             self.logger.error(f"Ошибка создания ребенка '{child_data.name}': {e}", exc_info=True)
             raise
+
+    async def create_virtual_child(
+        self,
+        parent_id: int,
+        full_name: str,
+        date_of_birth: date,
+        weight: Optional[int] = None
+    ) -> Optional[User]:
+        """
+        Создать виртуального ребенка для родителя
+
+        Args:
+            parent_id: ID родителя
+            full_name: Полное имя ребенка
+            date_of_birth: Дата рождения
+            weight: Вес (опционально)
+
+        Returns:
+            Optional[User]: Созданный ребенок или None
+        """
+        self._log_operation_start(
+            "create_virtual_child",
+            parent_id=parent_id,
+            full_name=full_name
+        )
+
+        try:
+            # Получаем родителя
+            parent = await self.user_repo.get_by_id(parent_id)
+            if not parent:
+                self.logger.error(f"Родитель {parent_id} не найден")
+                return None
+
+            # Генерируем уникальный токен
+            token = secrets.token_urlsafe(5)
+
+            # Генерируем виртуальный телефон
+            virtual_phone = generate_virtual_phone(parent.phone_number, token)
+
+            # Создаем виртуального пользователя
+            child = await self.user_repo.create(
+                telegram_id=None,
+                role=UserRole.client,
+                full_name=full_name,
+                phone_number=virtual_phone,
+                date_of_birth=date_of_birth,
+                weight=weight,
+                is_virtual=True,
+                verification_token=token,
+                registration_type=RegistrationType.VIRTUAL_CHILD,
+                linked_to_parent_id=parent_id
+            )
+
+            self._log_operation_end(
+                "create_virtual_child",
+                success=True,
+                child_id=child.id
+            )
+
+            return child
+
+        except Exception as e:
+            self._log_operation_end("create_virtual_child", success=False)
+            self.logger.error(f"Ошибка создания виртуального ребенка: {e}", exc_info=True)
+            return None
 
     async def link_telegram_to_user(self, token: str, telegram_id: int) -> Optional[User]:
         """Привязать Telegram ID к пользователю по токену"""
