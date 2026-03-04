@@ -294,6 +294,7 @@ class SlotManager(BaseManager):
             .options(
                 selectinload(Booking.adult_user),
                 selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
                 selectinload(Booking.booking_children)
             )
             .where(Booking.payment_status != PaymentStatus.paid)

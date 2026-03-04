@@ -31,6 +31,36 @@ router.callback_query.middleware(AdminMiddleware())
 logger = get_logger(__name__)
 
 
+@router.callback_query(F.data == "cancel_add_client", AdminAddClient.waiting_for_confirmation)
+async def cancel_add_client(callback: CallbackQuery, state: FSMContext):
+    """Отмена добавления клиента"""
+    logger.info(f"Администратор {callback.from_user.id} отменил добавление клиента")
+
+    await callback.answer()
+    await state.clear()
+
+    await callback.message.answer(
+        "Добавление клиента отменено.",
+        reply_markup=kb_adm.clients_submenu()
+    )
+    await callback.message.delete()
+
+
+@router.message(F.text == "Отмена", AdminAddClient.waiting_for_name)
+@router.message(F.text == "Отмена", AdminAddClient.waiting_for_surname)
+@router.message(F.text == "Отмена", AdminAddClient.waiting_for_phone)
+@router.message(F.text == "Отмена", AdminAddClient.waiting_for_birthdate)
+@router.message(F.text == "Отмена", AdminAddClient.waiting_for_weight)
+async def cancel_any_state(message: Message, state: FSMContext):
+    """Отмена на любом этапе через кнопку Отмена"""
+    logger.info(f"Администратор {message.from_user.id} отменил операцию")
+
+    await state.clear()
+    await message.answer(
+        "Добавление клиента отменено.",
+        reply_markup=kb_adm.clients_submenu()
+    )
+
 @router.message(F.text == "Добавить клиента")
 async def add_client_start(message: Message, state: FSMContext):
     """Начало добавления клиента администратором"""
@@ -296,34 +326,3 @@ async def edit_client_data(callback: CallbackQuery, state: FSMContext):
         reply_markup=kb_adm.cancel_button()
     )
     await callback.message.delete()
-
-
-@router.callback_query(F.data == "cancel_add_client", AdminAddClient.waiting_for_confirmation)
-async def cancel_add_client(callback: CallbackQuery, state: FSMContext):
-    """Отмена добавления клиента"""
-    logger.info(f"Администратор {callback.from_user.id} отменил добавление клиента")
-
-    await callback.answer()
-    await state.clear()
-
-    await callback.message.answer(
-        "Добавление клиента отменено.",
-        reply_markup=kb_adm.clients_submenu()
-    )
-    await callback.message.delete()
-
-
-@router.message(F.text == "Отмена", AdminAddClient.waiting_for_name)
-@router.message(F.text == "Отмена", AdminAddClient.waiting_for_surname)
-@router.message(F.text == "Отмена", AdminAddClient.waiting_for_phone)
-@router.message(F.text == "Отмена", AdminAddClient.waiting_for_birthdate)
-@router.message(F.text == "Отмена", AdminAddClient.waiting_for_weight)
-async def cancel_any_state(message: Message, state: FSMContext):
-    """Отмена на любом этапе через кнопку Отмена"""
-    logger.info(f"Администратор {message.from_user.id} отменил операцию")
-
-    await state.clear()
-    await message.answer(
-        "Добавление клиента отменено.",
-        reply_markup=kb_adm.clients_submenu()
-    )

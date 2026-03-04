@@ -7,7 +7,7 @@ from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
-from app.admin_panel.keyboards_adm import admin_main_menu, bookings_submenu
+from app.admin_panel.keyboards_adm import bookings_submenu
 
 
 logger = get_logger(__name__)
@@ -129,29 +129,6 @@ async def cancel_booking(message: Message):
         await message.answer("Функция 'Отменить запись' в разработке")
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
-
-
-@router.message(F.text == "Перенести запись")
-async def reschedule_booking(message: Message):
-    """Перенос существующей записи"""
-    logger.info(f"Администратор {message.from_user.id} хочет перенести запись")
-
-    try:
-        await message.answer("Функция 'Перенести запись' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
-@router.message(F.text == "Отметить прибытие")
-async def mark_arrival_booking(message: Message):
-    """Отметить прибытие клиента"""
-    logger.info(f"Администратор {message.from_user.id} хочет отметить прибытие")
-
-    try:
-        await message.answer("Функция 'Отметить прибытие' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
 
 
 @router.callback_query(F.data.startswith("edit_booking:"))

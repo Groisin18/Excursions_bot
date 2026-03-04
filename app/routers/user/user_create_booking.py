@@ -12,6 +12,7 @@ from app.database.repositories import (
 from app.database.models import SlotStatus, DiscountType
 from app.database.session import async_session
 
+from app.schemas.booking import BookingCreationData, BookingChildData
 from app.utils.logging_config import get_logger
 from app.user_panel.states import UserBookingStates
 from app.utils.datetime_utils import get_weekday_name
@@ -1083,9 +1084,6 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
             )
             await state.clear()
             return
-
-        # Используем созданные ранее Pydantic модели
-        from app.schemas.booking import BookingCreationData, BookingChildData
 
         # Подготавливаем данные детей
         children_models = []

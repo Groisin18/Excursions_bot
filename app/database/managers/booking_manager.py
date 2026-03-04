@@ -302,7 +302,6 @@ class BookingManager(BaseManager):
         await self.booking_repo.update(booking)
         return True
 
-
     async def get_user_active_bookings(self, user_id: int) -> List[Booking]:
         """
         Получить активные бронирования пользователя.
