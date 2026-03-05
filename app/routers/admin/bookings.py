@@ -12,11 +12,9 @@ from app.admin_panel.keyboards_adm import bookings_submenu
 
 logger = get_logger(__name__)
 
-
 router = Router(name="admin_bookings")
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
-
 
 
 # ===== УПРАВЛЕНИЕ ЗАПИСЯМИ =====
@@ -60,7 +58,6 @@ async def show_active_bookings(message: Message):
         logger.error(f"Ошибка получения активных записей: {e}", exc_info=True)
         await message.answer("Ошибка при получении списка записей", reply_markup=bookings_submenu())
 
-
 @router.message(F.text == "Неоплаченные")
 async def show_unpaid_bookings(message: Message):
     """Показать неоплаченные записи"""
@@ -97,18 +94,6 @@ async def show_unpaid_bookings(message: Message):
         logger.error(f"Ошибка получения неоплаченных записей: {e}", exc_info=True)
         await message.answer("Ошибка при получении списка неоплаченных записей", reply_markup=bookings_submenu())
 
-
-@router.message(F.text == "Изменить запись")
-async def edit_booking(message: Message):
-    """Изменение существующей записи"""
-    logger.info(f"Администратор {message.from_user.id} хочет изменить запись")
-
-    try:
-        await message.answer("Функция 'Изменить запись' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
 @router.message(F.text == "Отменить запись")
 async def cancel_booking(message: Message):
     """Отмена существующей записи"""
@@ -119,20 +104,6 @@ async def cancel_booking(message: Message):
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
 
-
-@router.callback_query(F.data.startswith("edit_booking:"))
-async def edit_booking_callback(callback: CallbackQuery):
-    """Редактирование бронирования (inline)"""
-    booking_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} хочет редактировать бронирование {booking_id}")
-
-    try:
-        await callback.answer("Функция в разработке")
-        await callback.message.edit_text(f"Редактирование бронирования #{booking_id} в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
 @router.callback_query(F.data.startswith("cancel_booking:"))
 async def cancel_booking_callback(callback: CallbackQuery):
     """Отмена бронирования (inline)"""
@@ -142,31 +113,5 @@ async def cancel_booking_callback(callback: CallbackQuery):
     try:
         await callback.answer("Функция в разработке")
         await callback.message.edit_text(f"Отмена бронирования #{booking_id} в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
-@router.callback_query(F.data.startswith("reschedule:"))
-async def reschedule_booking_callback(callback: CallbackQuery):
-    """Перенос бронирования (inline)"""
-    booking_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} хочет перенести бронирование {booking_id}")
-
-    try:
-        await callback.answer("Функция в разработке")
-        await callback.message.edit_text(f"Перенос бронирования #{booking_id} в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-
-
-@router.callback_query(F.data.startswith("booking_info:"))
-async def booking_info_callback(callback: CallbackQuery):
-    """Информация о бронировании (inline)"""
-    booking_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} запросил информацию о бронировании {booking_id}")
-
-    try:
-        await callback.answer("Функция в разработке")
-        await callback.message.edit_text(f"Информация о бронировании #{booking_id} в разработке")
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)

@@ -253,6 +253,7 @@ async def confirm_add_client(callback: CallbackQuery, state: FSMContext):
 
         data = await state.get_data()
         admin_id = callback.from_user.id
+        return_to_booking = data.get('return_to_booking', False)
 
         # Получаем ID администратора в системе
         async with async_session() as session:
@@ -274,7 +275,8 @@ async def confirm_add_client(callback: CallbackQuery, state: FSMContext):
         # Формируем виртуальный телефон для отображения
         virtual_phone = f"{data['phone']}:{token}:by_admin"
 
-        await callback.message.answer(
+        # Сообщение об успешном создании клиента
+        success_text = (
             f"Клиент успешно добавлен!\n\n"
             f"Данные клиента:\n"
             f"Имя: {data['name']}\n"
@@ -288,41 +290,68 @@ async def confirm_add_client(callback: CallbackQuery, state: FSMContext):
             f"Виртуальный телефон (для записей через администратора):\n"
             f"<code>{virtual_phone}</code>\n\n"
             f"Передайте этот токен клиенту. При вводе токена в боте он сможет "
-            f"привязать свой Telegram и управлять аккаунтом самостоятельно.",
-            reply_markup=kb_adm.clients_submenu()
+            f"привязать свой Telegram и управлять аккаунтом самостоятельно."
         )
+
+        # Если пришли из создания бронирования - возвращаемся туда
+        if return_to_booking:
+            # Сохраняем ID созданного клиента
+            await state.update_data(client_id=user.id)
+
+            # Устанавливаем состояние для выбора экскурсии
+            from app.admin_panel.states_adm import AdminCreateBooking
+            await state.set_state(AdminCreateBooking.waiting_for_excursion)
+
+            # Отправляем сообщение об успешном создании клиента
+            await callback.message.answer(success_text)
+
+            # Получаем список экскурсий и продолжаем бронирование
+            async with async_session() as session:
+                from app.database.repositories import ExcursionRepository
+                excursion_repo = ExcursionRepository(session)
+                excursions = await excursion_repo.get_all(active_only=True)
+
+                if not excursions:
+                    await callback.message.answer(
+                        "Нет доступных экскурсий. Сначала создайте экскурсию.",
+                        reply_markup=kb_adm.bookings_submenu()
+                    )
+                    await state.clear()
+                    return
+
+                await callback.message.answer(
+                    f"Клиент {user.full_name} успешно создан и выбран для бронирования.\n\n"
+                    f"Телефон: {user.phone_number}\n\n"
+                    f"Выберите экскурсию:",
+                    reply_markup=kb_adm.excursion_list_for_booking_keyboard(excursions)
+                )
+        else:
+            # Обычный путь - просто показываем сообщение и возвращаемся в меню клиентов
+            await callback.message.answer(
+                success_text,
+                reply_markup=kb_adm.clients_submenu()
+            )
+
         await callback.message.delete()
         logger.info(f"Клиент {user.id} успешно создан администратором {admin_id}, токен: {token}")
-        await state.clear()
+
+        # Если не возвращаемся в бронирование - очищаем state
+        if not return_to_booking:
+            await state.clear()
 
     except ValueError as e:
         logger.error(f"Ошибка валидации при создании клиента: {e}")
         await callback.message.answer(
             f"Ошибка при создании клиента: {e}",
-            reply_markup=kb_adm.clients_submenu()
+            reply_markup=kb_adm.clients_submenu() if not return_to_booking else kb_adm.bookings_submenu()
         )
         await callback.message.delete()
         await state.clear()
     except Exception as e:
         logger.error(f"Неизвестная ошибка при создании клиента: {e}", exc_info=True)
         await callback.message.answer(
-            "Произошла ошибка при сохранении клиента. Попробуйте позже.",
-            reply_markup=kb_adm.clients_submenu()
+            "Произошла неизвестная ошибка при сохранении клиента. Попробуйте позже.",
+            reply_markup=kb_adm.clients_submenu() if not return_to_booking else kb_adm.bookings_submenu()
         )
         await callback.message.delete()
         await state.clear()
-
-
-@router.callback_query(F.data == "edit_client_data", AdminAddClient.waiting_for_confirmation)
-async def edit_client_data(callback: CallbackQuery, state: FSMContext):
-    """Возврат к редактированию данных"""
-    logger.info(f"Администратор {callback.from_user.id} хочет изменить данные клиента")
-
-    await callback.answer()
-    await state.set_state(AdminAddClient.waiting_for_name)
-
-    await callback.message.answer(
-        "Введите имя клиента заново:",
-        reply_markup=kb_adm.cancel_button()
-    )
-    await callback.message.delete()

@@ -33,7 +33,6 @@ from app.utils.validation import validate_slot_date
 
 logger = get_logger(__name__)
 
-
 router = Router(name="admin_create_booking")
 router.message.middleware(AdminMiddleware())
 router.callback_query.middleware(AdminMiddleware())
@@ -86,17 +85,23 @@ async def client_choice_search(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(AdminCreateBooking.waiting_for_client_choice, F.text == "Создать нового")
 async def client_choice_new(message: Message, state: FSMContext):
-    """Выбрано создание нового клиента"""
+    """Выбрано создание нового клиента - перенаправляем в процесс добавления клиента"""
     logger.info(f"Администратор {message.from_user.id} выбрал создание нового клиента")
 
     try:
-        # TODO: запустить процесс создания клиента
+        # Сохраняем, что мы пришли из процесса создания бронирования
+        await state.update_data(return_to_booking=True)
+
+        # Перенаправляем в процесс создания клиента
+        from app.admin_panel.states_adm import AdminAddClient
+        await state.set_state(AdminAddClient.waiting_for_name)
         await message.answer(
-            "Функция создания нового клиента в разработке",
-            reply_markup=create_booking_client_choice_keyboard()
+            'Вы добавляете нового клиента.\n'
+            'Этот клиент не будет привязан к Telegram и сможет записываться на экскурсии только через администратора.\n\n'
+            'Введите имя клиента:',
+            reply_markup=cancel_button()
         )
 
     except Exception as e:
@@ -106,7 +111,6 @@ async def client_choice_new(message: Message, state: FSMContext):
             reply_markup=bookings_submenu()
         )
         await state.clear()
-
 
 @router.message(AdminCreateBooking.waiting_for_client_choice, F.text == "Последние клиенты")
 async def client_choice_recent(message: Message, state: FSMContext):
@@ -138,7 +142,6 @@ async def client_choice_recent(message: Message, state: FSMContext):
             reply_markup=bookings_submenu()
         )
         await state.clear()
-
 
 @router.message(AdminCreateBooking.waiting_for_client_choice, F.text == "Отмена")
 async def client_choice_cancel(message: Message, state: FSMContext):
@@ -314,7 +317,6 @@ async def select_client_for_booking(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == "new_client_search_for_booking", AdminCreateBooking.waiting_for_client_search)
 async def new_client_search_for_booking(callback: CallbackQuery, state: FSMContext):
     """Новый поиск клиента при создании записи"""
@@ -332,7 +334,6 @@ async def new_client_search_for_booking(callback: CallbackQuery, state: FSMConte
         logger.error(f"Ошибка нового поиска: {e}", exc_info=True)
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
-
 
 @router.callback_query(F.data == "cancel_booking_creation", AdminCreateBooking.waiting_for_client_search)
 async def cancel_booking_creation(callback: CallbackQuery, state: FSMContext):
@@ -386,7 +387,6 @@ async def show_excursions_for_booking(message: Message, state: FSMContext):
             reply_markup=bookings_submenu()
         )
         await state.clear()
-
 
 @router.callback_query(F.data.startswith("select_excursion_for_booking:"), AdminCreateBooking.waiting_for_excursion)
 async def select_excursion_for_booking(callback: CallbackQuery, state: FSMContext):
@@ -496,7 +496,6 @@ async def process_date_for_booking(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.callback_query(F.data.startswith("select_slot_for_booking:"), AdminCreateBooking.waiting_for_slot)
 async def select_slot_for_booking(callback: CallbackQuery, state: FSMContext):
     """Выбор конкретного слота для записи"""
@@ -598,7 +597,6 @@ async def select_slot_for_booking(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data.startswith("another_date_for_booking:"), AdminCreateBooking.waiting_for_slot)
 async def another_date_for_booking(callback: CallbackQuery, state: FSMContext):
     """Выбор другой даты"""
@@ -670,7 +668,6 @@ async def admin_toggle_child(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == "admin_finish_children_selection", AdminCreateBooking.waiting_for_children_selection)
 async def admin_finish_children_selection(callback: CallbackQuery, state: FSMContext):
     """Завершение выбора детей"""
@@ -722,9 +719,57 @@ async def admin_finish_children_selection(callback: CallbackQuery, state: FSMCon
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
 
+@router.callback_query(F.data == "admin_no_children", AdminCreateBooking.waiting_for_children_selection)
+async def admin_no_children(callback: CallbackQuery, state: FSMContext):
+    """Выбрано 'Только взрослый (без детей)' - пропускаем выбор детей"""
+    logger.info(f"Администратор {callback.from_user.id} выбрал 'Только взрослый (без детей)'")
+
+    try:
+        await callback.answer()
+
+        data = await state.get_data()
+        client_id = data.get('client_id')
+        slot_id = data.get('slot_id')
+        slot_info = data.get('slot_info', {})
+
+        await state.update_data(
+            selected_children=[],
+            virtual_children=[],
+            total_children=0
+        )
+
+        # Проверяем, есть ли вес у клиента в БД
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            client = await user_repo.get_by_id(client_id)
+
+            if client and client.weight:
+                # Вес уже есть в БД - используем его
+                logger.info(f"Вес клиента {client_id} найден в БД: {client.weight} кг")
+                await state.update_data(adult_weight=client.weight)
+                await state.update_data(total_weight=client.weight)
+                await callback.message.delete()
+                await show_booking_confirmation(callback.message, state)
+            else:
+                # Веса нет - запрашиваем
+                await callback.message.delete()
+                await callback.message.answer(
+                    "Вес взрослого не указан в профиле.\n"
+                    "Введите вес в кг (только цифры, например: 75):",
+                    reply_markup=cancel_button()
+                )
+                await state.set_state(AdminCreateBooking.waiting_for_adult_weight)
+
+    except Exception as e:
+        logger.error(f"Ошибка при выборе 'Только взрослый': {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Начните создание записи заново.",
+            reply_markup=bookings_submenu()
+        )
+        await state.clear()
+
 
 # ===== СОЗДАНИЕ ВИРТУАЛЬНОГО РЕБЕНКА =====
-
 
 @router.callback_query(F.data == "admin_cancel_virtual_child", AdminCreateBooking.waiting_for_virtual_child_name)
 @router.callback_query(F.data == "admin_cancel_virtual_child", AdminCreateBooking.waiting_for_virtual_child_age)
@@ -768,7 +813,6 @@ async def admin_cancel_virtual_child(callback: CallbackQuery, state: FSMContext)
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
 
-
 @router.callback_query(F.data == "admin_create_virtual_child", AdminCreateBooking.waiting_for_children_selection)
 async def admin_create_virtual_child_start(callback: CallbackQuery, state: FSMContext):
     """Начало создания виртуального ребенка"""
@@ -788,7 +832,6 @@ async def admin_create_virtual_child_start(callback: CallbackQuery, state: FSMCo
         logger.error(f"Ошибка начала создания виртуального ребенка: {e}", exc_info=True)
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
-
 
 @router.message(AdminCreateBooking.waiting_for_virtual_child_name)
 async def admin_process_virtual_child_name(message: Message, state: FSMContext):
@@ -850,7 +893,6 @@ async def admin_process_virtual_child_name(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(AdminCreateBooking.waiting_for_virtual_child_age)
 async def admin_process_virtual_child_age(message: Message, state: FSMContext):
     """Обработка возраста виртуального ребенка"""
@@ -906,7 +948,6 @@ async def admin_process_virtual_child_age(message: Message, state: FSMContext):
             reply_markup=bookings_submenu()
         )
         await state.clear()
-
 
 @router.message(AdminCreateBooking.waiting_for_virtual_child_weight)
 async def admin_process_virtual_child_weight(message: Message, state: FSMContext):
@@ -973,7 +1014,6 @@ async def admin_process_virtual_child_weight(message: Message, state: FSMContext
         )
         await state.clear()
 
-
 @router.callback_query(F.data == "admin_confirm_virtual_child", AdminCreateBooking.waiting_for_virtual_child_weight)
 async def admin_confirm_virtual_child(callback: CallbackQuery, state: FSMContext):
     """Подтверждение создания виртуального ребенка"""
@@ -1038,7 +1078,6 @@ async def admin_confirm_virtual_child(callback: CallbackQuery, state: FSMContext
         logger.error(f"Ошибка подтверждения создания ребенка: {e}", exc_info=True)
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
-
 
 @router.callback_query(F.data == "admin_edit_virtual_child", AdminCreateBooking.waiting_for_virtual_child_weight)
 async def admin_edit_virtual_child(callback: CallbackQuery, state: FSMContext):
@@ -1173,7 +1212,6 @@ async def process_adult_weight(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.callback_query(F.data == "admin_continue_booking", AdminCreateBooking.waiting_for_adult_weight)
 async def continue_booking_with_weight_warning(callback: CallbackQuery, state: FSMContext):
     """Продолжить бронирование несмотря на превышение веса"""
@@ -1187,7 +1225,6 @@ async def continue_booking_with_weight_warning(callback: CallbackQuery, state: F
         logger.error(f"Ошибка при продолжении бронирования: {e}", exc_info=True)
         await callback.message.edit_text("Произошла ошибка")
         await state.clear()
-
 
 @router.callback_query(F.data == "admin_back_to_children_selection", AdminCreateBooking.waiting_for_adult_weight)
 async def back_to_children_selection(callback: CallbackQuery, state: FSMContext):
@@ -1260,11 +1297,12 @@ async def show_booking_confirmation(message: Message, state: FSMContext):
 
         # Формируем текст подтверждения
         text = [
-            "Проверьте данные бронирования:\n",
+            "Проверьте данные бронирования:",
+            "",
             f"Клиент: {client.full_name}",
             f"Телефон: {client.phone_number}",
             f"Вес взрослого: {adult_weight} кг",
-            f"",
+            "",
             f"Экскурсия: {slot_info.get('excursion')}",
             f"Дата: {slot_info.get('date')}",
             f"Время: {slot_info.get('time')}",
@@ -1272,7 +1310,8 @@ async def show_booking_confirmation(message: Message, state: FSMContext):
         ]
 
         if selected_children or virtual_children:
-            text.append(f"\nДети ({len(selected_children) + len(virtual_children)}):")
+            text.append(f"")
+            text.append(f"Дети ({len(selected_children) + len(virtual_children)}):")
 
             # Реальные дети
             if selected_children:
@@ -1290,19 +1329,17 @@ async def show_booking_confirmation(message: Message, state: FSMContext):
                     weight_info = f", вес: {child.get('weight')} кг" if child.get('weight') else ""
                     text.append(f"  • {child.get('full_name')} ({child.get('age')} лет){weight_info}")
 
-        text.append(f"\nОбщий вес участников: {total_weight} кг")
+        text.append(f"")
+        text.append(f"Общий вес участников: {total_weight} кг")
 
         if weight_warning:
-            text.append("\nВНИМАНИЕ: превышение допустимого веса!")
+            text.append("")
+            text.append("ВНИМАНИЕ: превышение допустимого веса!")
 
         # Получаем стоимость
-
-
-        # Базовая цена из слота
-        async with session:
-            slot_repo = SlotRepository(session)
-            slot = await slot_repo.get_by_id(slot_id)
-            base_price = slot.excursion.base_price if slot and slot.excursion else 0
+        slot_repo = SlotRepository(session)
+        slot = await slot_repo.get_by_id(slot_id)
+        base_price = slot.excursion.base_price if slot and slot.excursion else 0
 
         # Расчет стоимости
         total_price = base_price  # взрослый
@@ -1320,7 +1357,8 @@ async def show_booking_confirmation(message: Message, state: FSMContext):
                 child_price, _ = PriceCalculator.calculate_child_price(base_price, child['birth_date'])
                 total_price += child_price
 
-        text.append(f"\nСумма к оплате: {total_price} руб.")
+        text.append(f"")
+        text.append(f"Сумма к оплате: {total_price} руб.")
 
         await state.update_data(
             total_price=total_price,
@@ -1328,12 +1366,8 @@ async def show_booking_confirmation(message: Message, state: FSMContext):
             client_phone=client.phone_number
         )
 
-        await message.answer(
-            "\n".join(text),
-            reply_markup=confirm_booking()
-        )
+        await message.answer("\n".join(text), reply_markup=confirm_booking())
         await state.set_state(AdminCreateBooking.waiting_for_confirmation)
-
 
 @router.callback_query(F.data == "admin_confirm_booking_final", AdminCreateBooking.waiting_for_confirmation)
 async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext):
@@ -1471,7 +1505,6 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
             reply_markup=bookings_submenu()
         )
         await state.clear()
-
 
 @router.callback_query(F.data == "cancel_booking_creation")
 async def cancel_booking_creation_universal(callback: CallbackQuery, state: FSMContext):

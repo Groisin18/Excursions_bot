@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .base import BaseRepository
 from app.database.models import (
     ExcursionSlot, Excursion, SlotStatus, User,
-    Booking
+    Booking, BookingChild
 )
 
 
@@ -139,6 +139,7 @@ class SlotRepository(BaseRepository):
                 .selectinload(Booking.adult_user),
                 selectinload(ExcursionSlot.bookings)
                 .selectinload(Booking.booking_children)
+                .selectinload(BookingChild.child),
             )
             .where(ExcursionSlot.id == slot_id)
         )

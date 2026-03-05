@@ -214,7 +214,7 @@ class SlotManager(BaseManager):
             return 0
 
     async def get_current_weight(self, slot_id: int) -> int:
-        """Получить текущий вес для слота"""
+        """Получить текущий вес для слота с учетом детей"""
         try:
             # Получаем слот с бронированиями
             slot = await self.slot_repo.get_with_bookings(slot_id)
@@ -230,8 +230,15 @@ class SlotManager(BaseManager):
             # Вес клиентов из активных бронирований
             for booking in slot.bookings:
                 if booking.booking_status == BookingStatus.active:
+                    # Вес взрослого клиента
                     if booking.adult_user and booking.adult_user.weight:
                         total_weight += booking.adult_user.weight
+
+                    # Вес детей из этого бронирования
+                    if hasattr(booking, 'booking_children') and booking.booking_children:
+                        for booking_child in booking.booking_children:
+                            if booking_child.child and booking_child.child.weight:
+                                total_weight += booking_child.child.weight
 
             return total_weight
 

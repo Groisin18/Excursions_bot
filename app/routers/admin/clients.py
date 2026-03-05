@@ -144,7 +144,6 @@ async def search_client_start(message: Message, state: FSMContext):
         logger.error(f"Ошибка начала поиска клиента: {e}", exc_info=True)
         await message.answer("Ошибка начала поиска клиента", reply_markup=clients_submenu())
 
-
 @router.message(AdminStates.waiting_for_client_search)
 async def search_client_process(message: Message, state: FSMContext):
     """Обработка поиска клиента"""
@@ -243,7 +242,6 @@ async def search_client_process(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(F.text == "Отмена", AdminStates.waiting_for_client_search)
 async def cancel_client_search(message: Message, state: FSMContext):
     """Отмена поиска клиента"""
@@ -260,7 +258,6 @@ async def cancel_client_search(message: Message, state: FSMContext):
         logger.error(f"Ошибка отмены поиска клиента: {e}", exc_info=True)
         await message.answer("Ошибка при отмене", reply_markup=clients_submenu())
         await state.clear()
-
 
 @router.callback_query(F.data == "back_to_clients_menu")
 async def back_to_clients_menu(callback: CallbackQuery, state: FSMContext):
@@ -280,7 +277,6 @@ async def back_to_clients_menu(callback: CallbackQuery, state: FSMContext):
         await callback.message.delete()
     except:
         pass
-
 
 @router.callback_query(F.data.startswith("edit_client:"))
 async def edit_client_redirect(callback: CallbackQuery, state: FSMContext):
@@ -389,7 +385,6 @@ async def select_client_from_list(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Ошибка при загрузке данных клиента")
         await state.clear()
 
-
 @router.callback_query(F.data == "new_client_search")
 async def new_client_search(callback: CallbackQuery, state: FSMContext):
     """Новый поиск клиента"""
@@ -407,7 +402,6 @@ async def new_client_search(callback: CallbackQuery, state: FSMContext):
         await callback.message.delete()
     except:
         pass
-
 
 @router.callback_query(F.data == "cancel_client_search")
 async def cancel_client_search_callback(callback: CallbackQuery, state: FSMContext):
@@ -436,7 +430,6 @@ async def back_to_client_actions(callback: CallbackQuery):
         logger.error(f"Ошибка при показе клиента {client_id}: {e}", exc_info=True)
         await callback.message.answer("Ошибка при загрузке данных клиента")
 
-
 @router.callback_query(F.data.startswith("change_client_role:"))
 async def change_client_role_start(callback: CallbackQuery):
     """Начало изменения роли клиента"""
@@ -459,7 +452,6 @@ async def change_client_role_start(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка при изменении роли клиента {client_id}: {e}", exc_info=True)
         await callback.message.answer("Ошибка при загрузке данных")
-
 
 @router.callback_query(F.data.startswith("set_client_role:"))
 async def set_client_role(callback: CallbackQuery):
@@ -504,7 +496,6 @@ async def set_client_role(callback: CallbackQuery):
         logger.error(f"Ошибка при установке роли клиенту {client_id}: {e}", exc_info=True)
         await callback.message.answer("Ошибка при сохранении роли")
 
-
 @router.callback_query(F.data.startswith("send_message_to_client:"))
 async def send_message_to_client_start(callback: CallbackQuery, state: FSMContext):
     """Начало отправки сообщения клиенту (заглушка)"""
@@ -515,7 +506,6 @@ async def send_message_to_client_start(callback: CallbackQuery, state: FSMContex
     # await callback.message.answer("Введите сообщение для клиента...")
     # await state.set_state(AdminStates.waiting_for_client_message)
     # await state.update_data(target_client_id=client_id)
-
 
 @router.callback_query(F.data.startswith("show_client_children:"))
 async def show_client_children(callback: CallbackQuery):
