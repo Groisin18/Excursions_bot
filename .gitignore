@@ -15,3 +15,4 @@ aiogram_*.session
 aiogram_*.json
 scripts/
 tests/reports
+start_bot.bat
