@@ -4,17 +4,17 @@ import os
 from aiogram import Bot, Dispatcher
 from aiogram.enums import ParseMode
 from aiogram.client.default import DefaultBotProperties
-from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.fsm.storage.redis import RedisStorage
 from dotenv import load_dotenv
 
 from app.routers import setup_routers
 from app.database.models import init_models
-from app.services.redis import redis_client
+from app.services.redis import redis_client, dumps, loads
 from app.utils.logging_config import setup_logging
 
 load_dotenv()
 
-# Настройки логирования
+# Настройки логирования (без изменений)
 LOG_LEVEL = os.getenv('LOG_LEVEL').upper()
 ENABLE_CONSOLE_LOGGING = os.getenv('ENABLE_CONSOLE_LOGGING').lower() == 'true'
 ENABLE_FILE_LOGGING = os.getenv('ENABLE_FILE_LOGGING').lower() == 'true'
@@ -37,10 +37,25 @@ bot = Bot(
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
 
-dp = Dispatcher(storage=MemoryStorage())
-
 async def main():
     logger.info("Запуск бота...")
+
+    try:
+        await redis_client.initialize()
+        logger.info("Redis инициализирован")
+    except Exception as e:
+        logger.error(f"Критическая ошибка инициализации Redis: {e}", exc_info=True)
+        raise
+
+    # Используем наши сериализаторы
+    redis_storage = RedisStorage(
+        redis_client.client,
+        json_loads=loads,      # кастомный декодер
+        json_dumps=dumps       # кастомный энкодер
+    )
+
+    dp = Dispatcher(storage=redis_storage)
+    logger.info("Dispatcher создан с RedisStorage (полный цикл сериализации)")
 
     logger.debug("Настройка роутеров...")
     setup_routers(dp)
@@ -49,7 +64,10 @@ async def main():
     dp.shutdown.register(shutdown)
 
     logger.debug("Запуск polling...")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    finally:
+        await redis_client.close()
 
 async def startup(dispatcher: Dispatcher):
     """Обработчик запуска бота"""
@@ -57,9 +75,8 @@ async def startup(dispatcher: Dispatcher):
     try:
         await init_models()
         logger.info("База данных инициализирована")
-        await redis_client.initialize()
     except Exception as e:
-        logger.error(f"Ошибка инициализации: {e}", exc_info=True)
+        logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
         raise
 
     logger.info('Бот запущен!')
@@ -67,9 +84,6 @@ async def startup(dispatcher: Dispatcher):
 
 async def shutdown(dispatcher: Dispatcher):
     """Обработчик остановки бота"""
-    logger.info('Бот останавливается...')
-    await redis_client.close()
-    logger.info("Закрытие соединений...")
     logger.info('Бот остановлен.')
     print('Бот остановлен.')
 
