@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from app.routers import setup_routers
 from app.database.models import init_models
+from app.services.redis import redis_client
 from app.utils.logging_config import setup_logging
 
 load_dotenv()
@@ -56,8 +57,9 @@ async def startup(dispatcher: Dispatcher):
     try:
         await init_models()
         logger.info("База данных инициализирована")
+        await redis_client.initialize()
     except Exception as e:
-        logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
+        logger.error(f"Ошибка инициализации: {e}", exc_info=True)
         raise
 
     logger.info('Бот запущен!')
@@ -66,6 +68,7 @@ async def startup(dispatcher: Dispatcher):
 async def shutdown(dispatcher: Dispatcher):
     """Обработчик остановки бота"""
     logger.info('Бот останавливается...')
+    await redis_client.close()
     logger.info("Закрытие соединений...")
     logger.info('Бот остановлен.')
     print('Бот остановлен.')
