@@ -31,6 +31,7 @@
    python tests/run_tests.py test_validation.py --no-html
 """
 
+import os
 import subprocess
 from pathlib import Path
 import datetime
@@ -184,11 +185,17 @@ def run_tests(test_files, create_html=True, create_txt=True):
         else:
             encoding = 'utf-8'
 
+        # Добавляем корень проекта в PYTHONPATH
+        project_root = Path(__file__).parent.parent
+        env = os.environ.copy()
+        env['PYTHONPATH'] = str(project_root) + os.pathsep + env.get('PYTHONPATH', '')
+
         result = subprocess.run(
             cmd,
             capture_output=True,
             text=True,
-            encoding=encoding
+            encoding=encoding,
+            env=env  # Передаем окружение с правильным PYTHONPATH
         )
 
         # Сохраняем полный вывод в TXT файл
@@ -221,12 +228,34 @@ def run_tests(test_files, create_html=True, create_txt=True):
         failed = 0
         errors = 0
         skipped = 0
+        total = 0
 
         if result.stdout:
             lines = result.stdout.split('\n')
             for line in lines:
+                # Ищем итоговую строку с результатами
+                # Пример: "= 12 passed, 3 failed, 1 error, 2 skipped in 2.5s ="
+                if 'passed' in line and 'failed' in line:
+                    # Парсим числа
+                    numbers = re.findall(r'(\d+)\s+(\w+)', line)
+                    for num, status in numbers:
+                        if 'passed' in status:
+                            passed = int(num)
+                        elif 'failed' in status:
+                            failed = int(num)
+                        elif 'error' in status:
+                            errors = int(num)
+                        elif 'skipped' in status:
+                            skipped = int(num)
+                    break
+
+        # Если не нашли в итоговой строке, ищем по отдельности
+        if passed == 0 and failed == 0 and errors == 0 and skipped == 0:
+            for line in lines:
                 line_lower = line.lower()
-                if 'passed' in line_lower and 'failed' not in line_lower and 'error' not in line_lower:
+
+                # Ищем отдельные показатели
+                if 'passed' in line_lower and 'failed' not in line_lower:
                     match = re.search(r'(\d+)\s+passed', line_lower)
                     if match:
                         passed = int(match.group(1))
@@ -236,7 +265,7 @@ def run_tests(test_files, create_html=True, create_txt=True):
                     if match:
                         failed = int(match.group(1))
 
-                if 'error' in line_lower and 'failed' not in line_lower:
+                if 'error' in line_lower:
                     match = re.search(r'(\d+)\s+error', line_lower)
                     if match:
                         errors = int(match.group(1))
@@ -246,29 +275,28 @@ def run_tests(test_files, create_html=True, create_txt=True):
                     if match:
                         skipped = int(match.group(1))
 
+        # Вычисляем общее количество
+        total = passed + failed + errors + skipped
+
         # Выводим краткий результат
         print("\nРЕЗУЛЬТАТЫ:")
         print("-" * 50)
 
-        total_tests = passed + failed + errors + skipped
+        if total > 0:
+            if passed > 0:
+                print(f"Пройдено: {passed}")
+            if failed > 0:
+                print(f"Не пройдено: {failed}")
+            if errors > 0:
+                print(f"Ошибок: {errors}")
+            if skipped > 0:
+                print(f"Пропущено: {skipped}")
 
-        if passed > 0:
-            print(f"Пройдено: {passed}")
-
-        if failed > 0:
-            print(f"Не пройдено: {failed}")
-
-        if errors > 0:
-            print(f"Ошибок: {errors}")
-
-        if skipped > 0:
-            print(f"Пропущено: {skipped}")
-
-        if total_tests > 0:
-            success_rate = (passed / total_tests) * 100
+            success_rate = (passed / total) * 100
             print(f"\nУспешность: {success_rate:.1f}%")
-
-        print(f"\nКод возврата: {result.returncode}")
+        else:
+            print("Не удалось определить результаты тестов")
+            print(f"Код возврата: {result.returncode}")
 
         # Пути к отчетам
         print("\n" + "=" * 50)

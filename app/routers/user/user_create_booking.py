@@ -12,6 +12,7 @@ from app.database.repositories import (
 from app.database.models import SlotStatus, DiscountType
 from app.database.session import async_session
 
+from app.services.redis import redis_client
 from app.schemas.booking import BookingCreationData, BookingChildData
 from app.utils.logging_config import get_logger
 from app.user_panel.states import UserBookingStates
@@ -35,8 +36,14 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
 
     try:
         slot_id = int(callback.data.split(":")[-1])
-
         await callback.answer()
+        # Проверяем, не заблокирован ли слот
+        if await redis_client.is_locked(f"lock:slot:{slot_id}"):
+            await callback.message.answer(
+                "Этот слот сейчас обрабатывается другим пользователем. Попробуйте через минуту.",
+                    reply_markup=kb.public_schedule_options()
+            )
+            return
 
         async with async_session() as session:
             slot_repo = SlotRepository(session)
@@ -1061,111 +1068,135 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
         data = await state.get_data()
-
-        # Получаем данные из state
         slot_id = data.get("slot_id")
-        user_id = data.get("user_id")
-        adult_price = data.get("adult_price", 0)
-        final_price = data.get("final_price")
-        promo_id = data.get("promo_id")
-        children_prices = data.get("children_prices", [])
-        total_weight = data.get("total_weight")
-        adult_weight = data.get("adult_weight")
-        children_weights = data.get("children_weights", {})
-        promo_code = data.get("promo_code")
-        promo_discount_type = data.get("promo_discount_type")
-        promo_discount_value = data.get("promo_discount_value", 0)
 
-        if not all([slot_id, user_id, final_price]):
-            logger.error(f"Недостаточно данных в state для пользователя {user_telegram_id}")
+        if not slot_id:
+            logger.error(f"slot_id не найден в state для пользователя {user_telegram_id}")
             await callback.message.answer(
-                "Ошибка: недостаточно данных. Начните бронирование заново.",
+                "Ошибка: данные слотов устарели. Начните бронирование заново.",
                 reply_markup=kb.main
             )
             await state.clear()
             return
 
-        # Подготавливаем данные детей
-        children_models = []
-        for child in children_prices:
-            children_models.append(
-                BookingChildData(
-                    child_id=child['id'],
-                    full_name=child['name'],
-                    price=child['price'],
-                    age_category=child['category'],
-                    weight=children_weights.get(child['id'])
-                )
-            )
+        # Критическая секция - блокируем слот
+        lock_key = f"lock:slot:{slot_id}"
 
-        # Валидируем все данные через Pydantic
-        booking_data = BookingCreationData(
-            slot_id=slot_id,
-            user_id=user_id,
-            adult_price=adult_price,
-            final_price=final_price,
-            adult_weight=adult_weight,
-            children=children_models,
-            promo_code_id=promo_id,
-            promo_code=promo_code,
-            promo_discount_type=promo_discount_type,
-            promo_discount_value=promo_discount_value,
-            total_weight=total_weight
-        )
+        try:
+            async with redis_client.lock(lock_key, timeout=30, blocking_timeout=10):
+                # Получаем данные из state
+                user_id = data.get("user_id")
+                adult_price = data.get("adult_price", 0)
+                final_price = data.get("final_price")
+                promo_id = data.get("promo_id")
+                children_prices = data.get("children_prices", [])
+                total_weight = data.get("total_weight")
+                adult_weight = data.get("adult_weight")
+                children_weights = data.get("children_weights", {})
+                promo_code = data.get("promo_code")
+                promo_discount_type = data.get("promo_discount_type")
+                promo_discount_value = data.get("promo_discount_value", 0)
 
-        async with async_session() as session:
-            async with UnitOfWork(session) as uow:
-                booking_manager = BookingManager(uow.session)
-
-                # Создаем бронирование
-                booking, error_msg = await booking_manager.create_booking(
-                    slot_id=booking_data.slot_id,
-                    adult_user_id=booking_data.user_id,
-                    children_count=booking_data.children_count,
-                    total_price=booking_data.final_price,
-                    promo_code_id=booking_data.promo_code_id,
-                    children_data=booking_data.children_data_for_repo,
-                    total_weight=booking_data.total_weight
-                )
-
-                if not booking:
-                    logger.error(f"Ошибка создания бронирования: {error_msg}")
+                if not all([user_id, final_price]):
+                    logger.error(f"Недостаточно данных в state для пользователя {user_telegram_id}")
                     await callback.message.answer(
-                        f"Ошибка при создании бронирования: {error_msg}",
+                        "Ошибка: недостаточно данных. Начните бронирование заново.",
                         reply_markup=kb.main
                     )
                     await state.clear()
                     return
 
-                # Если был промокод, увеличиваем счетчик использований
-                if booking_data.promo_code_id:
-                    await booking_manager.promo_repo.increment_usage(booking_data.promo_code_id)
-                    logger.info(f"Увеличен счетчик использований промокода {booking_data.promo_code_id}")
+                # Подготавливаем данные детей
+                children_models = []
+                for child in children_prices:
+                    children_models.append(
+                        BookingChildData(
+                            child_id=child['id'],
+                            full_name=child['name'],
+                            price=child['price'],
+                            age_category=child['category'],
+                            weight=children_weights.get(child['id'])
+                        )
+                    )
 
-                # Формируем сообщение об успешном бронировании
-                success_message = (
-                    f"Бронирование №{booking.id} создано!\n\n"
-                    f"Сумма к оплате: {booking_data.final_price} руб.\n"
+                # Валидируем все данные через Pydantic
+                booking_data = BookingCreationData(
+                    slot_id=slot_id,
+                    user_id=user_id,
+                    adult_price=adult_price,
+                    final_price=final_price,
+                    adult_weight=adult_weight,
+                    children=children_models,
+                    promo_code_id=promo_id,
+                    promo_code=promo_code,
+                    promo_discount_type=promo_discount_type,
+                    promo_discount_value=promo_discount_value,
+                    total_weight=total_weight
                 )
 
-                if booking_data.children:
-                    children_names = [child.full_name for child in booking_data.children]
-                    success_message += f"Дети: {', '.join(children_names)}\n"
+                async with async_session() as session:
+                    async with UnitOfWork(session) as uow:
+                        booking_manager = BookingManager(uow.session)
 
-                success_message += (
-                    f"\nСтатус: ожидает оплаты\n"
-                    f"Оплатить нужно в течение 24 часов.\n\n"
-                    f"После оплаты бронь станет активной.\n"
-                    f"Вы можете посмотреть свои бронирования в Личном кабинете."
-                )
-# TODO добавить возможность оплатить сразу
-                await callback.message.answer(
-                    success_message,
-                    reply_markup=kb.main
-                )
+                        # Создаем бронирование (все проверки внутри менеджера)
+                        booking, error_msg = await booking_manager.create_booking(
+                            slot_id=booking_data.slot_id,
+                            adult_user_id=booking_data.user_id,
+                            children_count=booking_data.children_count,
+                            total_price=booking_data.final_price,
+                            promo_code_id=booking_data.promo_code_id,
+                            children_data=booking_data.children_data_for_repo,
+                            total_weight=booking_data.total_weight
+                        )
 
-                logger.info(f"Бронирование {booking.id} успешно создано для пользователя {user_telegram_id}")
-                await state.clear()
+                        if not booking:
+                            logger.error(f"Ошибка создания бронирования: {error_msg}")
+                            await callback.message.answer(
+                                f"Ошибка при создании бронирования: {error_msg}",
+                                reply_markup=kb.main
+                            )
+                            await state.clear()
+                            return
+
+                        # Если был промокод, увеличиваем счетчик использований
+                        if booking_data.promo_code_id:
+                            await booking_manager.promo_repo.increment_usage(booking_data.promo_code_id)
+                            logger.info(f"Увеличен счетчик использований промокода {booking_data.promo_code_id}")
+
+                        # Формируем сообщение об успешном бронировании
+                        success_message = (
+                            f"Бронирование №{booking.id} создано!\n\n"
+                            f"Сумма к оплате: {booking_data.final_price} руб.\n"
+                        )
+
+                        if booking_data.children:
+                            children_names = [child.full_name for child in booking_data.children]
+                            success_message += f"Дети: {', '.join(children_names)}\n"
+
+                        success_message += (
+                            f"\nСтатус: ожидает оплаты\n"
+                            f"Оплатить нужно в течение 24 часов.\n\n"
+                            f"После оплаты бронь станет активной.\n"
+                            f"Вы можете посмотреть свои бронирования в Личном кабинете."
+                        )
+
+                        await callback.message.answer(
+                            success_message,
+                            reply_markup=kb.main
+                        )
+
+                        logger.info(f"Бронирование {booking.id} успешно создано для пользователя {user_telegram_id}")
+                        await state.clear()
+
+        except TimeoutError:
+            # Не удалось получить блокировку за отведенное время
+            logger.warning(f"Таймаут получения блокировки слота {slot_id} для пользователя {user_telegram_id}")
+            await callback.message.answer(
+                "Сейчас много желающих записаться на этот слот. "
+                "Пожалуйста, попробуйте еще раз через минуту.",
+                reply_markup=kb.public_schedule_options()
+            )
+            await state.clear()
 
     except Exception as e:
         logger.error(f"Ошибка подтверждения бронирования для {user_telegram_id}: {e}", exc_info=True)
