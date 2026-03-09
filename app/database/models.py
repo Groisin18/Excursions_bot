@@ -698,7 +698,7 @@ async def init_models():
             journal_mode = journal_row[0] if journal_row else "unknown"
             logger.info(f"Режим журналирования: {journal_mode}")
 
-        logger.info("База данных успешно инициализирована с WAL-режимом")
+        logger.info("База данных успешно инициализирована")
 
     except Exception as e:
         logger.critical(f"Ошибка инициализации БД: {e}", exc_info=True)

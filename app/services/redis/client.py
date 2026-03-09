@@ -30,7 +30,7 @@ class RedisClient:
             else:
                 redis_url = f"redis://{host}:{port}/{db}"
 
-            logger.info(f"Подключение к Redis: {host}:{port}/{db} (пароль: {'есть' if password else 'нет'})")
+            logger.info(f"Подключение к Redis: {host}:{port}/{db}")
 
             self._redis = aioredis.from_url(
                 redis_url,

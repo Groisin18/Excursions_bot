@@ -1,6 +1,6 @@
 """Менеджер для бизнес-логики бронирований"""
 
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Tuple, Optional, Dict, List
 from sqlalchemy import select, and_, or_
 from sqlalchemy.orm import selectinload
@@ -13,7 +13,7 @@ from app.database.repositories import (
 )
 from app.database.models import (
     Booking, BookingStatus, SlotStatus, ClientStatus, BookingChild,
-    ExcursionSlot
+    ExcursionSlot, PaymentStatus
 )
 from app.database.managers import SlotManager
 from app.utils.calculators import PriceCalculator
@@ -409,6 +409,32 @@ class BookingManager(BaseManager):
             self._log_operation_end("get_user_history_bookings", success=False)
             self.logger.error(f"Ошибка получения истории бронирований: {e}", exc_info=True)
             return []
+
+    async def get_expired_unpaid_bookings(self) -> List[Booking]:
+        """Найти просроченные неоплаченные бронирования"""
+        now = datetime.now()
+
+        query = (
+            select(Booking)
+            .options(
+                selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                selectinload(Booking.adult_user)
+            )
+            .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+            .where(
+                and_(
+                    Booking.booking_status == BookingStatus.active,
+                    Booking.payment_status == PaymentStatus.not_paid,
+                    or_(
+                        Booking.created_at + timedelta(hours=24) < now,
+                        ExcursionSlot.start_datetime < now
+                    )
+                )
+            )
+        )
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
 
     async def cancel_booking(
         self,

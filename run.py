@@ -10,6 +10,7 @@ from dotenv import load_dotenv
 from app.routers import setup_routers
 from app.database.models import init_models
 from app.services.redis import redis_client, dumps, loads
+from app.services.scheduler import scheduler_service
 from app.utils.logging_config import setup_logging
 
 load_dotenv()
@@ -47,7 +48,7 @@ async def main():
         logger.error(f"Критическая ошибка инициализации Redis: {e}", exc_info=True)
         raise
 
-    # Используем наши сериализаторы
+    # Используем кастомные сериализаторы
     redis_storage = RedisStorage(
         redis_client.client,
         json_loads=loads,      # кастомный декодер
@@ -55,10 +56,17 @@ async def main():
     )
 
     dp = Dispatcher(storage=redis_storage)
-    logger.info("Dispatcher создан с RedisStorage (полный цикл сериализации)")
+    logger.info("Dispatcher создан с RedisStorage")
 
     logger.debug("Настройка роутеров...")
     setup_routers(dp)
+
+    # Запускаем планировщик
+    try:
+        await scheduler_service.start()
+        logger.info("Планировщик задач запущен")
+    except Exception as e:
+        logger.error(f"Ошибка запуска планировщика: {e}", exc_info=True)
 
     dp.startup.register(startup)
     dp.shutdown.register(shutdown)

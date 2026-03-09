@@ -106,7 +106,6 @@ def setup_logging(
     app_logger.info(f"Логирование настроено. Уровень: {level}")
     app_logger.info(f"Консоль: {'ВКЛ' if console else 'ВЫКЛ'}")
     app_logger.info(f"Файлы: {'ВКЛ' if file_logging else 'ВЫКЛ'}")
-    app_logger.info("=" * 50)
 
     return app_logger
 
