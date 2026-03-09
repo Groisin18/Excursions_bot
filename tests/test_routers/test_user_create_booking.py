@@ -1,6 +1,5 @@
 """
 Модульные тесты для роутера user_create_booking.
-Тестирование процесса бронирования с блокировками Redis.
 """
 
 import pytest
@@ -18,7 +17,6 @@ async def test_start_booking_success(
     test_slot,
     test_data,
     test_excursion,
-    mock_redis_client,
     mock_user_repository,
     mock_slot_repository,
     mock_booking_repository,
@@ -30,9 +28,6 @@ async def test_start_booking_success(
     # Настройка
     mock_callback_query.data = f"public_book_slot:{test_slot.id}"
     mock_callback_query.message = AsyncMock()
-
-    # Настраиваем Redis - слот свободен
-    mock_redis_client.is_locked = AsyncMock(return_value=False)
 
     # Настраиваем моки репозиториев
     mock_user_repository.get_by_telegram_id.return_value = test_data["client"]
@@ -61,52 +56,15 @@ async def test_start_booking_success(
 
 
 @pytest.mark.asyncio
-async def test_start_booking_slot_locked(
-    mock_callback_query,
-    mock_state,
-    test_slot,
-    mock_redis_client
-):
-    """Тест начала бронирования когда слот заблокирован другим пользователем."""
-    mock_callback_query.data = f"public_book_slot:{test_slot.id}"
-
-    # Важно! НЕ создаем новый message, а используем существующий
-    # просто убеждаемся что у него есть метод answer
-    mock_callback_query.message.answer = AsyncMock()
-
-    # Настраиваем Redis - слот заблокирован
-    mock_redis_client.is_locked = AsyncMock(return_value=True)
-
-    # Вызов
-    await user_create_booking.start_booking(mock_callback_query, mock_state)
-
-    # Проверяем, что callback.answer был вызван
-    mock_callback_query.answer.assert_called_once()
-
-    # Проверяем, что message.answer был вызван с предупреждением
-    mock_callback_query.message.answer.assert_called_once_with(
-        "Этот слот сейчас обрабатывается другим пользователем. Попробуйте через минуту.",
-        reply_markup=user_create_booking.kb.public_schedule_options()
-    )
-
-    # Проверяем, что состояние не изменилось
-    mock_state.set_state.assert_not_called()
-
-
-@pytest.mark.asyncio
 async def test_start_booking_slot_not_found(
     mock_callback_query,
     mock_state,
-    mock_redis_client,
     mock_slot_repository,
     mock_session
 ):
     """Тест начала бронирования с несуществующим слотом."""
     mock_callback_query.data = "public_book_slot:99999"
     mock_callback_query.message = AsyncMock()
-
-    # Настраиваем Redis
-    mock_redis_client.is_locked = AsyncMock(return_value=False)
 
     # Мокаем SlotRepository чтобы возвращал None
     mock_slot_repository.get_by_id.return_value = None
@@ -126,7 +84,6 @@ async def test_start_booking_user_not_found(
     mock_callback_query,
     mock_state,
     test_slot,
-    mock_redis_client,
     mock_user_repository,
     mock_slot_repository,
     mock_session
@@ -134,9 +91,6 @@ async def test_start_booking_user_not_found(
     """Тест начала бронирования когда пользователь не найден."""
     mock_callback_query.data = f"public_book_slot:{test_slot.id}"
     mock_callback_query.message = AsyncMock()
-
-    # Настраиваем Redis
-    mock_redis_client.is_locked = AsyncMock(return_value=False)
 
     # Настраиваем моки
     mock_user_repository.get_by_telegram_id.return_value = None
@@ -159,7 +113,6 @@ async def test_start_booking_no_free_places(
     mock_state,
     test_slot,
     test_data,
-    mock_redis_client,
     mock_user_repository,
     mock_slot_repository,
     mock_slot_manager,
@@ -168,9 +121,6 @@ async def test_start_booking_no_free_places(
     """Тест начала бронирования когда нет свободных мест."""
     mock_callback_query.data = f"public_book_slot:{test_slot.id}"
     mock_callback_query.message = AsyncMock()
-
-    # Настраиваем Redis
-    mock_redis_client.is_locked = AsyncMock(return_value=False)
 
     # Настраиваем моки
     mock_user_repository.get_by_telegram_id.return_value = test_data["client"]
@@ -195,7 +145,6 @@ async def test_confirm_booking_success(
     mock_state,
     test_slot,
     test_data,
-    mock_redis_client,
     mock_booking_manager,
     mock_session,
     mock_uow
@@ -236,45 +185,6 @@ async def test_confirm_booking_success(
 
 
 @pytest.mark.asyncio
-async def test_confirm_booking_lock_timeout(
-    mock_callback_query,
-    mock_state,
-    test_slot,
-    monkeypatch
-):
-    """Тест таймаута при получении блокировки."""
-    mock_callback_query.data = "confirm_booking"
-    mock_callback_query.message = AsyncMock()
-
-    state_data = {
-        "slot_id": test_slot.id,
-        "user_id": 1,
-        "final_price": 1000
-    }
-    mock_state.get_data.return_value = state_data
-
-    # Создаем контекстный менеджер, который выбрасывает TimeoutError
-    class TimeoutLock:
-        async def __aenter__(self):
-            raise TimeoutError()
-        async def __aexit__(self, *args):
-            pass
-
-    # Мокаем redis_client.lock чтобы он возвращал наш контекстный менеджер
-    mock_redis = MagicMock()
-    mock_redis.lock = MagicMock(return_value=TimeoutLock())
-    monkeypatch.setattr("app.routers.user.user_create_booking.redis_client", mock_redis)
-
-    await user_create_booking.confirm_booking(mock_callback_query, mock_state)
-
-    # Проверяем сообщение о таймауте
-    mock_callback_query.message.answer.assert_called_once()
-    args, kwargs = mock_callback_query.message.answer.call_args
-    assert "много желающих" in args[0]
-    mock_state.clear.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_confirm_booking_no_slot_id(
     mock_callback_query,
     mock_state
@@ -303,8 +213,7 @@ async def test_confirm_booking_creation_failed(
     test_data,
     mock_booking_manager,
     mock_session,
-    mock_uow,
-    monkeypatch
+    mock_uow
 ):
     """Тест ошибки при создании бронирования."""
     mock_callback_query.data = "confirm_booking"
@@ -321,17 +230,6 @@ async def test_confirm_booking_creation_failed(
         "children_weights": {}
     }
     mock_state.get_data.return_value = state_data
-
-    # Мокаем успешную блокировку
-    class SuccessLock:
-        async def __aenter__(self):
-            return self
-        async def __aexit__(self, *args):
-            pass
-
-    mock_redis = MagicMock()
-    mock_redis.lock = MagicMock(return_value=SuccessLock())
-    monkeypatch.setattr("app.routers.user.user_create_booking.redis_client", mock_redis)
 
     # Мокаем ошибку создания бронирования
     mock_booking_manager.create_booking.return_value = (None, "Мест нет")
@@ -490,8 +388,7 @@ async def test_skip_promo_code(
 async def test_process_promo_code_valid(
     mock_state,
     mock_session,
-    mock_promo_repository,
-    monkeypatch
+    mock_promo_repository
 ):
     """Тест обработки валидного промокода."""
     mock_message = AsyncMock()
