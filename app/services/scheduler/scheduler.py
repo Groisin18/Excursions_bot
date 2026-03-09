@@ -21,14 +21,9 @@ from .tasks import (
     auto_cancel_unpaid_bookings, auto_complete_excursions,
     send_excursion_reminder, send_payment_reminder
 )
+from .bot_instance import set_bot_instance
 
 logger = get_logger(__name__)
-
-_bot_instance = None
-
-async def set_bot_instance(bot):
-    global _bot_instance
-    _bot_instance = bot
 
 class SchedulerService:
     """Сервис для управления планировщиком задач"""

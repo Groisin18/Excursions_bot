@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from .scheduler import _bot_instance
+from .bot_instance import get_bot_instance
 
 from app.services.redis import redis_client
 from app.database.unit_of_work import UnitOfWork
@@ -43,7 +43,7 @@ async def auto_cancel_unpaid_bookings():
 
                     if success:
                         logger.info(f"Отменено бронирование #{booking.id}")
-
+                        _bot_instance = get_bot_instance()
                         if booking.adult_user.telegram_id and _bot_instance:
                             try:
                                 await _bot_instance.send_message(
@@ -105,7 +105,7 @@ async def send_payment_reminder():
                     if already_sent:
                         logger.debug(f"Напоминание об оплате #{booking.id} уже отправлено ранее")
                         continue
-
+                    _bot_instance = get_bot_instance()
                     if booking.adult_user.telegram_id and _bot_instance:
                         try:
                             minutes_until_deadline = int((deadline - datetime.now()).total_seconds() / 60)
@@ -166,6 +166,7 @@ async def send_excursion_reminder():
                         logger.debug(f"Напоминание об экскурсии #{booking.id} уже отправлено ранее")
                         continue
 
+                    _bot_instance = get_bot_instance()
                     if booking.adult_user.telegram_id and _bot_instance:
                         try:
                             excursion_time = booking.slot.start_datetime.strftime('%d.%m.%Y %H:%M')
