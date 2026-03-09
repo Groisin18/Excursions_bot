@@ -10,7 +10,7 @@ from dotenv import load_dotenv
 from app.routers import setup_routers
 from app.database.models import init_models
 from app.services.redis import redis_client, dumps, loads
-from app.services.scheduler import scheduler_service
+from app.services.scheduler.scheduler import scheduler_service
 from app.utils.logging_config import setup_logging
 
 load_dotenv()

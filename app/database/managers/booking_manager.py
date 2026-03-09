@@ -436,6 +436,82 @@ class BookingManager(BaseManager):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_bookings_for_payment_reminder(self) -> List[Tuple[Booking, datetime]]:
+        """
+        Найти бронирования для напоминания об оплате.
+        Условия:
+        - Статус active, оплата not_paid
+        - Дедлайн = min(created_at + 24h, slot_start_datetime)
+        - Уведомление за 1 час до дедлайна +- 6 минут
+        - Исключаем брони, созданные менее чем за час до начала слота
+        """
+        now = datetime.now()
+
+        query = (
+            select(Booking)
+            .options(
+                selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                selectinload(Booking.adult_user)
+            )
+            .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+            .where(
+                and_(
+                    Booking.booking_status == BookingStatus.active,
+                    Booking.payment_status == PaymentStatus.not_paid,
+                    # Исключаем брони, созданные менее чем за час до начала слота
+                    Booking.created_at < ExcursionSlot.start_datetime - timedelta(hours=1)
+                )
+            )
+        )
+
+        result = await self.session.execute(query)
+        bookings = result.scalars().all()
+
+        result_list = []
+        for booking in bookings:
+            created_deadline = booking.created_at + timedelta(hours=24)
+            slot_deadline = booking.slot.start_datetime
+            deadline = min(created_deadline, slot_deadline)
+
+            # Проверяем, что сейчас = дедлайн - 1 час (с погрешностью 6 минут)
+            time_to_deadline = (deadline - now).total_seconds() / 3600
+            if 0.9 <= time_to_deadline <= 1.1:  # от 54 минут до 66 минут
+                result_list.append((booking, deadline))
+
+        return result_list
+
+
+    async def get_paid_bookings_for_reminder(self, hours_before: int = 24) -> List[Booking]:
+        """
+        Найти оплаченные бронирования для напоминания об экскурсии за сутки до нее.
+        Условия:
+        - Статус active, оплата paid
+        - До начала слота осталось hours_before ± 1 час
+        """
+        now = datetime.now()
+        target_start = now + timedelta(hours=hours_before - 1)  # на час раньше
+        target_end = now + timedelta(hours=hours_before + 1)    # на час позже
+
+        query = (
+            select(Booking)
+            .options(
+                selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                selectinload(Booking.adult_user)
+            )
+            .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+            .where(
+                and_(
+                    Booking.booking_status == BookingStatus.active,
+                    Booking.payment_status == PaymentStatus.paid,
+                    ExcursionSlot.start_datetime >= target_start,
+                    ExcursionSlot.start_datetime <= target_end
+                )
+            )
+        )
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
     async def cancel_booking(
         self,
         booking_id: int,
@@ -524,10 +600,3 @@ class BookingManager(BaseManager):
             error_msg = f"Ошибка отмены бронирования: {str(e)}"
             self.logger.error(error_msg, exc_info=True)
             return False, error_msg, None
-
-
-# TODO: Создать отдельный процесс (фоновую задачу), который:
-# 1. Находит активные бронирования на прошедшие слоты (start_datetime < now())
-# 2. Для неоплаченных - автоматически отменяет их (booking_status = cancelled)
-# 3. Для оплаченных - возможно, меняет статус на completed?
-# 4. Логирует все изменения

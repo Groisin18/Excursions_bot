@@ -4,7 +4,7 @@ from typing import Tuple, Optional, Dict, List, Union
 from datetime import datetime, timedelta, date
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
+from sqlalchemy import select, and_
 
 from .base import BaseManager
 from app.database.repositories import (
@@ -474,7 +474,7 @@ class SlotManager(BaseManager):
         max_slots_per_day: Optional[int] = None
     ) -> Union[Tuple[Optional[str], List], Tuple[Optional[str], Dict]]:
         """
-        Универсальный метод получения расписания
+        Универсальный метод получения расписания всех экскурсий
         """
         # Определяем временной диапазон
         if period_type == SchedulePeriod.DATE:
@@ -583,7 +583,7 @@ class SlotManager(BaseManager):
         days_ahead: Optional[int] = None
     ) -> Tuple[Optional[Excursion], Optional[str], Union[List, Dict]]:
         """
-        Универсальный метод получения расписания экскурсии
+        Универсальный метод получения расписания конкретной экскурсии
 
         Args:
             exc_id: ID экскурсии
@@ -707,3 +707,39 @@ class SlotManager(BaseManager):
             period_type=SchedulePeriod.DATE,
             target_date=target_date
         )
+
+    async def get_slots_to_start(self) -> List[ExcursionSlot]:
+        """Получить слоты, которые должны начаться (перевод в in_progress)"""
+        now = datetime.now()
+
+        query = (
+            select(ExcursionSlot)
+            .where(
+                and_(
+                    ExcursionSlot.status == SlotStatus.scheduled,
+                    ExcursionSlot.start_datetime <= now,
+                    ExcursionSlot.end_datetime > now
+                )
+            )
+        )
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
+
+    async def get_slots_to_complete(self) -> List[ExcursionSlot]:
+        """Получить слоты, которые должны завершиться (перевод в completed)"""
+        now = datetime.now()
+
+        query = (
+            select(ExcursionSlot)
+            .where(
+                and_(
+                    ExcursionSlot.status.in_([SlotStatus.scheduled, SlotStatus.in_progress]),
+                    ExcursionSlot.end_datetime <= now
+                )
+            )
+        )
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
