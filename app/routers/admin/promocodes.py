@@ -120,7 +120,6 @@ async def create_promocode_start(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Произошла ошибка при начале создания промокода", reply_markup=excursions_submenu())
         await state.clear()
 
-
 @router.message(CreatePromocode.waiting_for_code)
 async def handle_promocode_code(message: Message, state: FSMContext):
     """Обработка ввода кода промокода"""
@@ -174,7 +173,6 @@ async def handle_promocode_code(message: Message, state: FSMContext):
         await message.answer("Произошла ошибка при обработке кода промокода", reply_markup=excursions_submenu())
         await state.clear()
 
-
 @router.callback_query(F.data.startswith("promo_type:"))
 async def handle_promocode_type(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора типа промокода"""
@@ -208,7 +206,6 @@ async def handle_promocode_type(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка обработки типа промокода: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка при выборе типа промокода", reply_markup=excursions_submenu())
         await state.clear()
-
 
 @router.message(CreatePromocode.waiting_for_value)
 async def handle_promocode_value(message: Message, state: FSMContext):
@@ -272,7 +269,6 @@ async def handle_promocode_value(message: Message, state: FSMContext):
         await message.answer("Произошла ошибка при обработке значения скидки", reply_markup=excursions_submenu())
         await state.clear()
 
-
 @router.message(CreatePromocode.waiting_for_usage_limit)
 async def handle_promocode_usage_limit(message: Message, state: FSMContext):
     """Обработка ввода лимита использований"""
@@ -330,7 +326,6 @@ async def handle_promocode_usage_limit(message: Message, state: FSMContext):
         await message.answer("Произошла ошибка при обработке лимита использований", reply_markup=excursions_submenu())
         await state.clear()
 
-
 @router.callback_query(F.data.startswith("promo_duration:"))
 async def handle_promocode_duration(callback: CallbackQuery, state: FSMContext):
     """Обработка выбора срока действия промокода"""
@@ -357,7 +352,6 @@ async def handle_promocode_duration(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка обработки срока действия: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка при выборе срока действия", reply_markup=excursions_submenu())
         await state.clear()
-
 
 @router.callback_query(F.data == "promo_custom_duration")
 async def handle_custom_duration(callback: CallbackQuery, state: FSMContext):
@@ -414,7 +408,6 @@ async def handle_promocode_custom_duration(message: Message, state: FSMContext):
         await message.answer("Произошла ошибка при выборе срока действия", reply_markup=excursions_submenu())
         await state.clear()
 
-
 @router.callback_query(F.data == "cancel_promo_creation")
 async def cancel_promo_creation(callback: CallbackQuery, state: FSMContext):
     """Отмена создания промокода"""
@@ -432,7 +425,6 @@ async def cancel_promo_creation(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка отмены создания промокода: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
         await state.clear()
-
 
 async def show_promocode_summary(message: Message, state: FSMContext):
     """Показать сводку по промокоду для подтверждения"""
@@ -466,7 +458,6 @@ async def show_promocode_summary(message: Message, state: FSMContext):
     summary += "\nВсё верно?"
 
     await message.answer(summary, reply_markup=promo_creation_confirmation_menu())
-
 
 @router.callback_query(F.data == "confirm_create_promo")
 async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
@@ -572,7 +563,6 @@ async def edit_promo_data(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer("Произошла ошибка при начале редактирования", reply_markup=excursions_submenu())
         await state.clear()
 
-
 @router.callback_query(F.data == "back_to_promo_summary")
 async def back_to_promo_summary(callback: CallbackQuery, state: FSMContext):
     """Возврат к сводке промокода"""
@@ -585,7 +575,6 @@ async def back_to_promo_summary(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка возврата к сводке: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка при возврате к сводке", reply_markup=excursions_submenu())
         await state.clear()
-
 
 @router.callback_query(F.data.startswith("edit_promo_field:"))
 async def edit_promo_field(callback: CallbackQuery, state: FSMContext):
@@ -654,8 +643,6 @@ async def edit_promo_field(callback: CallbackQuery, state: FSMContext):
         await state.clear()
 
 
-
-
 # ===== ОБРАБОТЧИКИ ДЛЯ ПРОМОКОДОВ =====
 
 
@@ -670,8 +657,6 @@ async def list_promocodes_callback(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка в list_promocodes: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
-
-
 
 @router.callback_query(F.data == "archive_promocodes")
 async def archive_promocodes_callback(callback: CallbackQuery):
@@ -721,9 +706,6 @@ async def archive_promocodes_callback(callback: CallbackQuery):
     except Exception as e:
         logger.error(f"Ошибка показа архивных промокодов: {e}", exc_info=True)
         await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
-
-
-
 
 @router.callback_query(F.data == "promocodes_stats")
 async def promocodes_stats_callback(callback: CallbackQuery):
