@@ -546,3 +546,334 @@ async def test_auto_complete_excursions_lock_failed(mock_redis_client, monkeypat
     with patch("app.services.scheduler.tasks.SlotManager") as mock_slot_manager:
         await auto_complete_excursions()
         mock_slot_manager.assert_not_called()
+
+
+# ========== ТЕСТЫ ДЛЯ notify_admins_about_slots_without_captain ==========
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_success(mock_redis_client, monkeypatch):
+    """Тест успешной отправки уведомлений о слотах без капитана."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    # Создаем тестовые слоты
+    mock_slot1 = MagicMock()
+    mock_slot1.id = 101
+    mock_slot1.start_datetime = datetime.now() + timedelta(hours=47)
+    mock_slot1.excursion.name = "Морская прогулка"
+
+    mock_slot2 = MagicMock()
+    mock_slot2.id = 102
+    mock_slot2.start_datetime = datetime.now() + timedelta(hours=30)
+    mock_slot2.excursion.name = "Рыбалка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot1, mock_slot2]
+
+    # Создаем тестовых администраторов
+    mock_admin1 = MagicMock()
+    mock_admin1.telegram_id = 111111
+    mock_admin2 = MagicMock()
+    mock_admin2.telegram_id = 222222
+
+    mock_user_manager.get_all_admins.return_value = [mock_admin1, mock_admin2]
+
+    # Redis возвращает None (уведомление еще не отправлялось)
+    mock_redis.client.get.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    # Импортируем новую функцию
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    # Проверяем вызовы
+    mock_slot_manager.get_slots_without_captain.assert_called_once_with(hours_before=48)
+    mock_user_manager.get_all_admins.assert_called_once()
+
+    # Должно быть отправлено 2 сообщения (двум админам)
+    assert mock_bot.send_message.call_count == 2
+    assert mock_redis.client.setex.call_count == 2  # Для каждого админа свой ключ
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_no_slots(mock_redis_client, monkeypatch):
+    """Тест когда нет слотов без капитана."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_slot_manager.get_slots_without_captain.return_value = []
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    mock_slot_manager.get_slots_without_captain.assert_called_once()
+    mock_bot.send_message.assert_not_called()
+    mock_redis.client.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_no_admins(mock_redis_client, monkeypatch):
+    """Тест когда нет администраторов в базе."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    mock_slot = MagicMock()
+    mock_slot.id = 101
+    mock_slot.start_datetime = datetime.now() + timedelta(hours=47)
+    mock_slot.excursion.name = "Морская прогулка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot]
+    mock_user_manager.get_all_admins.return_value = []
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    mock_user_manager.get_all_admins.assert_called_once()
+    mock_bot.send_message.assert_not_called()
+    mock_redis.client.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_duplicate_prevention(mock_redis_client, monkeypatch):
+    """Тест предотвращения дублей уведомлений."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    mock_slot = MagicMock()
+    mock_slot.id = 101
+    mock_slot.start_datetime = datetime.now() + timedelta(hours=47)
+    mock_slot.excursion.name = "Морская прогулка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot]
+
+    mock_admin = MagicMock()
+    mock_admin.telegram_id = 111111
+
+    mock_user_manager.get_all_admins.return_value = [mock_admin]
+
+    # Redis возвращает "1" - уведомление уже отправлялось в последние 12 часов
+    mock_redis.client.get.return_value = "1"
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    mock_slot_manager.get_slots_without_captain.assert_called_once()
+    mock_user_manager.get_all_admins.assert_called_once()
+    mock_bot.send_message.assert_not_called()
+    mock_redis.client.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_some_admins_without_telegram(mock_redis_client, monkeypatch):
+    """Тест когда некоторые администраторы не имеют telegram_id."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    mock_slot = MagicMock()
+    mock_slot.id = 101
+    mock_slot.start_datetime = datetime.now() + timedelta(hours=47)
+    mock_slot.excursion.name = "Морская прогулка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot]
+
+    # Один админ с telegram_id, другой - без
+    mock_admin1 = MagicMock()
+    mock_admin1.telegram_id = 111111
+    mock_admin2 = MagicMock()
+    mock_admin2.telegram_id = None
+
+    mock_user_manager.get_all_admins.return_value = [mock_admin1, mock_admin2]
+
+    mock_redis.client.get.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    # Должно быть отправлено только одно сообщение (админу с telegram_id)
+    mock_bot.send_message.assert_called_once()
+    assert mock_redis.client.setex.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_slots_grouping(mock_redis_client, monkeypatch):
+    """Тест правильной группировки слотов по датам в сообщении."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    # Создаем слоты на разные даты
+    today = datetime.now()
+
+    mock_slot1 = MagicMock()
+    mock_slot1.id = 101
+    mock_slot1.start_datetime = today + timedelta(hours=47)
+    mock_slot1.excursion.name = "Морская прогулка"
+
+    mock_slot2 = MagicMock()
+    mock_slot2.id = 102
+    mock_slot2.start_datetime = today + timedelta(hours=46)
+    mock_slot2.excursion.name = "Морская прогулка"  # Та же дата
+
+    mock_slot3 = MagicMock()
+    mock_slot3.id = 103
+    mock_slot3.start_datetime = today + timedelta(hours=25)  # Другой день
+    mock_slot3.excursion.name = "Рыбалка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot1, mock_slot2, mock_slot3]
+
+    mock_admin = MagicMock()
+    mock_admin.telegram_id = 111111
+    mock_user_manager.get_all_admins.return_value = [mock_admin]
+
+    mock_redis.client.get.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    # Проверяем, что сообщение было отправлено
+    mock_bot.send_message.assert_called_once()
+
+    # Проверяем переданный текст (можно получить аргументы вызова)
+    call_args = mock_bot.send_message.call_args[1]
+    message_text = call_args['text']
+
+    # Проверяем, что в сообщении есть обе даты
+    date1 = (today + timedelta(hours=47)).strftime('%d.%m.%Y')
+    date2 = (today + timedelta(hours=25)).strftime('%d.%m.%Y')
+
+    assert date1 in message_text
+    assert date2 in message_text
+
+    # Проверяем, что названия экскурсий присутствуют
+    assert "Морская прогулка" in message_text
+    assert "Рыбалка" in message_text
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_bot_not_available(mock_redis_client, monkeypatch):
+    """Тест когда экземпляр бота недоступен."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    # Возвращаем None вместо бота
+    monkeypatch.setattr("app.services.scheduler.tasks.get_bot_instance", lambda: None)
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    mock_slot = MagicMock()
+    mock_slot.id = 101
+    mock_slot.start_datetime = datetime.now() + timedelta(hours=47)
+    mock_slot.excursion.name = "Морская прогулка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot]
+
+    mock_admin = MagicMock()
+    mock_admin.telegram_id = 111111
+    mock_user_manager.get_all_admins.return_value = [mock_admin]
+
+    mock_redis.client.get.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    await notify_admins_about_slots_without_captain()
+
+    # Проверяем, что попытка отправки сообщения не делалась
+    # Не можем проверить mock_bot, но можем проверить, что метод send_message не вызывался
+    # (в этом тесте нет mock_bot, значит вызовов не было)
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_send_error(mock_redis_client, monkeypatch):
+    """Тест обработки ошибки при отправке сообщения."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis = mock_redis_for_tasks(mock_redis_client, monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    # Настраиваем бота на выброс исключения
+    mock_bot.send_message.side_effect = Exception("Ошибка отправки")
+
+    mock_slot_manager = AsyncMock()
+    mock_user_manager = AsyncMock()
+
+    mock_slot = MagicMock()
+    mock_slot.id = 101
+    mock_slot.start_datetime = datetime.now() + timedelta(hours=47)
+    mock_slot.excursion.name = "Морская прогулка"
+
+    mock_slot_manager.get_slots_without_captain.return_value = [mock_slot]
+
+    mock_admin = MagicMock()
+    mock_admin.telegram_id = 111111
+    mock_user_manager.get_all_admins.return_value = [mock_admin]
+
+    mock_redis.client.get.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.UserManager", lambda s: mock_user_manager)
+
+    from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+
+    # Функция не должна выбрасывать исключение
+    await notify_admins_about_slots_without_captain()
+
+    # setex не должен вызываться при ошибке отправки
+    mock_redis.client.setex.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_notify_admins_about_slots_without_captain_lock_failed(mock_redis_client, monkeypatch):
+    """Тест когда не удалось получить блокировку."""
+    mock_acquire_lock = AsyncMock(return_value=None)
+    mock_redis_client.acquire_lock = mock_acquire_lock
+    monkeypatch.setattr("app.services.scheduler.tasks.redis_client", mock_redis_client)
+
+    with patch("app.services.scheduler.tasks.SlotManager") as mock_slot_manager:
+        from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
+        await notify_admins_about_slots_without_captain()
+        mock_slot_manager.assert_not_called()

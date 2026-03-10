@@ -6,7 +6,7 @@
 import secrets
 
 from datetime import datetime, date, timedelta
-from typing import Optional, Tuple
+from typing import Optional, Tuple, List
 from sqlalchemy import select
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -554,3 +554,29 @@ class UserManager(BaseManager):
             "age": child_user.age,
             "weight": child_user.weight
     }
+
+    # app/database/managers/user_manager.py
+
+    async def get_all_admins(self) -> List[User]:
+        """
+        Получить список всех администраторов
+
+        Returns:
+            List[User]: список пользователей с ролью ADMIN
+        """
+        self._log_operation_start("get_all_admins")
+
+        try:
+            from app.database.models import UserRole
+
+            query = select(User).where(User.role == UserRole.ADMIN)
+            result = await self.session.execute(query)
+            admins = result.scalars().all()
+
+            self._log_operation_end("get_all_admins", success=True, count=len(admins))
+            return admins
+
+        except Exception as e:
+            self._log_operation_end("get_all_admins", success=False)
+            self.logger.error(f"Ошибка при получении списка администраторов: {e}", exc_info=True)
+            return []

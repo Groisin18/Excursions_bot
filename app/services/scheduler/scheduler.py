@@ -19,7 +19,8 @@ from app.utils.logging_config import get_logger
 
 from .tasks import (
     auto_cancel_unpaid_bookings, auto_complete_excursions,
-    send_excursion_reminder, send_payment_reminder
+    send_excursion_reminder, send_payment_reminder,
+    notify_admins_about_slots_without_captain
 )
 from .bot_instance import set_bot_instance
 
@@ -129,7 +130,16 @@ class SchedulerService:
             id='auto_complete_excursions',
             replace_existing=True,
             next_run_time=datetime.now()
-    )
+        )
+
+        # Проверка слотов без капитана - каждые 3 часа
+        self.scheduler.add_job(
+            notify_admins_about_slots_without_captain,
+            'interval',
+            hours=3,
+            id='notify_admins_about_slots_without_captain',
+            replace_existing=True
+        )
 
         self.scheduler.start()
         logger.info("Планировщик запущен")

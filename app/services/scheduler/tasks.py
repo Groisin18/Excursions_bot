@@ -4,7 +4,7 @@ from .bot_instance import get_bot_instance
 
 from app.services.redis import redis_client
 from app.database.unit_of_work import UnitOfWork
-from app.database.managers import BookingManager, SlotManager
+from app.database.managers import BookingManager, SlotManager, UserManager
 from app.database.models import SlotStatus
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
@@ -73,6 +73,7 @@ async def auto_cancel_unpaid_bookings():
                 raise
             finally:
                 await redis_client.release_lock(lock_key, token)
+
 
 async def send_payment_reminder():
     """Напоминание об оплате за час до дедлайна"""
@@ -231,5 +232,116 @@ async def auto_complete_excursions():
             except Exception as e:
                 logger.error(f"Ошибка при автозавершении слотов: {e}", exc_info=True)
                 raise
+            finally:
+                await redis_client.release_lock(lock_key, token)
+
+
+async def notify_admins_about_slots_without_captain():
+    """
+    Уведомление администраторов о слотах без капитана за 24 часа до начала
+    """
+    logger.info("Запуск проверки слотов без капитана")
+
+    lock_key = "scheduler:lock:no_captain_notify"
+    token = await redis_client.acquire_lock(lock_key, timeout=300)
+
+    if not token:
+        logger.warning("Не удалось получить блокировку для уведомлений о слотах без капитана")
+        return
+
+
+async def notify_admins_about_slots_without_captain():
+    """
+    Уведомление администраторов о слотах без капитана за 48 часов до начала
+    Запускается раз в 3 часа, блокировка повторной отправки на 12 часов
+    """
+    logger.info("Запуск проверки слотов без капитана")
+
+    lock_key = "scheduler:lock:no_captain_notify"
+    token = await redis_client.acquire_lock(lock_key, timeout=300)
+
+    if not token:
+        logger.warning("Не удалось получить блокировку для уведомлений о слотах без капитана")
+        return
+
+    async with async_session() as session:
+        async with UnitOfWork(session) as uow:
+            try:
+                slot_manager = SlotManager(session)
+                user_manager = UserManager(session)
+
+                # Ищем слоты без капитана за 48 часов до начала
+                slots_without_captain = await slot_manager.get_slots_without_captain(hours_before=48)
+
+                if not slots_without_captain:
+                    logger.debug("Нет слотов без капитана для уведомления")
+                    return
+
+                logger.info(f"Найдено слотов без капитана: {len(slots_without_captain)}")
+
+                # Получаем всех администраторов
+                admins = await user_manager.get_all_admins()
+
+                if not admins:
+                    logger.warning("Нет администраторов для отправки уведомлений")
+                    return
+
+                # Группируем слоты по датам для более компактного сообщения
+                slots_by_date = {}
+                for slot in slots_without_captain:
+                    date_key = slot.start_datetime.strftime('%d.%m.%Y')
+                    if date_key not in slots_by_date:
+                        slots_by_date[date_key] = []
+                    slots_by_date[date_key].append(slot)
+
+                _bot_instance = get_bot_instance()
+                if not _bot_instance:
+                    logger.error("Не удалось получить экземпляр бота")
+                    return
+
+                # Формируем и отправляем сообщение каждому администратору
+                for admin in admins:
+                    if not admin.telegram_id:
+                        logger.debug(f"Администратор {admin.id} не имеет telegram_id")
+                        continue
+
+                    # Проверяем, не отправляли ли уже уведомление для этих слотов
+                    # Ключ обновляется раз в 6 часов
+                    notification_key = f"notification:no_captain:{datetime.now().strftime('%Y%m%d%H')}"
+                    already_sent = await redis_client.client.get(notification_key)
+
+                    if already_sent:
+                        logger.debug("Уведомление о слотах без капитана уже отправлено в последние 6 часов")
+                        return
+
+                    # Формируем текст сообщения
+                    message_text = "ВНИМАНИЕ! Слоты без капитана\n\n"
+                    message_text += "Следующие экскурсии начнутся менее чем через 48 часов, но на них не назначен капитан:\n\n"
+
+                    for date_key, slots in slots_by_date.items():
+                        message_text += f"{date_key}:\n"
+                        for slot in slots:
+                            time_str = slot.start_datetime.strftime('%H:%M')
+                            message_text += f"  • {time_str} - {slot.excursion.name} "
+                            message_text += f"(ID: {slot.id})\n"
+                        message_text += "\n"
+
+                    message_text += "Не забудьте назначить капитанов!"
+
+                    try:
+                        await _bot_instance.send_message(
+                            chat_id=admin.telegram_id,
+                            text=message_text
+                        )
+                        logger.info(f"Уведомление о слотах без капитана отправлено администратору {admin.telegram_id}")
+
+                        # Сохраняем флаг отправки на 6 часов (21600 секунд)
+                        await redis_client.client.setex(notification_key, 21600, "1")
+
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки уведомления администратору {admin.telegram_id}: {e}")
+
+            except Exception as e:
+                logger.error(f"Ошибка при уведомлении о слотах без капитана: {e}", exc_info=True)
             finally:
                 await redis_client.release_lock(lock_key, token)

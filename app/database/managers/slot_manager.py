@@ -726,7 +726,6 @@ class SlotManager(BaseManager):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
-
     async def get_slots_to_complete(self) -> List[ExcursionSlot]:
         """Получить слоты, которые должны завершиться (перевод в completed)"""
         now = datetime.now()
@@ -743,3 +742,48 @@ class SlotManager(BaseManager):
 
         result = await self.session.execute(query)
         return list(result.scalars().all())
+
+    async def get_slots_without_captain(self, hours_threshold: int = 48) -> List[ExcursionSlot]:
+        """
+        Получить слоты без назначенного капитана, которые начнутся в ближайшие hours_threshold часов
+
+        Args:
+            hours_threshold: пороговое значение в часах (слоты, которые начнутся менее чем через это количество часов)
+
+        Returns:
+            List[ExcursionSlot]: список слотов без капитана
+        """
+        self._log_operation_start("get_slots_without_captain", hours_threshold=hours_threshold)
+
+        try:
+            now = datetime.now()
+            threshold_time = now + timedelta(hours=hours_threshold)
+
+            query = select(ExcursionSlot).where(
+                and_(
+                    ExcursionSlot.captain_id.is_(None),
+                    ExcursionSlot.start_datetime <= threshold_time,  # начало менее чем через threshold часов
+                    ExcursionSlot.start_datetime >= now,  # не просроченные (начиная с текущего момента)
+                    ExcursionSlot.status.in_([SlotStatus.scheduled, SlotStatus.confirmed])
+                )
+            ).options(
+                selectinload(ExcursionSlot.excursion)
+            ).order_by(
+                ExcursionSlot.start_datetime.asc()  # сортировка по возрастанию даты
+            )
+
+            result = await self.session.execute(query)
+            slots = result.scalars().all()
+
+            self._log_operation_end(
+                "get_slots_without_captain",
+                success=True,
+                count=len(slots),
+                hours_threshold=hours_threshold
+            )
+            return slots
+
+        except Exception as e:
+            self._log_operation_end("get_slots_without_captain", success=False)
+            self.logger.error(f"Ошибка при поиске слотов без капитана: {e}", exc_info=True)
+            return []

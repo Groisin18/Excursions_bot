@@ -98,7 +98,7 @@ async def show_unpaid_bookings(message: Message):
 async def cancel_booking(message: Message):
     """Отмена существующей записи"""
     logger.info(f"Администратор {message.from_user.id} хочет отменить запись")
-
+# TODO
     try:
         await message.answer("Функция 'Отменить запись' в разработке")
     except Exception as e:

@@ -125,7 +125,6 @@ async def exc_actions(callback:CallbackQuery):
         logger.error(f"Ошибка получения информации об экскурсии {exc_id}: {e}", exc_info=True)
         await callback.message.answer("Ошибка при получении информации об экскурсии", reply_markup=excursions_submenu())
 
-
 @router.message(F.text == "Назад")
 async def back_from_excursions_submenu(message: Message, state: FSMContext):
     """Возврат из подменю экскурсий в главное меню"""

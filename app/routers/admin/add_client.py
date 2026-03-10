@@ -272,9 +272,6 @@ async def confirm_add_client(callback: CallbackQuery, state: FSMContext):
                     weight=data['weight']
                 )
 
-        # Формируем виртуальный телефон для отображения
-        virtual_phone = f"{data['phone']}:{token}:by_admin"
-
         # Сообщение об успешном создании клиента
         success_text = (
             f"Клиент успешно добавлен!\n\n"
@@ -287,8 +284,6 @@ async def confirm_add_client(callback: CallbackQuery, state: FSMContext):
             f"Вес: {data['weight']} кг\n\n"
             f"Токен для регистрации:\n"
             f"<code>{token}</code>\n\n"
-            f"Виртуальный телефон (для записей через администратора):\n"
-            f"<code>{virtual_phone}</code>\n\n"
             f"Передайте этот токен клиенту. При вводе токена в боте он сможет "
             f"привязать свой Telegram и управлять аккаунтом самостоятельно."
         )

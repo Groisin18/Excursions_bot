@@ -57,7 +57,7 @@ async def show_captains_list(message: Message):
 async def captains_schedule(message: Message):
     """График работы капитанов"""
     logger.info(f"Администратор {message.from_user.id} запросил график работы капитанов")
-
+# TODO
     try:
         await message.answer("Функция 'График работы капитанов' в разработке")
     except Exception as e:
