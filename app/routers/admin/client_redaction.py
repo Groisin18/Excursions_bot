@@ -50,7 +50,6 @@ async def start_client_edit(message: Message, state: FSMContext):
         )
         await state.clear()
 
-
 @router.message(AdminEditClient.waiting_for_client_selection)
 async def search_client_for_edit(message: Message, state: FSMContext):
     """Поиск клиента для редактирования"""
@@ -99,7 +98,6 @@ async def search_client_for_edit(message: Message, state: FSMContext):
             "Ошибка при поиске клиента. Попробуйте снова или нажмите Отмена",
             reply_markup=cancel_button()
         )
-
 
 @router.callback_query(F.data.startswith("select_client_for_edit:"))
 async def select_client_for_edit(callback: CallbackQuery, state: FSMContext):
@@ -161,7 +159,6 @@ async def select_client_for_edit(callback: CallbackQuery, state: FSMContext):
         )
         await state.clear()
 
-
 async def show_client_edit_menu(message: Message, target_id: int, target_type: str, state: FSMContext):
     """Показать меню выбора поля для редактирования"""
 
@@ -219,7 +216,6 @@ async def show_client_edit_menu(message: Message, target_id: int, target_type: s
             reply_markup=client_edit_fields_menu(target_id, target_type, has_phone)
         )
         await state.set_state(AdminEditClient.waiting_for_field_selection)
-
 
 @router.callback_query(F.data.startswith("edit_target:"))
 async def select_edit_target(callback: CallbackQuery, state: FSMContext):
@@ -289,7 +285,6 @@ async def select_field_to_edit(callback: CallbackQuery, state: FSMContext):
         reply_markup=cancel_inline_button()
     )
     await state.set_state(state_mapping[field_name])
-
 
 @router.message(AdminEditClient.waiting_for_new_surname)
 async def process_new_surname(message: Message, state: FSMContext):
@@ -491,7 +486,6 @@ async def process_new_birth_date(message: Message, state: FSMContext):
             reply_markup=cancel_button()
         )
 
-
 @router.message(AdminEditClient.waiting_for_new_email)
 async def process_new_email(message: Message, state: FSMContext):
     """Обработка ввода нового email"""
@@ -531,7 +525,6 @@ async def process_new_email(message: Message, state: FSMContext):
             "Произошла ошибка. Попробуйте снова.",
             reply_markup=cancel_button()
         )
-
 
 @router.message(AdminEditClient.waiting_for_new_address)
 async def process_new_address(message: Message, state: FSMContext):

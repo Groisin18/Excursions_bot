@@ -25,6 +25,7 @@ from app.admin_panel.keyboards_adm import (
     cancel_create_virtual_child, confirm_booking,
     continue_booking_with_excess_weight, slot_already_booked_keyboard
 )
+from app.user_panel.keyboards import bookings_main_menu_keyboard
 from app.middlewares import AdminMiddleware
 from app.utils.calculators import PriceCalculator, WeightCalculator
 from app.utils.logging_config import get_logger
@@ -1386,6 +1387,7 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
         virtual_children = data.get('virtual_children', [])
         adult_weight = data.get('adult_weight')
         total_price = data.get('total_price')
+        payment_method = data.get('payment_method', 'cash')  # cash или card
 
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
@@ -1467,7 +1469,57 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
                     await state.clear()
                     return
 
-                # Формируем сообщение об успехе
+                # Получаем полную информацию о клиенте
+                client = await user_manager.user_repo.get_by_id(client_id)
+
+                # Отправляем уведомление клиенту, если у него есть telegram_id
+                if client and client.telegram_id:
+                    try:
+                        bot = callback.bot
+
+                        # Формируем текст уведомления
+                        notification_text = [
+                            f"Администратор {admin.full_name} зарегистрировал вас на экскурсию",
+                            "",
+                            f"Экскурсия: {data.get('slot_info', {}).get('excursion')}",
+                            f"Дата: {data.get('slot_info', {}).get('date')}",
+                            f"Время: {data.get('slot_info', {}).get('time')}",
+                            "",
+                            f"Взрослых: 1"
+                        ]
+
+                        if selected_children:
+                            notification_text.append(f"Детей (зарегистрированных): {len(selected_children)}")
+                        if virtual_children:
+                            notification_text.append(f"Детей (новых): {len(virtual_children)}")
+
+                        notification_text.append("")
+
+                        if payment_method == 'cash':
+                            notification_text.append(
+                                f"Сумма к оплате: {total_price} руб. (наличными при посадке)"
+                            )
+                        else:
+                            # Для оплаты картой можно добавить ссылку на оплату
+                            notification_text.append(
+                                f"Сумма к оплате: {total_price} руб."
+                            )
+                            notification_text.append(
+                                "Для оплаты перейдите в раздел 'Мои бронирования'"
+                            )
+
+                        await bot.send_message(
+                            chat_id=client.telegram_id,
+                            text="\n".join(notification_text),
+                            reply_markup=bookings_main_menu_keyboard()
+                        )
+
+                        logger.info(f"Уведомление о бронировании #{booking.id} отправлено клиенту {client.telegram_id}")
+
+                    except Exception as e:
+                        logger.error(f"Ошибка отправки уведомления клиенту {client.telegram_id}: {e}", exc_info=True)
+
+                # Формируем сообщение об успехе для администратора
                 success_text = [
                     f"Бронирование #{booking.id} успешно создано!",
                     f"",
@@ -1478,10 +1530,16 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
                     f"Время: {data.get('slot_info', {}).get('time')}",
                     f"",
                     f"Сумма к оплате: {total_price} руб.",
+                    f"Способ оплаты: {'наличные' if payment_method == 'cash' else 'уточнить'}",
                 ]
 
                 if virtual_children:
                     success_text.append(f"\nСоздано виртуальных детей: {len(virtual_children)}")
+
+                if client and client.telegram_id:
+                    success_text.append(f"\nУведомление клиенту отправлено")
+                elif client and not client.telegram_id:
+                    success_text.append(f"\nУ клиента нет Telegram ID для уведомления")
 
                 await callback.message.edit_text(
                     "\n".join(success_text),
@@ -1492,8 +1550,6 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
                     "Возврат в меню записей",
                     reply_markup=bookings_submenu()
                 )
-
-                # TODO отправить уведомление о брони клиенту, если он не виртуальный
 
                 logger.info(f"Бронирование {booking.id} создано администратором {admin_telegram_id}")
                 await state.clear()
