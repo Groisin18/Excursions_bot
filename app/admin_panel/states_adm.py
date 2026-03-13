@@ -91,7 +91,6 @@ class CreatePromocode(StatesGroup):
     waiting_for_custom_duration = State()
     waiting_for_confirmation = State()
 
-
 class UploadConcent(StatesGroup):
     """Состояния для загрузки файлов согласия"""
     waiting_for_file = State()

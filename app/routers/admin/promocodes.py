@@ -10,9 +10,10 @@ from app.database.session import async_session
 
 from app.admin_panel.states_adm import CreatePromocode
 from app.admin_panel.keyboards_adm import (
-    promocodes_menu, excursions_submenu,
+    promocodes_menu, excursions_submenu, promo_list_keyboard,
     promo_edit_field_menu, promo_type_selection_menu,
-    promo_duration_selection_menu, promo_creation_confirmation_menu
+    promo_duration_selection_menu, promo_creation_confirmation_menu,
+    promo_actions_keyboard, deactivate_promo_confirmation_keyboard
 )
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
@@ -648,64 +649,342 @@ async def edit_promo_field(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "list_promocodes")
 async def list_promocodes_callback(callback: CallbackQuery):
-    """Управление промокодами"""
-    logger.info(f"Администратор {callback.from_user.id} запросил список промокодов для управления")
-# TODO Реализовать клавиатуру (промокод) -> ([Статистика][Редактирование][Завершить действие][Назад])
+    """Показать список промокодов для выбора"""
+    logger.info(f"Администратор {callback.from_user.id} запросил список промокодов")
     await callback.answer()
+
     try:
-        await show_promocodes(callback.message)
+        async with async_session() as session:
+            promo_repo = PromoCodeRepository(session)
+            promocodes = await promo_repo.get_all(include_inactive=True)
+
+            if not promocodes:
+                await callback.message.answer(
+                    "Промокоды не найдены.",
+                    reply_markup=promocodes_menu()
+                )
+                return
+
+            await callback.message.answer(
+                "Выберите промокод для управления:",
+                reply_markup=promo_list_keyboard(promocodes)
+            )
+
     except Exception as e:
-        logger.error(f"Ошибка в list_promocodes: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        logger.error(f"Ошибка получения списка промокодов: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при получении списка промокодов",
+            reply_markup=excursions_submenu()
+        )
+
+@router.callback_query(F.data.startswith("select_promo:"))
+async def select_promocode_for_action(callback: CallbackQuery):
+    """Выбор промокода для действий"""
+    promo_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} выбрал промокод ID={promo_id}")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            promo_repo = PromoCodeRepository(session)
+            promocode = await promo_repo.get_by_id(promo_id)
+
+            if not promocode:
+                await callback.message.answer(
+                    "Промокод не найден.",
+                    reply_markup=promocodes_menu()
+                )
+                return
+
+            # Определяем активность промокода
+            now = datetime.now()
+            is_active = (
+                promocode.valid_from <= now <= promocode.valid_until and
+                (not promocode.usage_limit or promocode.used_count < promocode.usage_limit)
+            )
+
+            # Формируем информацию о промокоде
+            if promocode.discount_type == DiscountType.percent:
+                discount_text = f"{promocode.discount_value}%"
+            else:
+                discount_text = f"{promocode.discount_value} руб."
+
+            usage_text = f"{promocode.used_count}"
+            if promocode.usage_limit:
+                usage_text += f" из {promocode.usage_limit}"
+
+            info = (
+                f"Промокод: {promocode.code}\n"
+                f"Скидка: {discount_text}\n"
+                f"Использовано: {usage_text}\n"
+                f"Действует: {promocode.valid_from.strftime('%d.%m.%Y %H:%M')} - {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Статус: {'Активен' if is_active else 'Неактивен'}\n\n"
+                f"Выберите действие:"
+            )
+
+            await callback.message.answer(
+                info,
+                reply_markup=promo_actions_keyboard(promo_id, is_active)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка выбора промокода: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка",
+            reply_markup=excursions_submenu()
+        )
+
+@router.callback_query(F.data.startswith("promo_stats:"))
+async def show_promocode_stats(callback: CallbackQuery):
+    """Показать статистику использования промокода"""
+    promo_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} запросил статистику промокода ID={promo_id}")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            promo_repo = PromoCodeRepository(session)
+            promocode = await promo_repo.get_by_id(promo_id)
+
+            if not promocode:
+                await callback.message.answer(
+                    "Промокод не найден.",
+                    reply_markup=promocodes_menu()
+                )
+                return
+
+            # Получаем статистику использования
+            # TODO: Добавить информацию о бронированиях с этим промокодом
+            # когда будет готова связь с Booking
+
+            if promocode.discount_type == DiscountType.percent:
+                discount_text = f"{promocode.discount_value}%"
+            else:
+                discount_text = f"{promocode.discount_value} руб."
+
+            # Статистика
+            stats = (
+                f"Статистика промокода {promocode.code}\n\n"
+                f"Тип скидки: {discount_text}\n"
+                f"Всего использований: {promocode.used_count}\n"
+            )
+
+            if promocode.usage_limit:
+                stats += f"Лимит использований: {promocode.usage_limit}\n"
+                remaining = promocode.remaining_uses
+                stats += f"Осталось использований: {remaining}\n"
+            else:
+                stats += "Лимит использований: неограниченно\n"
+
+            stats += (
+                f"\nДата создания: {promocode.valid_from.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}\n"
+            )
+
+            if not promocode.is_valid:
+                if promocode.valid_until < datetime.now():
+                    stats += "\nСтатус: Срок действия истек"
+                elif promocode.used_count >= promocode.usage_limit:
+                    stats += "\nСтатус: Достигнут лимит использований"
+
+            await callback.message.answer(
+                stats,
+                reply_markup=promo_actions_keyboard(promo_id, promocode.is_valid)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики промокода: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при получении статистики",
+            reply_markup=excursions_submenu()
+        )
+
+@router.callback_query(F.data.startswith("deactivate_promo:"))
+async def deactivate_promocode(callback: CallbackQuery):
+    """Запрос на деактивацию промокода"""
+    promo_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} запросил деактивацию промокода ID={promo_id}")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            promo_repo = PromoCodeRepository(session)
+            promocode = await promo_repo.get_by_id(promo_id)
+
+            if not promocode:
+                await callback.message.answer(
+                    "Промокод не найден.",
+                    reply_markup=promocodes_menu()
+                )
+                return
+
+            if not promocode.is_valid:
+                await callback.message.answer(
+                    "Этот промокод уже неактивен.",
+                    reply_markup=promo_actions_keyboard(promo_id, False)
+                )
+                return
+
+            await callback.message.answer(
+                f"Вы уверены, что хотите завершить действие промокода {promocode.code}?\n\n"
+                f"После завершения промокод нельзя будет использовать для новых бронирований.",
+                reply_markup=deactivate_promo_confirmation_keyboard(promo_id)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка при запросе деактивации промокода: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка",
+            reply_markup=excursions_submenu()
+        )
+
+@router.callback_query(F.data.startswith("confirm_deactivate_promo:"))
+async def confirm_deactivate_promocode(callback: CallbackQuery):
+    """Подтверждение деактивации промокода"""
+    promo_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} подтвердил деактивацию промокода ID={promo_id}")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                promo_repo = PromoCodeRepository(uow.session)
+
+                # Деактивируем промокод (устанавливаем valid_until на сейчас)
+                success = await promo_repo.deactivate(promo_id)
+
+                if success:
+                    promocode = await promo_repo.get_by_id(promo_id)
+                    await callback.message.answer(
+                        f"Промокод {promocode.code} деактивирован.\n"
+                        f"Теперь он действителен только до {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}",
+                        reply_markup=promocodes_menu()
+                    )
+                else:
+                    await callback.message.answer(
+                        "Не удалось деактивировать промокод.",
+                        reply_markup=promocodes_menu()
+                    )
+
+    except Exception as e:
+        logger.error(f"Ошибка деактивации промокода: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при деактивации промокода",
+            reply_markup=excursions_submenu()
+        )
+
+@router.callback_query(F.data == "back_to_promo_list")
+async def back_to_promo_list(callback: CallbackQuery):
+    """Возврат к списку промокодов"""
+    logger.info(f"Администратор {callback.from_user.id} вернулся к списку промокодов")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            promo_repo = PromoCodeRepository(session)
+            promocodes = await promo_repo.get_all(include_inactive=True)
+
+            await callback.message.answer(
+                "Выберите промокод для управления:",
+                reply_markup=promo_list_keyboard(promocodes)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка возврата к списку промокодов: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка",
+            reply_markup=promocodes_menu()
+        )
+
+@router.callback_query(F.data == "back_to_promo_menu")
+async def back_to_promo_menu(callback: CallbackQuery):
+    """Возврат в главное меню промокодов"""
+    logger.info(f"Администратор {callback.from_user.id} вернулся в меню промокодов")
+    await callback.answer()
+
+    await callback.message.answer(
+        "Управление промокодами:",
+        reply_markup=promocodes_menu()
+    )
+
+
+# Заглушка для редактирования (будет реализовано позже)
+@router.callback_query(F.data.startswith("edit_promo:"))
+async def start_edit_promocode(callback: CallbackQuery):
+    """Начало редактирования промокода"""
+    promo_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} начал редактирование промокода ID={promo_id}")
+    await callback.answer()
+
+    await callback.message.answer(
+        "Редактирование промокода будет доступно в следующем обновлении.",
+        reply_markup=promo_actions_keyboard(promo_id, True)
+    )
+
 
 @router.callback_query(F.data == "archive_promocodes")
 async def archive_promocodes_callback(callback: CallbackQuery):
-    """Архивные промокоды"""
+    """Архивные промокоды - все истекшие и неактивные"""
     logger.info(f"Администратор {callback.from_user.id} запросил архивные промокоды")
     await callback.answer()
-
     try:
-
-
         async with async_session() as session:
             promo_repo = PromoCodeRepository(session)
-            # Получаем неактивные промокоды
             promocodes = await promo_repo.get_all(include_inactive=True)
 
-            # Фильтруем истекшие промокоды
-            expired_promocodes = [p for p in promocodes if p.valid_until < datetime.now()]
+            now = datetime.now()
+            inactive_promocodes = [
+                p for p in promocodes
+                if p.valid_until < now or (p.usage_limit and p.used_count >= p.usage_limit)
+            ]
 
-            if not expired_promocodes:
-                await callback.message.answer("Архивных (истекших) промокодов нет.")
+            inactive_promocodes.sort(key=lambda x: x.valid_from, reverse=True)
+
+            if not inactive_promocodes:
+                await callback.message.answer(
+                    "Архивных (неактивных) промокодов нет.",
+                    reply_markup=promocodes_menu()
+                )
                 return
 
-            response = "Архивные (истекшие) промокоды:\n\n"
+            response = "Архивные (неактивные) промокоды:\n\n"
 
-            for promo in expired_promocodes[:10]:  # Показываем первые 10
+            for promo in inactive_promocodes:
                 if promo.discount_type == DiscountType.percent:
-                    discount_text = f"{promo.discount_value}%"
+                    discount_str = f"{promo.discount_value} %"
                 else:
-                    discount_text = f"{promo.discount_value} руб."
+                    discount_str = f"{promo.discount_value} руб."
 
-                valid_until = promo.valid_until.strftime("%d.%m.%Y")
+                if promo.valid_until < now:
+                    end_reason = f"Закончил действие {promo.valid_until.strftime('%d.%m.%Y')}"
+                else:
+                    end_reason = f"Исчерпан лимит ({promo.used_count}/{promo.usage_limit})"
 
                 response += (
-                    f"Код: {promo.code}\n"
-                    f"Скидка: {discount_text}\n"
-                    f"Использовано: {promo.used_count}"
-                    f"{f'/{promo.usage_limit}' if promo.usage_limit else ''}\n"
-                    f"Истек: {valid_until}\n"
+                    f"{promo.code} | {discount_str}\n"
+                    f"Применен {promo.used_count} раз\n"
+                    f"{end_reason}\n"
                     "---\n"
                 )
 
-            if len(expired_promocodes) > 10:
-                response += f"\n... и еще {len(expired_promocodes) - 10} промокодов"
-
-            await callback.message.answer(response, reply_markup=promocodes_menu())
+            # Разбиваем на части, если сообщение слишком длинное
+            if len(response) > 4000:
+                # Отправляем частями
+                parts = [response[i:i+4000] for i in range(0, len(response), 4000)]
+                for i, part in enumerate(parts):
+                    if i == len(parts) - 1:
+                        await callback.message.answer(part, reply_markup=promocodes_menu())
+                    else:
+                        await callback.message.answer(part)
+            else:
+                await callback.message.answer(response, reply_markup=promocodes_menu())
 
     except Exception as e:
         logger.error(f"Ошибка показа архивных промокодов: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка", reply_markup=excursions_submenu())
+        await callback.message.answer(
+            "Произошла ошибка при получении архивных промокодов",
+            reply_markup=excursions_submenu()
+        )
 
 @router.callback_query(F.data == "promocodes_stats")
 async def promocodes_stats_callback(callback: CallbackQuery):

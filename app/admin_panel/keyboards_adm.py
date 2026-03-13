@@ -6,9 +6,11 @@ from aiogram.types import (
     InlineKeyboardButton
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from datetime import date
+from datetime import date, datetime
 
-from app.database.models import SlotStatus, TelegramFile, FileType, User
+from app.database.models import (
+    SlotStatus, TelegramFile, FileType, User, DiscountType
+    )
 
 
 # ===== ГЛАВНОЕ МЕНЮ =====
@@ -1207,6 +1209,146 @@ def promo_edit_field_menu() -> InlineKeyboardMarkup:
         InlineKeyboardButton(text="Лимит использований", callback_data="edit_promo_field:limit"),
         InlineKeyboardButton(text="Срок действия", callback_data="edit_promo_field:duration"),
         InlineKeyboardButton(text="Назад к сводке", callback_data="back_to_promo_summary")
+    )
+
+    builder.adjust(1)
+    return builder.as_markup()
+
+def promo_list_keyboard(promocodes: list) -> InlineKeyboardMarkup:
+    """
+    Клавиатура со списком активных промокодов для выбора
+
+    Args:
+        promocodes: Список объектов PromoCode
+    """
+    builder = InlineKeyboardBuilder()
+
+    now = datetime.now()
+    active_promos = [
+        p for p in promocodes
+        if p.valid_until >= now and (not p.usage_limit or p.used_count < p.usage_limit)
+    ]
+
+    if active_promos:
+        # Заголовок
+        builder.button(
+            text="АКТИВНЫЕ ПРОМОКОДЫ",
+            callback_data="no_action"
+        )
+
+        # Активные промокоды
+        for promo in active_promos:
+            # Определяем тип скидки для отображения
+            if promo.discount_type == DiscountType.percent:
+                discount_text = f"{promo.discount_value}%"
+            else:
+                discount_text = f"{promo.discount_value} руб."
+
+            # Формируем текст кнопки
+            button_text = f"{promo.code} | {discount_text}"
+
+            # Обрезаем если слишком длинное
+            if len(button_text) > 40:
+                button_text = button_text[:37] + "..."
+
+            builder.button(
+                text=button_text,
+                callback_data=f"select_promo:{promo.id}"
+            )
+    else:
+        builder.button(
+            text="Нет активных промокодов",
+            callback_data="no_action"
+        )
+
+    # Кнопка для показа неактивных промокодов
+    builder.button(
+        text="Показать неактивные промокоды",
+        callback_data="archive_promocodes"
+    )
+
+    # Управляющие кнопки
+    builder.button(
+        text="Назад в меню промокодов",
+        callback_data="back_to_promo_menu"
+    )
+
+    # Настраиваем расположение
+    rows = [1]  # заголовок или сообщение об отсутствии
+    if active_promos:
+        rows.extend([1] * len(active_promos))
+    rows.append(1)  # кнопка показа неактивных
+    rows.append(1)  # кнопка назад
+
+    builder.adjust(*rows)
+    return builder.as_markup()
+
+def promo_actions_keyboard(promo_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
+    """
+    Клавиатура действий с конкретным промокодом
+
+    Args:
+        promo_id: ID промокода
+        is_active: Активен ли промокод в данный момент
+    """
+    builder = InlineKeyboardBuilder()
+
+    # Статистика использования
+    builder.button(
+        text="Статистика",
+        callback_data=f"promo_stats:{promo_id}"
+    )
+
+    # Редактирование (только для активных)
+    if is_active:
+        builder.button(
+            text="Редактировать",
+            callback_data=f"edit_promo:{promo_id}"
+        )
+
+    # Завершение действия (только для активных)
+    if is_active:
+        builder.button(
+            text="Завершить действие",
+            callback_data=f"deactivate_promo:{promo_id}"
+        )
+
+    # Навигация
+    builder.button(
+        text="К списку промокодов",
+        callback_data="back_to_promo_list"
+    )
+
+    builder.button(
+        text="В меню промокодов",
+        callback_data="back_to_promo_menu"
+    )
+
+    # Настраиваем расположение: основные кнопки по 1, навигация вместе
+    if is_active:
+        builder.adjust(1, 1, 1, 2)
+    else:
+        builder.adjust(1, 1, 1)
+
+    return builder.as_markup()
+
+def deactivate_promo_confirmation_keyboard(promo_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура подтверждения деактивации промокода
+
+    Args:
+        promo_id: ID промокода
+    """
+    builder = InlineKeyboardBuilder()
+
+    builder.button(
+        text="Да, завершить действие",
+        callback_data=f"confirm_deactivate_promo:{promo_id}"
+    )
+
+    builder.button(
+        text="Нет, отмена",
+        callback_data=f"promo_actions:{promo_id}"
     )
 
     builder.adjust(1)
