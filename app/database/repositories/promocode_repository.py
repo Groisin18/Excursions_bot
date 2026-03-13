@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from typing import Optional, List
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, or_
 
 from .base import BaseRepository
 from app.database.models import PromoCode, DiscountType
@@ -30,7 +30,10 @@ class PromoCodeRepository(BaseRepository):
                     and_(
                         PromoCode.code == code,
                         PromoCode.valid_from <= datetime.now(),
-                        PromoCode.valid_until >= datetime.now(),
+                        or_(
+                            PromoCode.valid_until.is_(None),
+                            PromoCode.valid_until >= datetime.now()
+                        ),
                         PromoCode.used_count < PromoCode.usage_limit
                     )
                 )
@@ -46,7 +49,12 @@ class PromoCodeRepository(BaseRepository):
             query = select(PromoCode).order_by(PromoCode.valid_until.desc())
 
             if not include_inactive:
-                query = query.where(PromoCode.valid_until >= datetime.now())
+                query = query.where(
+                    or_(
+                        PromoCode.valid_until.is_(None),
+                        PromoCode.valid_until >= datetime.now()
+                    )
+                )
 
             result = await self._execute_query(query)
             return list(result.scalars().all())

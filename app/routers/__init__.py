@@ -6,6 +6,7 @@ from .admin.admin_main import router as admin_main_router
 from .admin.statistic import router as admin_statistic_router
 from .admin.excursions import router as admin_excursions_router
 from .admin.promocodes import router as admin_promocodes_router
+from .admin.promocode_edit import router as admin_promocode_edit_router
 from .admin.schedule import router as admin_schedule_router
 from .admin.slots import router as admin_slots_router
 from .admin.new_slot import router as admin_new_slot_router
@@ -33,6 +34,7 @@ __all__ = [
     'admin_statistic_router',
     'admin_excursions_router',
     'admin_promocodes_router',
+    'admin_promocode_edit_router',
     'admin_schedule_router',
     'admin_slots_router',
     'admin_new_slot_router',
@@ -62,27 +64,43 @@ def setup_routers(dp):
     """
     # Админские роутеры (с проверкой прав доступа)
     dp.include_router(admin_statistic_router)
+
     dp.include_router(admin_excursions_router)
+
+    dp.include_router(admin_promocode_edit_router)
     dp.include_router(admin_promocodes_router)
+
     dp.include_router(admin_schedule_router)
-    dp.include_router(admin_slots_router)
+
     dp.include_router(admin_new_slot_router)
+    dp.include_router(admin_slots_router)
+
     dp.include_router(admin_create_booking_router)
     dp.include_router(admin_bookings_router)
-    dp.include_router(admin_clients_routher)
+
     dp.include_router(admin_add_client_router)
     dp.include_router(admin_client_redaction_routher)
+    dp.include_router(admin_clients_routher)
+
     dp.include_router(admin_captains_router)
+
     dp.include_router(admin_finances_router)
+
     dp.include_router(admin_notification_router)
+
     dp.include_router(admin_settings_router)
+
     dp.include_router(admin_main_router)
 
     # Пользовательские роутеры
     dp.include_router(user_excursions_router)
+
     dp.include_router(user_create_booking_router)
+
     dp.include_router(test_payment_router)
+
     dp.include_router(account_main_router)
+
     dp.include_router(user_main_router)
 
     # Фолбэк роутер (всегда последний)

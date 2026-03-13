@@ -453,8 +453,8 @@ class PromoCode(Base):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False, index=True)
     discount_type: Mapped[DiscountType] = mapped_column(Enum(DiscountType), nullable=False)
     discount_value: Mapped[int] = mapped_column(Integer, nullable=False)
-    valid_from: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
-    valid_until: Mapped[datetime] = mapped_column(DateTime, nullable=False, index=True)
+    valid_from: Mapped[datetime] = mapped_column(DateTime, nullable=True, index=True)
+    valid_until: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True, index=True)
     usage_limit: Mapped[int] = mapped_column(Integer, default=1)
     used_count: Mapped[int] = mapped_column(Integer, default=0)
 
@@ -478,9 +478,12 @@ class PromoCode(Base):
     def is_valid(self) -> bool:
         """Действителен ли промокод"""
         now = datetime.now()
+        valid_until_check = self.valid_until is None or self.valid_until >= now
+        usage_limit_check = self.usage_limit == 0 or self.used_count < self.usage_limit
         return (
-            self.valid_from <= now <= self.valid_until and
-            self.used_count < self.usage_limit
+            self.valid_from <= now and
+            valid_until_check and
+            usage_limit_check
         )
 
     @property

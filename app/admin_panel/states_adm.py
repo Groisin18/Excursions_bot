@@ -91,6 +91,18 @@ class CreatePromocode(StatesGroup):
     waiting_for_custom_duration = State()
     waiting_for_confirmation = State()
 
+class EditPromocode(StatesGroup):
+    """Состояния для редактирования промокода"""
+    waiting_for_promo_selection = State()
+    waiting_for_field_selection = State()
+    waiting_for_new_code = State()
+    waiting_for_new_type = State()
+    waiting_for_new_value = State()
+    waiting_for_new_usage_limit = State()
+    waiting_for_new_duration = State()
+    waiting_for_new_custom_duration = State()
+    waiting_for_confirmation = State()
+
 class UploadConcent(StatesGroup):
     """Состояния для загрузки файлов согласия"""
     waiting_for_file = State()

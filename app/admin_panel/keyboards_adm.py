@@ -25,6 +25,7 @@ def admin_main_menu():
         "Статистика",
         "Капитаны",
         "Клиенты",
+        "Промокоды",
         "Финансы",
         "Уведомления",
         "Настройки",
@@ -34,7 +35,7 @@ def admin_main_menu():
     for text in categories:
         builder.add(KeyboardButton(text=text))
 
-    builder.adjust(3, 3, 3)
+    builder.adjust(3, 3, 2, 2)
 
     return builder.as_markup(
         resize_keyboard=True,
@@ -51,7 +52,6 @@ def excursions_submenu():
     buttons = [
         "Список видов экскурсий",
         "Новый вид экскурсии",
-        "Промокоды",
         "Расписание экскурсий",
         "Добавить экскурсию в расписание",
         "Назад"
@@ -60,7 +60,7 @@ def excursions_submenu():
     for button in buttons:
         builder.add(KeyboardButton(text=button))
 
-    builder.adjust(2, 2, 2)
+    builder.adjust(2, 2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def captains_submenu():
@@ -123,10 +123,10 @@ def statistics_submenu():
 
     buttons = [
         "Сегодня",
-        "Общая статистика",
+        "За месяц",
         "За период",
         "По экскурсиям",
-        "По капитанам",
+        "По капитанам (за месяц)",
         "Отказы и неявки",
         "Назад"
     ]
@@ -607,7 +607,7 @@ def exc_redaction_builder(exc_id:int):
 def inline_end_add_exc(exc_id:int):
     return InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text='Отредактировать данные', callback_data=f'redact_exc_data:{exc_id}'),
-     InlineKeyboardButton(text='В меню администратора', callback_data='back_to_admin_panel')],
+     InlineKeyboardButton(text='В главное админ-меню', callback_data='back_to_admin_panel')],
 ])
 
 def err_add_exc():
@@ -1121,9 +1121,9 @@ def promocodes_menu() -> InlineKeyboardMarkup:
     builder.add(
         InlineKeyboardButton(text="Создать промокод", callback_data="create_promocode"),
         InlineKeyboardButton(text="Управление промокодами", callback_data="list_promocodes"),
-        InlineKeyboardButton(text="Архивные промокоды", callback_data="archive_promocodes"),
+        InlineKeyboardButton(text="Неактивные промокоды", callback_data="archive_promocodes"),
         InlineKeyboardButton(text="Статистика промокодов", callback_data="promocodes_stats"),
-        InlineKeyboardButton(text="Назад", callback_data="back_to_exc_menu")
+        InlineKeyboardButton(text="В главное админ-меню", callback_data="back_to_admin_panel")
     )
 
     builder.adjust(2, 2, 1)
@@ -1223,11 +1223,7 @@ def promo_list_keyboard(promocodes: list) -> InlineKeyboardMarkup:
     """
     builder = InlineKeyboardBuilder()
 
-    now = datetime.now()
-    active_promos = [
-        p for p in promocodes
-        if p.valid_until >= now and (not p.usage_limit or p.used_count < p.usage_limit)
-    ]
+    active_promos = [p for p in promocodes if p.is_valid]
 
     if active_promos:
         # Заголовок

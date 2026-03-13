@@ -79,10 +79,8 @@ async def main():
 
 async def startup(dispatcher: Dispatcher):
     """Обработчик запуска бота"""
-    logger.info("Инициализация базы данных...")
     try:
         await init_models()
-        logger.info("База данных инициализирована")
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
         raise

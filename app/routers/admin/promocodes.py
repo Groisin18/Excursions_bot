@@ -1,5 +1,5 @@
 from aiogram import F, Router
-from aiogram.types import Message, CallbackQuery
+from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta
 
@@ -11,7 +11,7 @@ from app.database.session import async_session
 from app.admin_panel.states_adm import CreatePromocode
 from app.admin_panel.keyboards_adm import (
     promocodes_menu, excursions_submenu, promo_list_keyboard,
-    promo_edit_field_menu, promo_type_selection_menu,
+    admin_main_menu, promo_type_selection_menu,
     promo_duration_selection_menu, promo_creation_confirmation_menu,
     promo_actions_keyboard, deactivate_promo_confirmation_keyboard
 )
@@ -36,6 +36,11 @@ async def show_promocodes(message: Message):
     logger.info(f"Администратор {message.from_user.id} открыл управление промокодами")
 
     try:
+        await message.answer(
+            "Загружаю список промокодов...",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
         async with async_session() as session:
             promo_repo = PromoCodeRepository(session)
             promocodes = await promo_repo.get_all()
@@ -45,7 +50,7 @@ async def show_promocodes(message: Message):
                     "Активные промокоды не найдены.\n\n"
                     "Вы можете:\n"
                     "1. Создать новый промокод\n"
-                    "2. Посмотреть архивные промокоды\n"
+                    "2. Посмотреть неактивные промокоды\n"
                     "3. Вернуться в меню",
                     reply_markup=promocodes_menu()
                 )
@@ -61,7 +66,7 @@ async def show_promocodes(message: Message):
                     discount_text = f"{promo.discount_value} руб."
 
                 current_time = datetime.now()
-                is_expired = promo.valid_until < current_time
+                is_expired = promo.valid_until is not None and promo.valid_until < current_time
                 is_limit_reached = promo.used_count >= promo.usage_limit if promo.usage_limit else False
 
                 status = "Активен"
@@ -72,7 +77,10 @@ async def show_promocodes(message: Message):
 
                 # Форматируем даты
                 valid_from = promo.valid_from.strftime("%d.%m.%Y")
-                valid_until = promo.valid_until.strftime("%d.%m.%Y")
+                if promo.valid_until:
+                    valid_until = promo.valid_until.strftime("%d.%m.%Y")
+                else:
+                    valid_until = "бессрочно"
 
                 response += (
                     f"Код: {promo.code}\n"
@@ -93,7 +101,7 @@ async def show_promocodes(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка открытия промокодов: {e}", exc_info=True)
-        await message.answer("Произошла ошибка при получении списка промокодов", reply_markup=excursions_submenu())
+        await message.answer("Произошла ошибка при получении списка промокодов", reply_markup=admin_main_menu())
 
 
 # ===== СОЗДАНИЕ ПРОМОКОДОВ (FSM) =====
@@ -182,8 +190,7 @@ async def handle_promocode_type(callback: CallbackQuery, state: FSMContext):
     await callback.answer()
 
     try:
-        # Сохраняем тип промокода
-        discount_type = DiscountType.percent if promo_type == "percent" else DiscountType.fixed
+        discount_type = "percent" if promo_type == "percent" else "fixed"
         await state.update_data(discount_type=discount_type)
         await state.set_state(CreatePromocode.waiting_for_value)
 
@@ -225,12 +232,12 @@ async def handle_promocode_value(message: Message, state: FSMContext):
 
         # Получаем сохраненные данные
         data = await state.get_data()
-        discount_type = data.get('discount_type')
+        discount_type_str = data.get('discount_type')
 
         try:
             value = int(message.text.strip())
 
-            if discount_type == DiscountType.percent:
+            if discount_type_str == "percent":
                 if value < 1 or value > 100:
                     await message.answer(
                         "Процент скидки должен быть от 1 до 100.\n"
@@ -245,12 +252,12 @@ async def handle_promocode_value(message: Message, state: FSMContext):
                     )
                     return
 
-            # Сохраняем значение и переходим к описанию
+            # Сохраняем значение
             await state.update_data(discount_value=value)
             await state.set_state(CreatePromocode.waiting_for_usage_limit)
 
             await message.answer(
-                f"Значение скидки: {value} {'%' if discount_type == DiscountType.percent else 'руб.'}\n\n"
+                f"Значение скидки: {value} {'%' if discount_type_str == 'percent' else 'руб.'}\n\n"
                 "Введите лимит использований промокода:\n"
                 "• Для неограниченного использования введите 0\n"
                 "• Для ограниченного использования введите число (например: 10, 50, 100)\n"
@@ -432,7 +439,7 @@ async def show_promocode_summary(message: Message, state: FSMContext):
     data = await state.get_data()
 
     code = data.get('code', 'Не указан')
-    discount_type = data.get('discount_type')
+    discount_type_str = data.get('discount_type')
     discount_value = data.get('discount_value', 0)
     usage_limit = data.get('usage_limit')
     valid_until = data.get('valid_until')
@@ -441,7 +448,7 @@ async def show_promocode_summary(message: Message, state: FSMContext):
     summary = "Сводка по промокоду:\n\n"
     summary += f"Код: {code}\n"
 
-    if discount_type == DiscountType.percent:
+    if discount_type_str == "percent":
         summary += f"Тип скидки: Процентная ({discount_value}%)\n"
     else:
         summary += f"Тип скидки: Фиксированная ({discount_value} руб.)\n"
@@ -470,24 +477,27 @@ async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
     try:
         data = await state.get_data()
         code = data.get('code')
-        discount_type = data.get('discount_type')
+        discount_type_str = data.get('discount_type')  # строка
         discount_value = data.get('discount_value')
         usage_limit = data.get('usage_limit')
         valid_until = data.get('valid_until')
         valid_from = datetime.now()
+
+        # Преобразуем строку в enum
+        discount_type = DiscountType.percent if discount_type_str == "percent" else DiscountType.fixed
 
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 promo_repo = PromoCodeRepository(uow.session)
 
                 try:
-                    promocode = await promo_repo.create(
+                    promocode = await promo_repo.create_promocode(
                         code=code,
                         discount_type=discount_type,
                         discount_value=discount_value,
                         valid_from=valid_from,
                         valid_until=valid_until,
-                        usage_limit=usage_limit
+                        usage_limit=usage_limit if usage_limit is not None else 0
                     )
 
                     # Формируем сообщение об успехе
@@ -546,104 +556,6 @@ async def confirm_create_promocode(callback: CallbackQuery, state: FSMContext):
         await state.clear()
 
 
-# ===== РЕДАКТИРОВАНИЕ ПРОМОКОДА ===== TODO Надо делать
-
-@router.callback_query(F.data == "edit_promo_data")
-async def edit_promo_data(callback: CallbackQuery, state: FSMContext):
-    """Редактирование данных промокода перед созданием"""
-    logger.info(f"Администратор {callback.from_user.id} хочет редактировать данные промокода")
-    await callback.answer()
-
-    try:
-        await callback.message.answer(
-            "Выберите поле для редактирования:",
-            reply_markup=promo_edit_field_menu()
-        )
-    except Exception as e:
-        logger.error(f"Ошибка начала редактирования: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при начале редактирования", reply_markup=excursions_submenu())
-        await state.clear()
-
-@router.callback_query(F.data == "back_to_promo_summary")
-async def back_to_promo_summary(callback: CallbackQuery, state: FSMContext):
-    """Возврат к сводке промокода"""
-    logger.info(f"Администратор {callback.from_user.id} вернулся к сводке промокода")
-    await callback.answer()
-    try:
-        await state.set_state(CreatePromocode.waiting_for_confirmation)
-        await show_promocode_summary(callback.message, state)
-    except Exception as e:
-        logger.error(f"Ошибка возврата к сводке: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при возврате к сводке", reply_markup=excursions_submenu())
-        await state.clear()
-
-@router.callback_query(F.data.startswith("edit_promo_field:"))
-async def edit_promo_field(callback: CallbackQuery, state: FSMContext):
-    """Обработка выбора поля для редактирования"""
-    field = callback.data.split(":")[1]
-    logger.info(f"Администратор {callback.from_user.id} редактирует поле: {field}")
-    await callback.answer()
-
-    try:
-        # Конфигурация для каждого поля
-        field_configs = {
-            "code": {
-                "text": "Введите новый код промокода:",
-                "state": CreatePromocode.waiting_for_code
-            },
-            "type": {
-                "text": "Выберите новый тип скидки:",
-                "state": CreatePromocode.waiting_for_type,
-                "use_keyboard": True,
-                "keyboard": promo_type_selection_menu
-            },
-            "value": {
-                "text": "Введите новое значение скидки:",
-                "state": CreatePromocode.waiting_for_value
-            },
-            "limit": {
-                "text": "Введите новый лимит использований:",
-                "state": CreatePromocode.waiting_for_usage_limit
-            },
-            "duration": {
-                "text": "Выберите новый срок действия:",
-                "state": CreatePromocode.waiting_for_duration,
-                "use_keyboard": True,
-                "keyboard": lambda: promo_duration_selection_menu(
-                    include_cancel=True,
-                    cancel_callback="cancel_promo_creation",
-                    include_back=True,
-                    back_callback="edit_promo_data"
-                )
-            }
-        }
-
-        if field not in field_configs:
-            await callback.message.answer("Неизвестное поле для редактирования.")
-            return
-
-        config = field_configs[field]
-
-        # Устанавливаем состояние
-        await state.set_state(config["state"])
-
-        # Если поле использует клавиатуру, показываем ее
-        if config.get("use_keyboard"):
-            keyboard_func = config["keyboard"]
-            await callback.message.answer(
-                config["text"],
-                reply_markup=keyboard_func() if callable(keyboard_func) else keyboard_func
-            )
-        else:
-            # Для полей без клавиатуры просто запрашиваем ввод
-            await callback.message.answer(config["text"])
-
-    except Exception as e:
-        logger.error(f"Ошибка редактирования поля {field}: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при выборе поля для редактирования", reply_markup=excursions_submenu())
-        await state.clear()
-
-
 # ===== ОБРАБОТЧИКИ ДЛЯ ПРОМОКОДОВ =====
 
 
@@ -696,12 +608,7 @@ async def select_promocode_for_action(callback: CallbackQuery):
                 )
                 return
 
-            # Определяем активность промокода
-            now = datetime.now()
-            is_active = (
-                promocode.valid_from <= now <= promocode.valid_until and
-                (not promocode.usage_limit or promocode.used_count < promocode.usage_limit)
-            )
+            is_active = promocode.is_valid
 
             # Формируем информацию о промокоде
             if promocode.discount_type == DiscountType.percent:
@@ -713,11 +620,17 @@ async def select_promocode_for_action(callback: CallbackQuery):
             if promocode.usage_limit:
                 usage_text += f" из {promocode.usage_limit}"
 
+            valid_from_str = promocode.valid_from.strftime('%d.%m.%Y %H:%M')
+            if promocode.valid_until:
+                valid_until_str = promocode.valid_until.strftime('%d.%m.%Y %H:%M')
+            else:
+                valid_until_str = "бессрочно"
+
             info = (
                 f"Промокод: {promocode.code}\n"
                 f"Скидка: {discount_text}\n"
                 f"Использовано: {usage_text}\n"
-                f"Действует: {promocode.valid_from.strftime('%d.%m.%Y %H:%M')} - {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Действует: {valid_from_str} - {valid_until_str}\n"
                 f"Статус: {'Активен' if is_active else 'Неактивен'}\n\n"
                 f"Выберите действие:"
             )
@@ -778,13 +691,13 @@ async def show_promocode_stats(callback: CallbackQuery):
 
             stats += (
                 f"\nДата создания: {promocode.valid_from.strftime('%d.%m.%Y %H:%M')}\n"
-                f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M') if promocode.valid_until else 'бессрочноpromo_stats'}\n"
             )
 
             if not promocode.is_valid:
-                if promocode.valid_until < datetime.now():
+                if promocode.valid_until and promocode.valid_until < datetime.now():
                     stats += "\nСтатус: Срок действия истек"
-                elif promocode.used_count >= promocode.usage_limit:
+                elif (promocode.usage_limit != 0) and (promocode.used_count >= promocode.usage_limit):
                     stats += "\nСтатус: Достигнут лимит использований"
 
             await callback.message.answer(
@@ -907,21 +820,6 @@ async def back_to_promo_menu(callback: CallbackQuery):
         reply_markup=promocodes_menu()
     )
 
-
-# Заглушка для редактирования (будет реализовано позже)
-@router.callback_query(F.data.startswith("edit_promo:"))
-async def start_edit_promocode(callback: CallbackQuery):
-    """Начало редактирования промокода"""
-    promo_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} начал редактирование промокода ID={promo_id}")
-    await callback.answer()
-
-    await callback.message.answer(
-        "Редактирование промокода будет доступно в следующем обновлении.",
-        reply_markup=promo_actions_keyboard(promo_id, True)
-    )
-
-
 @router.callback_query(F.data == "archive_promocodes")
 async def archive_promocodes_callback(callback: CallbackQuery):
     """Архивные промокоды - все истекшие и неактивные"""
@@ -933,21 +831,18 @@ async def archive_promocodes_callback(callback: CallbackQuery):
             promocodes = await promo_repo.get_all(include_inactive=True)
 
             now = datetime.now()
-            inactive_promocodes = [
-                p for p in promocodes
-                if p.valid_until < now or (p.usage_limit and p.used_count >= p.usage_limit)
-            ]
+            inactive_promocodes = [p for p in promocodes if not p.is_valid]
 
             inactive_promocodes.sort(key=lambda x: x.valid_from, reverse=True)
 
             if not inactive_promocodes:
                 await callback.message.answer(
-                    "Архивных (неактивных) промокодов нет.",
+                    "Неактивных промокодов нет.",
                     reply_markup=promocodes_menu()
                 )
                 return
 
-            response = "Архивные (неактивные) промокоды:\n\n"
+            response = "Неактивные промокоды:\n\n"
 
             for promo in inactive_promocodes:
                 if promo.discount_type == DiscountType.percent:
@@ -1003,7 +898,10 @@ async def promocodes_stats_callback(callback: CallbackQuery):
                 return
 
             total_promocodes = len(promocodes)
-            active_promocodes = len([p for p in promocodes if p.valid_until >= datetime.now()])
+
+            # Исправлено: бессрочные считаются активными
+            now = datetime.now()
+            active_promocodes = len([p for p in promocodes if p.is_valid])
             expired_promocodes = total_promocodes - active_promocodes
 
             total_uses = sum(p.used_count for p in promocodes)
@@ -1012,7 +910,7 @@ async def promocodes_stats_callback(callback: CallbackQuery):
                 "Статистика промокодов:\n\n"
                 f"Всего промокодов: {total_promocodes}\n"
                 f"Активных: {active_promocodes}\n"
-                f"Истекших: {expired_promocodes}\n"
+                f"Неактивных: {expired_promocodes}\n"
                 f"Общее количество использований: {total_uses}\n\n"
             )
 
