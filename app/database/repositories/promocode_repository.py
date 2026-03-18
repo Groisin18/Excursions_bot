@@ -83,32 +83,27 @@ class PromoCodeRepository(BaseRepository):
                 self.logger.warning(f"Промокод с кодом '{code}' уже существует")
                 raise ValueError(f"Промокод с кодом '{code}' уже существует")
 
-            # Создаем промокод
-            promocode = PromoCode(
-                code=code,
-                discount_type=discount_type,
-                discount_value=discount_value,
-                valid_from=valid_from,
-                valid_until=valid_until,
-                usage_limit=usage_limit,
-                used_count=0
-            )
+            promo_data = {
+                'code': code,
+                'discount_type': discount_type,
+                'discount_value': discount_value,
+                'valid_from': valid_from,
+                'valid_until': valid_until,
+                'usage_limit': usage_limit,
+                'used_count': 0
+            }
 
-            self.session.add(promocode)
-            await self.session.commit()
-            await self.session.refresh(promocode)
+            promocode = await self._create(PromoCode, **promo_data)
 
             self.logger.info(f"Промокод создан: ID={promocode.id}, code='{promocode.code}'")
             return promocode
 
         except ValueError as e:
             self.logger.warning(f"Ошибка валидации при создании промокода: {e}")
-            await self.session.rollback()
             raise
 
         except Exception as e:
             self.logger.error(f"Ошибка создания промокода: {e}", exc_info=True)
-            await self.session.rollback()
             raise
 
     async def update_promocode(self, promocode_id: int, **update_data) -> bool:

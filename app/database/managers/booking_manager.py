@@ -480,7 +480,6 @@ class BookingManager(BaseManager):
 
         return result_list
 
-
     async def get_paid_bookings_for_reminder(self, hours_before: int = 24) -> List[Booking]:
         """
         Найти оплаченные бронирования для напоминания об экскурсии за сутки до нее.

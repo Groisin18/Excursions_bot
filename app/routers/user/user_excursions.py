@@ -73,7 +73,7 @@ async def excursions(message: Message):
 
             await message.answer(
                 excursions_text,
-                reply_markup=await all_excursions()()
+                reply_markup=await all_excursions()
             )
             logger.debug(f"Список экскурсий отправлен пользователю {message.from_user.id}")
 
@@ -134,7 +134,7 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
 
             excursions_text += "Выберите экскурсию для подробной информации или посмотрите общее расписание:"
 
-            keyboard = await all_excursions()()
+            keyboard = await all_excursions()
             await callback.message.edit_text(
                 excursions_text,
                 reply_markup=keyboard
@@ -404,7 +404,7 @@ async def show_excursion_schedule(callback: CallbackQuery):
                 text += "Пожалуйста, проверьте позже или выберите другую экскурсию."
                 await callback.message.edit_text(
                     text=text,
-                    reply_markup=await all_excursions()()
+                    reply_markup=await all_excursions()
                 )
                 return
 

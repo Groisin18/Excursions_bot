@@ -27,15 +27,17 @@ class PaymentRepository(BaseRepository):
     ) -> Payment:
         """Создать запись о платеже"""
         try:
-            payment = Payment(
-                booking_id=booking_id,
-                amount=amount,
-                payment_method=payment_method,
-                yookassa_payment_id=yookassa_payment_id,
-                status=YooKassaStatus.pending if payment_method == PaymentMethod.online else None
-            )
+            status = YooKassaStatus.pending if payment_method == PaymentMethod.online else None
 
-            return await self._create(payment)
+            payment_data = {
+                'booking_id': booking_id,
+                'amount': amount,
+                'payment_method': payment_method,
+                'yookassa_payment_id': yookassa_payment_id,
+                'status': status
+            }
+
+            return await self._create(Payment, **payment_data)
 
         except Exception as e:
             self.logger.error(f"Ошибка создания платежа: {e}", exc_info=True)

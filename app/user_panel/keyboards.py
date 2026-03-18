@@ -42,12 +42,15 @@ def inline_navigation() -> InlineKeyboardMarkup:
 
 # ===== ЛИЧНЫЙ КАБИНЕТ И РЕГИСТРАЦИЯ =====
 
-def registration_data_menu() -> InlineKeyboardMarkup:
+def registration_data_menu(has_children: bool = False) -> InlineKeyboardMarkup:
     """Меню личного кабинета"""
     builder = InlineKeyboardBuilder()
 
     builder.button(text='Редактировать мои данные', callback_data='redact_users_data')
+    if has_children:
+        builder.button(text='Данные детей', callback_data='child_choice')
     builder.button(text='Регистрация ребенка', callback_data='reg_child')
+    builder.button(text='Мои бронирования', callback_data='user_booking')
     builder.button(text='В главное меню', callback_data='back_to_main')
 
     builder.adjust(1)
@@ -140,6 +143,25 @@ def back_to_booking(booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура с кнопкой возврата к бронированию"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Назад к бронированию", callback_data=f"booking_detail:{booking_id}")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def active_booking_actions(booking_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для активного неоплаченного бронирования"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Оплатить", callback_data=f"pay_booking:{booking_id}")
+    builder.button(text="Отменить бронирование", callback_data=f"cancel_booking:{booking_id}")
+    builder.button(text="Назад к списку", callback_data="user_booking")
+    builder.button(text="В главное меню", callback_data="back_to_main")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def paid_booking_actions(booking_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для оплаченного бронирования"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Информация о возврате", callback_data=f"refund_info:{booking_id}")
+    builder.button(text="Назад к списку", callback_data="user_booking")
+    builder.button(text="В главное меню", callback_data="back_to_main")
     builder.adjust(1)
     return builder.as_markup()
 

@@ -11,8 +11,8 @@ from app.database.models import BookingStatus, PaymentStatus
 from app.utils.logging_config import get_logger
 from app.user_panel.keyboards import (
     main_menu, bookings_main_menu, empty_bookings,
-    bookings_list, booking_detail_keyboard, cancel_confirmation,
-    back_to_booking
+    bookings_list, paid_booking_actions, cancel_confirmation,
+    back_to_booking, active_booking_actions
 )
 
 router = Router(name="user_bookings")
@@ -20,7 +20,7 @@ logger = get_logger(__name__)
 
 
 @router.callback_query(F.data == 'user_booking')
-async def bookings_main_menu(callback: CallbackQuery):
+async def bookings_main(callback: CallbackQuery):
     """Главное меню раздела 'Мои бронирования'"""
     user_telegram_id = callback.from_user.id
     logger.info(f"Пользователь {user_telegram_id} открыл меню бронирований")
@@ -251,22 +251,22 @@ async def booking_detail(callback: CallbackQuery):
                     payment_date = payment['created_at'].strftime("%d.%m.%Y %H:%M") if payment['created_at'] else "дата неизвестна"
                     text += f"- {payment['amount']} руб. ({payment['payment_method']}), статус: {payment['status'] or 'завершён'}\n"
 
-            # Определяем, какие кнопки показывать
-            show_cancel = (
-                booking.booking_status == BookingStatus.active and
-                booking.payment_status == PaymentStatus.not_paid
-            )
-            show_refund_info = (booking.payment_status == PaymentStatus.paid)
-            show_pay = True
+            # Определяем, какую клавиатуру показать
+            if booking.booking_status == BookingStatus.active and booking.payment_status == PaymentStatus.not_paid:
+                # Активное неоплаченное - показываем кнопки оплаты и отмены
+                reply_markup = active_booking_actions(booking_id)
+
+            elif booking.payment_status == PaymentStatus.paid:
+                # Оплаченное - показываем информацию о возврате
+                reply_markup = paid_booking_actions(booking_id)
+
+            else:
+                # Для всех остальных случаев - только кнопка назад
+                reply_markup = bookings_main_menu()
 
             await callback.message.edit_text(
                 text,
-                reply_markup=booking_detail_keyboard(
-                    booking_id,
-                    show_cancel=show_cancel,
-                    show_refund_info=show_refund_info,
-                    show_pay=show_pay
-                )
+                reply_markup=reply_markup
             )
 
     except ValueError:
@@ -453,7 +453,7 @@ async def refund_info(callback: CallbackQuery):
 async def back_to_bookings_menu(callback: CallbackQuery):
     """Возврат в главное меню бронирований"""
     await callback.answer()
-    await bookings_main_menu(callback)
+    await bookings_main(callback)
 
 
 @router.callback_query(F.data == 'back_to_cabinet')
@@ -486,17 +486,6 @@ async def back_to_cabinet_from_bookings(callback: CallbackQuery):
             "Произошла ошибка при возврате в личный кабинет.",
             reply_markup=main_menu()
         )
-
-
-# TODO: Хэндлер для оплаты (будет реализован позже)
-@router.callback_query(F.data.startswith('pay_booking:'))
-async def pay_booking(callback: CallbackQuery):
-    """Оплата бронирования (в разработке)"""
-    await callback.answer()
-    await callback.message.answer(
-        "Функция оплаты находится в разработке. Пожалуйста, воспользуйтесь другими способами оплаты.",
-        reply_markup=main_menu()
-    )
 
 
 # TODO: Хэндлер для истории платежей (будет реализован позже)
