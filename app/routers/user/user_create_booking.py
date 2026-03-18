@@ -23,7 +23,7 @@ from app.utils.calculators import (
 
 from app.user_panel.keyboards import (
     main_menu, post_booking, public_schedule_options, booking_start,
-    participants, promocode, children_selection, child_weight, confirmation
+    participants, skip_promocode, children_selection, child_weight, confirmation
 )
 
 router = Router(name="user_create_booking")
@@ -334,7 +334,7 @@ async def handle_booking_alone(callback: CallbackQuery, state: FSMContext):
             "Вы записываетесь один на экскурсию.\n\n"
             "Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
             "Или нажмите кнопку ниже, чтобы пропустить этот шаг.",
-            reply_markup=promocode()
+            reply_markup=skip_promocode()
         )
 
     except Exception as e:
@@ -535,7 +535,7 @@ async def process_to_promo_code(message: Message, state: FSMContext):
         f"Общий вес участников: {total_weight} кг\n\n"
         f"Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
         f"Или нажмите кнопку ниже, чтобы пропустить этот шаг.",
-        reply_markup=promocode()
+        reply_markup=skip_promocode()
     )
 
 
@@ -845,7 +845,7 @@ async def process_promo_code(message: Message, state: FSMContext):
         if not promo_code:
             await message.answer(
                 "Пожалуйста, введите промокод или нажмите кнопку 'Пропустить'.",
-                reply_markup=await promocode()
+                reply_markup=skip_promocode()
             )
             return
 
@@ -858,7 +858,7 @@ async def process_promo_code(message: Message, state: FSMContext):
                 await message.answer(
                     "Промокод недействителен, истек или достиг лимита использований.\n\n"
                     "Пожалуйста, проверьте правильность ввода или пропустите этот шаг:",
-                    reply_markup=await promocode()
+                    reply_markup=skip_promocode()
                 )
                 return
 

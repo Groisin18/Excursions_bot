@@ -556,7 +556,7 @@ def participants(has_children: bool) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def promocode() -> InlineKeyboardMarkup:
+def skip_promocode() -> InlineKeyboardMarkup:
     """Клавиатура для шага промокода"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Пропустить промокод", callback_data="skip_promo_code")

@@ -15,9 +15,6 @@ from app.database.models import (
     Booking,PaymentStatus, YooKassaStatus, Payment, PaymentMethod
 )
 
-# Константа для временного окна возврата (вынести в отдельный модуль конфига)
-REFUND_HOURS_BEFORE = 4
-
 
 class PaymentManager(BaseManager):
     """Менеджер для бизнес-логики оплаты"""
@@ -62,7 +59,7 @@ class PaymentManager(BaseManager):
             # Проверка времени до начала экскурсии
             time_until_start = booking.slot.start_datetime - datetime.now()
             hours_until_start = time_until_start.total_seconds() / 3600
-            refund_hours_before = os.getenv(REFUND_HOURS_BEFORE, default=4)
+            refund_hours_before = int(os.getenv('REFUND_HOURS_BEFORE', default=4))
             if hours_until_start <= refund_hours_before:
                 reason = f"До начала экскурсии осталось меньше {refund_hours_before} часов"
                 self.logger.info(f"Возврат невозможен: {reason}")

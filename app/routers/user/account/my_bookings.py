@@ -433,6 +433,8 @@ async def refund_info(callback: CallbackQuery):
                     f"Вы можете отменить бронирование, но деньги не будут возвращены."
                 )
 
+                # TODO Реализовать отмену бронирования с возвратом и без
+
             await callback.message.edit_text(
                 text,
                 reply_markup=back_to_booking(booking_id)

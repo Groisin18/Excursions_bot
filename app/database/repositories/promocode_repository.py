@@ -25,20 +25,36 @@ class PromoCodeRepository(BaseRepository):
     async def get_valid_by_code(self, code: str) -> Optional[PromoCode]:
         """Получить валидный промокод по коду"""
         try:
+            now = datetime.now()
+            self.logger.info(f"Поиск промокода '{code}' в {now}")
+
+            # Сначала просто получаем промокод
             result = await self.session.execute(
-                select(PromoCode).where(
-                    and_(
-                        PromoCode.code == code,
-                        PromoCode.valid_from <= datetime.now(),
-                        or_(
-                            PromoCode.valid_until.is_(None),
-                            PromoCode.valid_until >= datetime.now()
-                        ),
-                        PromoCode.used_count < PromoCode.usage_limit
-                    )
-                )
+                select(PromoCode).where(PromoCode.code == code)
             )
-            return result.scalar_one_or_none()
+            promocode = result.scalar_one_or_none()
+
+            if not promocode:
+                self.logger.warning(f"Промокод '{code}' не найден")
+                return None
+
+            # Проверяем время
+            if promocode.valid_from and promocode.valid_from > now:
+                self.logger.warning(f"Промокод '{code}' еще не активен (c {promocode.valid_from})")
+                return None
+
+            if promocode.valid_until and promocode.valid_until < now:
+                self.logger.warning(f"Промокод '{code}' истек {promocode.valid_until}")
+                return None
+
+            # Проверяем лимит (0 = безлимит)
+            if promocode.usage_limit > 0 and promocode.used_count >= promocode.usage_limit:
+                self.logger.warning(f"Промокод '{code}' исчерпал лимит ({promocode.used_count}/{promocode.usage_limit})")
+                return None
+
+            self.logger.info(f"Промокод '{code}' действителен")
+            return promocode
+
         except Exception as e:
             self.logger.error(f"Ошибка поиска валидного промокода '{code}': {e}", exc_info=True)
             return None
