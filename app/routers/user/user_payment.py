@@ -15,14 +15,16 @@ from dotenv import load_dotenv
 from app.database.session import async_session
 from app.database.unit_of_work import UnitOfWork
 from app.database.repositories import (
-    BookingRepository, PaymentRepository, UserRepository
+    BookingRepository, UserRepository, PaymentRepository
 )
+from app.database.managers import PaymentManager
 from app.database.models import (
-    PaymentStatus, YooKassaStatus, PaymentMethod, BookingStatus, User, Payment
+    PaymentStatus, YooKassaStatus, BookingStatus, User
 )
 from app.utils.logging_config import get_logger
-from app.user_panel.keyboards import(
-    main_menu, booking_detail_keyboard
+from app.user_panel.keyboards import (
+    main_menu,
+    back_to_booking
 )
 
 # https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing#test-bank-card-data тестовые карты
@@ -125,10 +127,10 @@ async def initiate_payment(callback: CallbackQuery):
             return
 
         async with async_session() as session:
-            # Получаем репозитории
+            # Получаем репозитории и менеджеры
             booking_repo = BookingRepository(session)
             user_repo = UserRepository(session)
-            payment_repo = PaymentRepository(session)
+            payment_manager = PaymentManager(session)
 
             # Проверяем существование брони
             booking = await booking_repo.get_by_id(booking_id)
@@ -159,7 +161,7 @@ async def initiate_payment(callback: CallbackQuery):
                 )
                 await callback.message.answer(
                     "Это бронирование уже неактивно и не может быть оплачено.",
-                    reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
+                    reply_markup=back_to_booking(booking_id)
                 )
                 return
 
@@ -168,7 +170,7 @@ async def initiate_payment(callback: CallbackQuery):
                 logger.info(f"Бронирование {booking_id} уже оплачено")
                 await callback.message.answer(
                     "Это бронирование уже оплачено.",
-                    reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
+                    reply_markup=back_to_booking(booking_id)
                 )
                 return
 
@@ -177,7 +179,7 @@ async def initiate_payment(callback: CallbackQuery):
                 await callback.message.answer(
                     "Платеж для этого бронирования уже обрабатывается.\n"
                     "Пожалуйста, дождитесь завершения или попробуйте позже.",
-                    reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
+                    reply_markup=back_to_booking(booking_id)
                 )
                 return
 
@@ -204,12 +206,10 @@ async def initiate_payment(callback: CallbackQuery):
                 )
                 return
 
-            # Создаем запись о платеже в статусе pending
-            payment = await payment_repo.create_payment(
+            # Создаем запись о платеже через менеджер
+            payment = await payment_manager.create_payment_for_booking(
                 booking_id=booking_id,
-                amount=booking.total_price,
-                payment_method=PaymentMethod.online,
-                status=YooKassaStatus.pending
+                amount=booking.total_price
             )
             logger.info(f"Создана запись платежа #{payment.id} для бронирования {booking_id}")
 
@@ -238,7 +238,7 @@ async def initiate_payment(callback: CallbackQuery):
             # Отправляем инвойс
             await callback.bot.send_invoice(
                 chat_id=callback.message.chat.id,
-                title=f"Оплата экскурсии",
+                title="Оплата экскурсии",
                 description=description,
                 provider_token=PAYMENTS_TOKEN,
                 currency="rub",
@@ -250,7 +250,7 @@ async def initiate_payment(callback: CallbackQuery):
                 need_email=False,
                 need_shipping_address=False,
                 is_flexible=False,
-                provider_data=provider_data,  # Данные для чека (или None)
+                provider_data=provider_data,
                 disable_notification=False,
                 protect_content=False,
                 reply_to_message_id=None,
@@ -457,42 +457,23 @@ async def successful_payment_handler(message: Message):
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 booking_repo = BookingRepository(uow.session)
-                payment_repo = PaymentRepository(uow.session)
+                payment_manager = PaymentManager(uow.session)
 
-                # Получаем запись платежа
-                payment = await payment_repo.get_by_id(payment_id)
-                if not payment:
-                    logger.error(f"Запись платежа {payment_id} не найдена")
+                # Подтверждаем платеж через менеджер
+                success = await payment_manager.confirm_payment_success(
+                    payment_id=payment_id,
+                    yookassa_payment_id=payment_info.get('provider_payment_charge_id'),
+                    booking_repo=booking_repo
+                )
+
+                if not success:
+                    logger.error(f"Не удалось подтвердить платеж {payment_id}")
                     await message.answer(
-                        "Платеж прошел успешно, но запись о платеже не найдена.\n"
+                        "Платеж прошел успешно, но произошла ошибка при обновлении статуса.\n"
                         "Пожалуйста, свяжитесь с администратором.",
                         reply_markup=main_menu()
                     )
                     return
-
-                # Проверяем, что платеж еще в статусе pending
-                if payment.status != YooKassaStatus.pending:
-                    logger.warning(f"Платеж {payment_id} уже обработан (статус: {payment.status})")
-                    await message.answer(
-                        "Платеж уже был обработан ранее.",
-                        reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
-                    )
-                    return
-
-                # Обновляем статус платежа
-                await payment_repo.update(
-                    payment_id,
-                    status=YooKassaStatus.succeeded,
-                    yookassa_payment_id=payment_info.get('provider_payment_charge_id')
-                )
-                logger.info(f"Платеж {payment_id} обновлен: статус succeeded")
-
-                # Обновляем статус бронирования
-                await booking_repo.update(
-                    booking_id,
-                    payment_status=PaymentStatus.paid
-                )
-                logger.info(f"Бронирование {booking_id} обновлено: статус paid")
 
             # Отправляем подтверждение пользователю
             amount_rub = payment_info.get('total_amount') // 100
@@ -507,7 +488,7 @@ async def successful_payment_handler(message: Message):
 
             await message.answer(
                 success_text,
-                reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
+                reply_markup=back_to_booking(booking_id)
             )
 
             logger.info(f"Подтверждение оплаты отправлено пользователю {user_id}")
@@ -561,26 +542,23 @@ async def cancel_payment_handler(callback: CallbackQuery):
 
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
-                payment_repo = PaymentRepository(uow.session)
+                payment_manager = PaymentManager(uow.session)
 
-                # Получаем платеж
-                payment = await payment_repo.get_by_id(payment_id)
-                if not payment:
-                    logger.error(f"Платеж {payment_id} не найден")
-                    await callback.answer("Платеж не найден", show_alert=True)
+                # Отменяем платеж через менеджер
+                success = await payment_manager.cancel_pending_payment(payment_id)
+
+                if not success:
+                    logger.error(f"Не удалось отменить платеж {payment_id}")
+                    await callback.answer("Не удалось отменить платеж", show_alert=True)
                     return
 
-                # Обновляем статус платежа на canceled
-                await payment_repo.update(
-                    payment_id,
-                    status=YooKassaStatus.canceled
-                )
-                logger.info(f"Платеж {payment_id} отменен пользователем")
+                # Получаем платеж для booking_id
+                payment = await payment_manager.payment_repo.get_by_id(payment_id)
 
         await callback.answer("Платеж отменен")
         await callback.message.edit_text(
             "Платеж отменен. Вы можете оплатить позже в разделе 'Мои бронирования'.",
-            reply_markup=booking_detail_keyboard(payment.booking_id, show_pay=True)
+            reply_markup=back_to_booking(payment.booking_id)
         )
 
     except ValueError:

@@ -41,7 +41,7 @@ class PaymentRepository(BaseRepository):
             self.logger.error(f"Ошибка создания платежа: {e}", exc_info=True)
             raise
 
-    async def update_payment_status(
+    async def update_payment_status_by_id(
         self,
         yookassa_payment_id: str,
         status: YooKassaStatus,
@@ -70,6 +70,19 @@ class PaymentRepository(BaseRepository):
 
         except Exception as e:
             self.logger.error(f"Ошибка обновления статуса платежа {yookassa_payment_id}: {e}", exc_info=True)
+            return False
+
+    async def update_payment_by_id(
+        self,
+        payment_id: int,
+        **kwargs
+    ) -> bool:
+        """Обновить платеж по его ID"""
+        try:
+            await self._update(Payment, Payment.id == payment_id, **kwargs)
+            return True
+        except Exception as e:
+            self.logger.error(f"Ошибка обновления платежа {payment_id}: {e}")
             return False
 
     async def get_payment_by_yookassa_id(self, yookassa_payment_id: str) -> Optional[Payment]:

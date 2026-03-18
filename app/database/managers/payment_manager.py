@@ -1,9 +1,8 @@
 """Менеджер для бизнес-логики бронирований"""
 
-from datetime import datetime, timedelta
-from typing import Tuple, Optional, Dict, List
-from sqlalchemy import select, and_, or_
-from sqlalchemy.orm import selectinload
+import os
+from datetime import datetime
+from typing import Tuple, Dict
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -13,11 +12,8 @@ from app.database.repositories import (
     PaymentRepository
 )
 from app.database.models import (
-    Booking, BookingStatus, SlotStatus, ClientStatus, BookingChild,
-    ExcursionSlot, PaymentStatus, YooKassaStatus
+    Booking,PaymentStatus, YooKassaStatus, Payment, PaymentMethod
 )
-from app.database.managers import SlotManager
-from app.utils.calculators import PriceCalculator
 
 # Константа для временного окна возврата (вынести в отдельный модуль конфига)
 REFUND_HOURS_BEFORE = 4
@@ -66,9 +62,9 @@ class PaymentManager(BaseManager):
             # Проверка времени до начала экскурсии
             time_until_start = booking.slot.start_datetime - datetime.now()
             hours_until_start = time_until_start.total_seconds() / 3600
-
-            if hours_until_start <= REFUND_HOURS_BEFORE:
-                reason = f"До начала экскурсии осталось меньше {REFUND_HOURS_BEFORE} часов"
+            refund_hours_before = os.getenv(REFUND_HOURS_BEFORE, default=4)
+            if hours_until_start <= refund_hours_before:
+                reason = f"До начала экскурсии осталось меньше {refund_hours_before} часов"
                 self.logger.info(f"Возврат невозможен: {reason}")
                 return False, reason
 
@@ -250,6 +246,86 @@ class PaymentManager(BaseManager):
             self.logger.error(f"Ошибка инициации возврата: {e}", exc_info=True)
             return False, f"Ошибка при создании возврата: {str(e)}"
 
+    async def create_payment_for_booking(
+        self,
+        booking_id: int,
+        amount: int
+    ) -> Payment:
+        """
+        Создать запись о платеже для бронирования.
+        Используется перед отправкой инвойса.
+        """
+        self._log_operation_start("create_payment_for_booking", booking_id=booking_id, amount=amount)
+
+        try:
+            payment = await self.payment_repo.create_payment(
+                booking_id=booking_id,
+                amount=amount,
+                payment_method=PaymentMethod.online
+            )
+
+            self._log_operation_end(
+                "create_payment_for_booking",
+                success=True,
+                payment_id=payment.id
+            )
+            return payment
+
+        except Exception as e:
+            self._log_operation_end("create_payment_for_booking", success=False)
+            self.logger.error(f"Ошибка создания платежа: {e}", exc_info=True)
+            raise
+
+    async def confirm_payment_success(
+        self,
+        payment_id: int,
+        yookassa_payment_id: str,
+        booking_repo: BookingRepository = None
+    ) -> bool:
+        """
+        Подтвердить успешный платеж.
+        Обновляет статус платежа и (опционально) бронирования.
+        """
+        self._log_operation_start(
+            "confirm_payment_success",
+            payment_id=payment_id,
+            yookassa_id=yookassa_payment_id
+        )
+
+        try:
+            # Обновляем статус платежа
+            success = await self.payment_repo.update_payment_by_id(
+                payment_id,
+                status=YooKassaStatus.succeeded,
+                yookassa_payment_id=yookassa_payment_id
+            )
+
+            if not success:
+                self.logger.error(f"Не удалось обновить платеж {payment_id}")
+                return False
+
+            # Если передан репозиторий бронирований, обновляем статус брони
+            if booking_repo:
+                # Получаем платеж, чтобы узнать booking_id
+                payment = await self.payment_repo.get_payment_by_id(payment_id)
+                if payment:
+                    await booking_repo.update(
+                        payment.booking_id,
+                        payment_status=PaymentStatus.paid
+                    )
+                    self._log_business_event(
+                        "booking_paid",
+                        booking_id=payment.booking_id,
+                        payment_id=payment_id
+                    )
+
+            self._log_operation_end("confirm_payment_success", success=True)
+            return True
+
+        except Exception as e:
+            self._log_operation_end("confirm_payment_success", success=False)
+            self.logger.error(f"Ошибка подтверждения платежа: {e}", exc_info=True)
+            return False
 
 # TODO: Реализовать полноценную логику возврата:
 # - Интеграция с YooKassa API для создания возвратов
