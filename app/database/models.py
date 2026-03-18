@@ -127,8 +127,8 @@ class User(Base):
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     linked_to_parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     token_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
-    updated_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), onupdate=func.now(), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
     # Relationships
     bookings_as_adult: Mapped[List["Booking"]] = relationship(
@@ -333,7 +333,7 @@ class Booking(Base):
     client_status: Mapped[ClientStatus] = mapped_column(Enum(ClientStatus), default=ClientStatus.not_arrived)
     payment_status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.not_paid, index=True)
     promo_code_id: Mapped[Optional[int]] = mapped_column(ForeignKey("promo_codes.id"), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
     # Relationships
     slot: Mapped["ExcursionSlot"] = relationship("ExcursionSlot", back_populates="bookings")
@@ -390,7 +390,7 @@ class BookingChild(Base):
     child_user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     age_category: Mapped[str] = mapped_column(String(50), nullable=False)  # "до 3 лет", "4-7 лет", "8-12 лет", "13+ лет"
     calculated_price: Mapped[int] = mapped_column(Integer, nullable=False)  # Цена с учетом скидки
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now)
 
     # Relationships
     booking: Mapped["Booking"] = relationship("Booking", back_populates="booking_children")
@@ -409,7 +409,7 @@ class Payment(Base):
     payment_method: Mapped[PaymentMethod] = mapped_column(Enum(PaymentMethod), nullable=False)
     yookassa_payment_id: Mapped[str] = mapped_column(String(100), nullable=True, index=True)
     status: Mapped[YooKassaStatus] = mapped_column(Enum(YooKassaStatus), nullable=True, index=True)
-    created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
 
     # Relationships
     booking: Mapped["Booking"] = relationship("Booking", back_populates="payments")
@@ -597,7 +597,7 @@ class Notification(Base):
     user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     type: Mapped[NotificationType] = mapped_column(Enum(NotificationType), nullable=False, index=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    sent_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), index=True)
+    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
     is_delivered: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
 
     # Relationships
@@ -639,7 +639,7 @@ class TelegramFile(Base):
     file_name: Mapped[str] = mapped_column(String(255), nullable=False)
     file_size: Mapped[int] = mapped_column(Integer, nullable=False)
     uploaded_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
-    uploaded_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now(), nullable=False, index=True)
+    uploaded_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, nullable=False, index=True)
 
     # Relationships
     user: Mapped[Optional["User"]] = relationship("User", foreign_keys=[uploaded_by], back_populates="uploaded_files")

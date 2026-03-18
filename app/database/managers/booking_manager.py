@@ -17,7 +17,9 @@ from app.database.models import (
 )
 from app.database.managers import SlotManager
 from app.utils.calculators import PriceCalculator
+from app.utils.logging_config import get_logger
 
+logger = get_logger(__name__)
 
 class BookingManager(BaseManager):
     """Менеджер для бизнес-логики бронирований"""
@@ -414,6 +416,7 @@ class BookingManager(BaseManager):
         """Найти просроченные неоплаченные бронирования"""
         now = datetime.now()
 
+        # Загружаем все активные неоплаченные брони с отношениями
         query = (
             select(Booking)
             .options(
@@ -424,17 +427,32 @@ class BookingManager(BaseManager):
             .where(
                 and_(
                     Booking.booking_status == BookingStatus.active,
-                    Booking.payment_status == PaymentStatus.not_paid,
-                    or_(
-                        Booking.created_at + timedelta(hours=24) < now,
-                        ExcursionSlot.start_datetime < now
-                    )
+                    Booking.payment_status == PaymentStatus.not_paid
                 )
             )
         )
 
         result = await self.session.execute(query)
-        return list(result.scalars().all())
+        all_unpaid = list(result.scalars().all())
+
+        # Фильтруем в Python
+        expired = []
+        for booking in all_unpaid:
+            hours_since_created = (now - booking.created_at).total_seconds() / 3600
+            hours_until_start = (booking.slot.start_datetime - now).total_seconds() / 3600
+
+            condition_24h = hours_since_created >= 24
+            condition_start = hours_until_start <= 0
+
+            if condition_24h or condition_start:
+                expired.append(booking)
+                logger.debug(
+                    f"Бронь #{booking.id}: {hours_since_created:.1f}ч с создания, "
+                    f"{hours_until_start:.1f}ч до начала - ОТМЕНА"
+                )
+
+        logger.info(f"Всего неоплаченных: {len(all_unpaid)}, просроченных: {len(expired)}")
+        return expired
 
     async def get_bookings_for_payment_reminder(self) -> List[Tuple[Booking, datetime]]:
         """
