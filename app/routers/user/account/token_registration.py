@@ -314,7 +314,7 @@ async def reg_token_end(message: Message, state: FSMContext):
                     f"Адрес: {updated_user.address}\n"
                     f"Телефон: {updated_user.phone_number}\n"
                     f"Email: {updated_user.email}",
-                    reply_markup=await registration_data_menu()
+                    reply_markup=registration_data_menu()
                 )
 
         await state.clear()

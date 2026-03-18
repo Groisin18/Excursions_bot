@@ -317,7 +317,7 @@ async def reg_phone_and_end(message: Message, state: FSMContext):
             f"Вес: {final_user.weight} кг\n"
             f"Телефон: {final_user.phone}\n"
             f"Email: {final_user.email}",
-            reply_markup=await registration_data_menu()
+            reply_markup=registration_data_menu()
         )
 
         await state.clear()

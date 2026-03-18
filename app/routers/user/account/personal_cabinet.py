@@ -40,7 +40,7 @@ async def registration_data(message: Message, state: FSMContext):
             if user:
                 logger.debug(f"Пользователь {user_telegram_id} зарегистрирован, показываем кабинет")
                 has_children = await user_repo.user_has_children(user.id)
-                keyboard = await registration_data_menu(has_children=has_children)
+                keyboard = registration_data_menu(has_children=has_children)
 
                 user_info = (
                     f"Ваш личный кабинет\n\n"
@@ -172,7 +172,7 @@ async def back_to_cabinet(callback: CallbackQuery):
                 return
 
             has_children = await user_repo.user_has_children(user.id)
-            keyboard = await registration_data_menu(has_children=has_children)
+            keyboard = registration_data_menu(has_children=has_children)
 
             user_info = (
                 f"Ваш личный кабинет\n\n"

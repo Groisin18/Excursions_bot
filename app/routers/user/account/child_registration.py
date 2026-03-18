@@ -296,7 +296,7 @@ async def reg_child_address(message: Message, state: FSMContext):
             "Вы в любой момент можете посмотреть токены привязанных к вашему аккаунту детей в своем личном кабинете.\n"
             "Для превращения аккаунта ребенка в полноценный самостоятельный аккаунт ему нужно будет ввести данный токен при регистрации.\n"
             "После этого он сможет самостоятельно управлять аккаунтом со своего Телеграма, его данные и история экскурсий при этом сохранятся.\n",
-            reply_markup=await registration_data_menu(has_children=True)
+            reply_markup=registration_data_menu(has_children=True)
         )
 
         await state.clear()

@@ -376,7 +376,7 @@ async def show_excursion_public_detail(callback: CallbackQuery):
             await callback.answer()
             await callback.message.edit_text(
                 details,
-                reply_markup=await excursion_details(exc_id)
+                reply_markup=excursion_details(exc_id)
             )
 
     except Exception as e:
@@ -413,8 +413,7 @@ async def show_excursion_schedule(callback: CallbackQuery):
             for date_slots in slots_by_date.values():
                 all_slots.extend(date_slots)
 
-            keyboard = await excursion_schedule(all_slots)
-            await callback.message.edit_text(text, reply_markup=keyboard)
+            await callback.message.edit_text(text, reply_markup=excursion_schedule(all_slots))
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания экскурсии: {e}", exc_info=True)

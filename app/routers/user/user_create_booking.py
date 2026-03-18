@@ -134,7 +134,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 "adult_price": excursion.base_price
             })
 
-            await callback.message.edit_text(excursion_info, reply_markup=await booking_start())
+            await callback.message.edit_text(excursion_info, reply_markup=booking_start())
             await state.set_state(UserBookingStates.checking_weight)
 
             logger.info(
@@ -244,12 +244,12 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                 await callback.message.edit_text(
                     f"У вас зарегистрировано детей: {children_count}\n"
                     f"Вы хотите записаться на экскурсию:",
-                    reply_markup=await participants(user_has_children)
+                    reply_markup=participants(user_has_children)
                 )
             else:
                 await callback.message.edit_text(
                     f"Вы хотите записаться на экскурсию:",
-                    reply_markup=await participants(user_has_children)
+                    reply_markup=participants(user_has_children)
                 )
 
     except Exception as e:
@@ -334,7 +334,7 @@ async def handle_booking_alone(callback: CallbackQuery, state: FSMContext):
             "Вы записываетесь один на экскурсию.\n\n"
             "Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
             "Или нажмите кнопку ниже, чтобы пропустить этот шаг.",
-            reply_markup=await promocode()
+            reply_markup=promocode()
         )
 
     except Exception as e:
@@ -367,7 +367,7 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
                 await callback.message.edit_text(
                     "У вас нет зарегистрированных детей в системе.\n"
                     "Пожалуйста, зарегистрируйте детей (Главное меню -> Личный кабинет) или выберите 'Записываюсь только я'.",
-                    reply_markup=await participants(has_children=True)
+                    reply_markup=participants(has_children=True)
                 )
                 await callback.answer()
                 return
@@ -395,7 +395,7 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
             await callback.message.edit_text(
                 f"У вас {len(children)} зарегистрированных детей.\n"
                 f"Выберите детей, которые поедут с вами (максимум 5):",
-                reply_markup=await children_selection(children, [])
+                reply_markup=children_selection(children, [])
             )
 
     except Exception as e:
@@ -479,7 +479,7 @@ async def handle_child_selection(callback: CallbackQuery, state: FSMContext):
                     children_objects.append(child_obj)
 
             await callback.message.edit_reply_markup(
-                reply_markup=await children_selection(children_objects, selected_ids)
+                reply_markup=children_selection(children_objects, selected_ids)
             )
 
             await callback.answer(message_text)
@@ -535,7 +535,7 @@ async def process_to_promo_code(message: Message, state: FSMContext):
         f"Общий вес участников: {total_weight} кг\n\n"
         f"Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
         f"Или нажмите кнопку ниже, чтобы пропустить этот шаг.",
-        reply_markup=await promocode()
+        reply_markup=promocode()
     )
 
 
@@ -594,7 +594,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
                 f"У ребенка {first_child['full_name']} не указан вес в профиле.\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 25):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await child_weight(first_child["id"])
+                reply_markup=child_weight(first_child["id"])
             )
 
         else:
@@ -703,7 +703,7 @@ async def request_child_weight(message: Message, state: FSMContext):
                 f"Следующий ребенок без веса: {next_child['full_name']}\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 30):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await child_weight(next_child["id"])
+                reply_markup=child_weight(next_child["id"])
             )
         else:
             # Все дети обработаны, переходим дальше
@@ -799,7 +799,7 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
                 f"Следующий ребенок без веса: {next_child['full_name']}\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 30):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await child_weight(next_child["id"])
+                reply_markup=child_weight(next_child["id"])
             )
         else:
             # Все дети обработаны, переходим дальше
@@ -945,7 +945,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
                 f"У ребенка {first_child['full_name']} не указан вес в профиле.\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 25):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await child_weight(first_child["id"])
+                reply_markup=child_weight(first_child["id"])
             )
         else:
             # У всех детей есть вес - переходим к расчету стоимости
@@ -1037,7 +1037,7 @@ async def calculate_total_from_message(message: Message, state: FSMContext):
 
         await message.answer(
             summary,
-            reply_markup=await confirmation()
+            reply_markup=confirmation()
         )
 
     except Exception as e:

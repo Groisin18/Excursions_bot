@@ -47,7 +47,7 @@ async def redact_users_data(callback: CallbackQuery, state: FSMContext):
                 f"Телефон: {user.phone_number}\n"
                 f"Email: {user.email}\n\n"
                 "Выберите пункт, который хотите поменять",
-                reply_markup=await redaction_menu()
+                reply_markup=redaction_menu()
             )
 
     except Exception as e:
