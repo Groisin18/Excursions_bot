@@ -5,7 +5,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command, StateFilter
 from aiogram.fsm.context import FSMContext
 
-import app.user_panel.keyboards as main_kb
+from app.user_panel.keyboards import main_menu
 
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, excursions_submenu, captains_submenu, clients_submenu,
@@ -44,7 +44,7 @@ async def admin_start(message: Message):
 
     except Exception as e:
         logger.error(f"Ошибка при входе в админ-панель для пользователя {message.from_user.id}: {e}", exc_info=True)
-        await message.answer("Ошибка при загрузке админ-панели", reply_markup=main_kb.main)
+        await message.answer("Ошибка при загрузке админ-панели", reply_markup=main_menu())
 
 
 @router.message(Command("adminhelp"))
@@ -61,7 +61,7 @@ async def adminhelp_command(message: Message):
             '/dashboard - дашборд админа\n'
             '/statistic_today - детальная статистика за сегодня\n'
             '/report - генерация отчета за период',
-            reply_markup=main_kb.main
+            reply_markup=main_menu()
         )
         logger.debug(f"Adminhelp отправлен пользователю {message.from_user.id}")
     except Exception as e:
@@ -75,7 +75,7 @@ async def admin_exit(message: Message):
 
     try:
         await message.answer(
-            "Вы вышли из админ-панели", reply_markup=main_kb.main)
+            "Вы вышли из админ-панели", reply_markup=main_menu())
     except Exception as e:
         logger.error(f"Ошибка при выходе из админ-панели: {e}", exc_info=True)
 

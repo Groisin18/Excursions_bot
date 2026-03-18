@@ -6,9 +6,10 @@ from app.utils.validation import (validate_name,
                                   validate_surname, validate_birthdate,
                                   validate_weight, validate_address
                                   )
-from datetime import datetime
 
-import app.user_panel.keyboards as kb
+from app.user_panel.keyboards import(
+    redaction_child_menu
+)
 from app.database.unit_of_work import UnitOfWork
 from app.database.repositories import UserRepository
 from app.database.session import async_session
@@ -62,7 +63,7 @@ async def redact_child_start(callback: CallbackQuery, state: FSMContext):
                 f"Вес: {child.weight} кг\n"
                 f"Адрес: {child.address}\n\n"
                 "Выберите пункт, который хотите поменять",
-                reply_markup=await kb.redaction_child_builder()
+                reply_markup=await redaction_child_menu()
             )
 
     except Exception as e:
@@ -143,12 +144,12 @@ async def redact_child_name_two(message: Message, state: FSMContext):
                         f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
                         f"Вес: {updated_child.weight} кг\n"
                         f"Адрес: {updated_child.address}",
-                        reply_markup=await kb.redaction_child_builder()
+                        reply_markup=await redaction_child_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить имя ребенка {child_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=await kb.redaction_child_builder())
+                                        reply_markup=await redaction_child_menu())
 
                 await state.clear()
                 logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
@@ -234,12 +235,12 @@ async def redact_child_surname_two(message: Message, state: FSMContext):
                     f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
                     f"Вес: {updated_child.weight} кг\n"
                     f"Адрес: {updated_child.address}",
-                    reply_markup=await kb.redaction_child_builder()
+                    reply_markup=await redaction_child_menu()
                 )
             else:
                 logger.warning(f"Не удалось обновить фамилию ребенка {child_id}")
                 await message.answer("Ошибка обновления",
-                                    reply_markup=await kb.redaction_child_builder())
+                                    reply_markup=await redaction_child_menu())
 
             await state.clear()
             logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
@@ -314,12 +315,12 @@ async def redact_child_birth_date_two(message: Message, state: FSMContext):
                         f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
                         f"Вес: {updated_child.weight} кг\n"
                         f"Адрес: {updated_child.address}",
-                        reply_markup=await kb.redaction_child_builder()
+                        reply_markup=await redaction_child_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить дату рождения ребенка {child_id}")
                     await message.answer("Ошибка обновления",
-                                       reply_markup=await kb.redaction_child_builder())
+                                       reply_markup=await redaction_child_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
@@ -392,12 +393,12 @@ async def redact_child_weight_two(message: Message, state: FSMContext):
                         f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
                         f"Вес: {updated_child.weight} кг\n"
                         f"Адрес: {updated_child.address}",
-                        reply_markup=await kb.redaction_child_builder()
+                        reply_markup=await redaction_child_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить вес ребенка {child_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=await kb.redaction_child_builder())
+                                        reply_markup=await redaction_child_menu())
 
             await state.clear()
             logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")
@@ -467,12 +468,12 @@ async def redact_child_address_two(message: Message, state: FSMContext):
                         f"Дата рождения: {updated_child.date_of_birth.strftime('%d.%m.%Y')}\n"
                         f"Вес: {updated_child.weight} кг\n"
                         f"Адрес: {updated_child.address}",
-                        reply_markup=await kb.redaction_child_builder()
+                        reply_markup=await redaction_child_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить адрес ребенка {child_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=await kb.redaction_child_builder())
+                                        reply_markup=await redaction_child_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {user_telegram_id}")

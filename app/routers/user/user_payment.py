@@ -21,7 +21,9 @@ from app.database.models import (
     PaymentStatus, YooKassaStatus, PaymentMethod, BookingStatus, User, Payment
 )
 from app.utils.logging_config import get_logger
-from app.user_panel import keyboards as kb
+from app.user_panel.keyboards import(
+    main_menu, booking_detail_keyboard
+)
 
 # https://yookassa.ru/developers/payment-acceptance/testing-and-going-live/testing#test-bank-card-data тестовые карты
 # https://yookassa.ru/my/payments Основная страница
@@ -118,7 +120,7 @@ async def initiate_payment(callback: CallbackQuery):
             logger.error("PAYMENTS_TOKEN не настроен")
             await callback.message.answer(
                 "Оплата временно недоступна. Пожалуйста, попробуйте позже или свяжитесь с администратором.",
-                reply_markup=kb.main
+                reply_markup=main_menu()
             )
             return
 
@@ -134,7 +136,7 @@ async def initiate_payment(callback: CallbackQuery):
                 logger.warning(f"Бронирование {booking_id} не найдено для пользователя {user_telegram_id}")
                 await callback.message.answer(
                     "Бронирование не найдено.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -146,7 +148,7 @@ async def initiate_payment(callback: CallbackQuery):
                 )
                 await callback.message.answer(
                     "У вас нет доступа к этому бронированию.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -157,7 +159,7 @@ async def initiate_payment(callback: CallbackQuery):
                 )
                 await callback.message.answer(
                     "Это бронирование уже неактивно и не может быть оплачено.",
-                    reply_markup=kb.booking_detail_keyboard(booking_id, show_pay=False)
+                    reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
                 )
                 return
 
@@ -166,7 +168,7 @@ async def initiate_payment(callback: CallbackQuery):
                 logger.info(f"Бронирование {booking_id} уже оплачено")
                 await callback.message.answer(
                     "Это бронирование уже оплачено.",
-                    reply_markup=kb.booking_detail_keyboard(booking_id, show_pay=False)
+                    reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
                 )
                 return
 
@@ -175,7 +177,7 @@ async def initiate_payment(callback: CallbackQuery):
                 await callback.message.answer(
                     "Платеж для этого бронирования уже обрабатывается.\n"
                     "Пожалуйста, дождитесь завершения или попробуйте позже.",
-                    reply_markup=kb.booking_detail_keyboard(booking_id, show_pay=False)
+                    reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
                 )
                 return
 
@@ -186,7 +188,7 @@ async def initiate_payment(callback: CallbackQuery):
                 await callback.message.answer(
                     f"Срок оплаты бронирования истек (более {PAYMENT_TIMEOUT_HOURS} часов).\n"
                     f"Пожалуйста, создайте новое бронирование.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -198,7 +200,7 @@ async def initiate_payment(callback: CallbackQuery):
                 logger.error(f"Не найдена экскурсия для бронирования {booking_id}")
                 await callback.message.answer(
                     "Ошибка: информация об экскурсии не найдена.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -269,7 +271,7 @@ async def initiate_payment(callback: CallbackQuery):
         logger.error(f"Ошибка Telegram при отправке инвойса: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при создании платежа. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
     except Exception as e:
         logger.error(
@@ -278,7 +280,7 @@ async def initiate_payment(callback: CallbackQuery):
         )
         await callback.message.answer(
             "Произошла ошибка при создании платежа. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
 
 
@@ -444,7 +446,7 @@ async def successful_payment_handler(message: Message):
             await message.answer(
                 "Платеж прошел успешно, но произошла ошибка при обработке.\n"
                 "Пожалуйста, свяжитесь с администратором и сообщите код ошибки: PAYLOAD_INVALID",
-                reply_markup=kb.main
+                reply_markup=main_menu()
             )
             return
 
@@ -464,7 +466,7 @@ async def successful_payment_handler(message: Message):
                     await message.answer(
                         "Платеж прошел успешно, но запись о платеже не найдена.\n"
                         "Пожалуйста, свяжитесь с администратором.",
-                        reply_markup=kb.main
+                        reply_markup=main_menu()
                     )
                     return
 
@@ -473,7 +475,7 @@ async def successful_payment_handler(message: Message):
                     logger.warning(f"Платеж {payment_id} уже обработан (статус: {payment.status})")
                     await message.answer(
                         "Платеж уже был обработан ранее.",
-                        reply_markup=kb.booking_detail_keyboard(booking_id, show_pay=False)
+                        reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
                     )
                     return
 
@@ -505,7 +507,7 @@ async def successful_payment_handler(message: Message):
 
             await message.answer(
                 success_text,
-                reply_markup=kb.booking_detail_keyboard(booking_id, show_pay=False)
+                reply_markup=booking_detail_keyboard(booking_id, show_pay=False)
             )
 
             logger.info(f"Подтверждение оплаты отправлено пользователю {user_id}")
@@ -516,7 +518,7 @@ async def successful_payment_handler(message: Message):
             await message.answer(
                 "Платеж прошел успешно, но произошла ошибка при обновлении статуса.\n"
                 "Пожалуйста, свяжитесь с администратором.",
-                reply_markup=kb.main
+                reply_markup=main_menu()
             )
         except Exception as inner_e:
             logger.error(f"Не удалось уведомить пользователя об ошибке: {inner_e}")
@@ -537,7 +539,7 @@ async def payment_error_handler(message: Message):
         await message.answer(
             "Платеж не прошел или был отменен.\n\n"
             "Вы можете попробовать снова в разделе 'Мои бронирования'.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         logger.debug(f"Сообщение об ошибке платежа отправлено пользователю {user_id}")
 
@@ -578,7 +580,7 @@ async def cancel_payment_handler(callback: CallbackQuery):
         await callback.answer("Платеж отменен")
         await callback.message.edit_text(
             "Платеж отменен. Вы можете оплатить позже в разделе 'Мои бронирования'.",
-            reply_markup=kb.booking_detail_keyboard(payment.booking_id, show_pay=True)
+            reply_markup=booking_detail_keyboard(payment.booking_id, show_pay=True)
         )
 
     except ValueError:

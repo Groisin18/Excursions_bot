@@ -9,8 +9,11 @@ from app.database.managers import BookingManager, PaymentManager
 from app.database.repositories import UserRepository, BookingRepository
 from app.database.models import BookingStatus, PaymentStatus
 from app.utils.logging_config import get_logger
-from app.user_panel import keyboards as kb
-from app.user_panel.keyboards import main as main_keyboard
+from app.user_panel.keyboards import (
+    main_menu, bookings_main_menu, empty_bookings,
+    bookings_list, booking_detail_keyboard, cancel_confirmation,
+    back_to_booking
+)
 
 router = Router(name="user_bookings")
 logger = get_logger(__name__)
@@ -26,14 +29,14 @@ async def bookings_main_menu(callback: CallbackQuery):
         await callback.answer()
         await callback.message.edit_text(
             "Мои бронирования\n\nВыберите раздел:",
-            reply_markup=kb.bookings_main_menu_keyboard()
+            reply_markup=bookings_main_menu()
         )
 
     except Exception as e:
         logger.error(f"Ошибка в меню бронирований для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -53,7 +56,7 @@ async def active_bookings_list(callback: CallbackQuery):
             if not user:
                 await callback.message.answer(
                     "Пользователь не найден. Пожалуйста, зарегистрируйтесь.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -63,7 +66,7 @@ async def active_bookings_list(callback: CallbackQuery):
             if not active_bookings:
                 await callback.message.answer(
                     "У вас нет активных бронирований.",
-                    reply_markup=kb.empty_bookings_keyboard()
+                    reply_markup=empty_bookings()
                 )
                 return
 
@@ -88,14 +91,14 @@ async def active_bookings_list(callback: CallbackQuery):
 
             await callback.message.edit_text(
                 text,
-                reply_markup=kb.bookings_list_keyboard(active_bookings, "booking_detail:")
+                reply_markup=bookings_list(active_bookings, "booking_detail:")
             )
 
     except Exception as e:
         logger.error(f"Ошибка получения активных бронирований для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при загрузке бронирований.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -115,7 +118,7 @@ async def history_bookings_list(callback: CallbackQuery):
             if not user:
                 await callback.message.answer(
                     "Пользователь не найден. Пожалуйста, зарегистрируйтесь.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -125,7 +128,7 @@ async def history_bookings_list(callback: CallbackQuery):
             if not history_bookings:
                 await callback.message.edit_text(
                     "У вас нет бронирований в истории.",
-                    reply_markup=kb.empty_bookings_keyboard()
+                    reply_markup=empty_bookings()
                 )
                 return
 
@@ -154,14 +157,14 @@ async def history_bookings_list(callback: CallbackQuery):
 
             await callback.message.edit_text(
                 text,
-                reply_markup=kb.bookings_list_keyboard(history_bookings, "booking_detail:")
+                reply_markup=bookings_list(history_bookings, "booking_detail:")
             )
 
     except Exception as e:
         logger.error(f"Ошибка получения истории бронирований для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при загрузке истории.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -183,7 +186,7 @@ async def booking_detail(callback: CallbackQuery):
             if not booking:
                 await callback.message.answer(
                     "Бронирование не найдено.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -195,7 +198,7 @@ async def booking_detail(callback: CallbackQuery):
                 logger.warning(f"Пользователь {user_telegram_id} пытается получить чужое бронирование {booking_id}")
                 await callback.message.answer(
                     "У вас нет доступа к этому бронированию.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -209,7 +212,7 @@ async def booking_detail(callback: CallbackQuery):
             if not slot or not excursion:
                 await callback.message.answer(
                     "Информация о бронировании неполная.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -258,7 +261,7 @@ async def booking_detail(callback: CallbackQuery):
 
             await callback.message.edit_text(
                 text,
-                reply_markup=kb.booking_detail_keyboard(
+                reply_markup=booking_detail_keyboard(
                     booking_id,
                     show_cancel=show_cancel,
                     show_refund_info=show_refund_info,
@@ -273,7 +276,7 @@ async def booking_detail(callback: CallbackQuery):
         logger.error(f"Ошибка получения деталей бронирования для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при загрузке деталей бронирования.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -291,7 +294,7 @@ async def cancel_booking_confirm(callback: CallbackQuery):
             "Вы уверены, что хотите отменить бронирование?\n\n"
             "Если бронирование оплачено и до начала экскурсии осталось больше 4 часов, "
             "деньги будут возвращены.",
-            reply_markup=kb.cancel_confirmation_keyboard(booking_id)
+            reply_markup=cancel_confirmation(booking_id)
         )
 
     except ValueError:
@@ -301,7 +304,7 @@ async def cancel_booking_confirm(callback: CallbackQuery):
         logger.error(f"Ошибка при запросе подтверждения отмены: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -324,7 +327,7 @@ async def confirm_cancel_booking(callback: CallbackQuery):
             if not user:
                 await callback.message.answer(
                     "Пользователь не найден.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -335,7 +338,7 @@ async def confirm_cancel_booking(callback: CallbackQuery):
                 logger.warning(f"Пользователь {user_telegram_id} пытается отменить чужое бронирование {booking_id}")
                 await callback.message.answer(
                     "У вас нет доступа к этому бронированию.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -346,7 +349,7 @@ async def confirm_cancel_booking(callback: CallbackQuery):
             if not success:
                 await callback.message.answer(
                     f"Ошибка при отмене: {message}",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -363,18 +366,18 @@ async def confirm_cancel_booking(callback: CallbackQuery):
                         f"Бронирование отменено.\n"
                         f"Запрос на возврат средств в размере {refund_amount} руб. принят в обработку.\n"
                         f"Деньги поступят на карту в течение 3-5 рабочих дней.",
-                        reply_markup=main_keyboard
+                        reply_markup=main_menu()
                     )
                 else:
                     await callback.message.answer(
                         f"Бронирование отменено.\n"
                         f"Возврат невозможен: {refund_reason}",
-                        reply_markup=main_keyboard
+                        reply_markup=main_menu()
                     )
             else:
                 await callback.message.answer(
                     "Бронирование успешно отменено.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
 
     except ValueError:
@@ -384,7 +387,7 @@ async def confirm_cancel_booking(callback: CallbackQuery):
         logger.error(f"Ошибка при отмене бронирования {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при отмене бронирования.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -406,7 +409,7 @@ async def refund_info(callback: CallbackQuery):
             if not booking:
                 await callback.message.answer(
                     "Бронирование не найдено.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -432,7 +435,7 @@ async def refund_info(callback: CallbackQuery):
 
             await callback.message.edit_text(
                 text,
-                reply_markup=kb.back_to_booking_keyboard(booking_id)
+                reply_markup=back_to_booking(booking_id)
             )
 
     except ValueError:
@@ -442,7 +445,7 @@ async def refund_info(callback: CallbackQuery):
         logger.error(f"Ошибка при получении информации о возврате: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -469,7 +472,7 @@ async def back_to_cabinet_from_bookings(callback: CallbackQuery):
             if not user:
                 await callback.message.answer(
                     "Произошла ошибка. Пожалуйста, войдите в личный кабинет заново.",
-                    reply_markup=main_keyboard
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -481,7 +484,7 @@ async def back_to_cabinet_from_bookings(callback: CallbackQuery):
         logger.error(f"Ошибка возврата в кабинет: {e}")
         await callback.message.answer(
             "Произошла ошибка при возврате в личный кабинет.",
-            reply_markup=main_keyboard
+            reply_markup=main_menu()
         )
 
 
@@ -492,7 +495,7 @@ async def pay_booking(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(
         "Функция оплаты находится в разработке. Пожалуйста, воспользуйтесь другими способами оплаты.",
-        reply_markup=main_keyboard
+        reply_markup=main_menu()
     )
 
 
@@ -503,5 +506,5 @@ async def payment_history(callback: CallbackQuery):
     await callback.answer()
     await callback.message.answer(
         "Функция просмотра истории платежей находится в разработке.",
-        reply_markup=main_keyboard
+        reply_markup=main_menu()
     )

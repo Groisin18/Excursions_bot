@@ -6,7 +6,7 @@ from aiogram.types import (
     InlineKeyboardButton
 )
 from aiogram.utils.keyboard import ReplyKeyboardBuilder, InlineKeyboardBuilder
-from datetime import date, datetime
+from datetime import date
 
 from app.database.models import (
     SlotStatus, TelegramFile, FileType, User, DiscountType
@@ -217,7 +217,7 @@ def find_client_for_captains() -> InlineKeyboardMarkup:
 
 # ===== ДОБАВЛЕНИЕ КЛИЕНТА =====
 
-def add_client_confirmation_keyboard(client_data: dict) -> InlineKeyboardMarkup:
+def add_client_confirmation(client_data: dict) -> InlineKeyboardMarkup:
     """
     Клавиатура подтверждения данных клиента перед сохранением
 
@@ -362,7 +362,7 @@ def cancel_inline_button() -> InlineKeyboardMarkup:
 
 # ===== РАБОТА С КЛИЕНТАМИ =====
 
-def client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
+def client_actions(client_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура действий с выбранным клиентом
 
@@ -395,7 +395,7 @@ def client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
     builder.adjust(1)  # Все кнопки в столбик
     return builder.as_markup()
 
-def client_list_keyboard(clients: list) -> InlineKeyboardMarkup:
+def client_list(clients: list) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора клиента из списка
 
@@ -434,7 +434,7 @@ def client_list_keyboard(clients: list) -> InlineKeyboardMarkup:
 
     return builder.as_markup()
 
-def client_role_change_keyboard(client_id: int, current_role: str) -> InlineKeyboardMarkup:
+def client_role_change(client_id: int, current_role: str) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора новой роли для клиента
 
@@ -471,7 +471,7 @@ def client_role_change_keyboard(client_id: int, current_role: str) -> InlineKeyb
     builder.adjust(1)
     return builder.as_markup()
 
-def back_to_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
+def back_to_client_actions(client_id: int) -> InlineKeyboardMarkup:
     """
     Кнопка возврата к действиям с клиентом
 
@@ -485,7 +485,7 @@ def back_to_client_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
     )
     return builder.as_markup()
 
-def client_virtual_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
+def client_virtual_actions(client_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура действий с виртуальным клиентом
 
@@ -509,7 +509,7 @@ def client_virtual_actions_keyboard(client_id: int) -> InlineKeyboardMarkup:
 
 # ===== УПРАВЛЕНИЕ ВИДАМИ ЭКСКУРСИЙ =====
 
-def excursions_list_keyboard(all_excursions: list, active_only: bool) -> InlineKeyboardMarkup:
+def excursions_list(all_excursions: list, active_only: bool) -> InlineKeyboardMarkup:
     """
     Создает инлайн-клавиатуру со списком всех экскурсий.
     Сначала активные, затем неактивные.
@@ -584,7 +584,7 @@ def excursion_actions_menu(excursion_id: int):
     builder.adjust(2, 2, 1)
     return builder.as_markup()
 
-def exc_redaction_builder(exc_id:int):
+def excursion_redaction(exc_id:int):
     redact_reg_cell_list = (
     'Название',
     'Описание',
@@ -604,20 +604,20 @@ def exc_redaction_builder(exc_id:int):
         keyboard.add(InlineKeyboardButton(text=cell, callback_data=callback))
     return keyboard.adjust(2).as_markup()
 
-def inline_end_add_exc(exc_id:int):
+def end_add_excursion(exc_id:int):
     return InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text='Отредактировать данные', callback_data=f'redact_exc_data:{exc_id}'),
      InlineKeyboardButton(text='В главное админ-меню', callback_data='back_to_admin_panel')],
 ])
 
-def err_add_exc():
+def error_add_excursion():
     return ReplyKeyboardMarkup(keyboard=[
     [KeyboardButton(text='Новая экскурсия')],
     [KeyboardButton(text='Главное меню')]],
     resize_keyboard=True
 )
 
-def create_excursion_management_keyboard(excursion_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
+def excursion_management(excursion_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
     """Клавиатура управления конкретной экскурсией
 
     Args:
@@ -1214,7 +1214,7 @@ def promo_edit_field_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def promo_list_keyboard(promocodes: list) -> InlineKeyboardMarkup:
+def promo_list(promocodes: list) -> InlineKeyboardMarkup:
     """
     Клавиатура со списком активных промокодов для выбора
 
@@ -1279,7 +1279,7 @@ def promo_list_keyboard(promocodes: list) -> InlineKeyboardMarkup:
     builder.adjust(*rows)
     return builder.as_markup()
 
-def promo_actions_keyboard(promo_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
+def promo_actions(promo_id: int, is_active: bool = True) -> InlineKeyboardMarkup:
     """
     Клавиатура действий с конкретным промокодом
 
@@ -1328,7 +1328,7 @@ def promo_actions_keyboard(promo_id: int, is_active: bool = True) -> InlineKeybo
 
     return builder.as_markup()
 
-def deactivate_promo_confirmation_keyboard(promo_id: int) -> InlineKeyboardMarkup:
+def deactivate_promo_confirm(promo_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура подтверждения деактивации промокода
 
@@ -1504,7 +1504,7 @@ def dashboard_quick_actions():
 # ===== СОЗДАНИЕ БРОНИРОВАНИЯ НА СЛОТ =====
 
 
-def create_booking_client_choice_keyboard() -> ReplyKeyboardMarkup:
+def create_booking_client_choice() -> ReplyKeyboardMarkup:
     """Клавиатура выбора типа клиента для создания записи"""
     builder = ReplyKeyboardBuilder()
 
@@ -1521,7 +1521,7 @@ def create_booking_client_choice_keyboard() -> ReplyKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
 
-def client_list_for_booking_keyboard(clients: list) -> InlineKeyboardMarkup:
+def client_list_for_booking(clients: list) -> InlineKeyboardMarkup:
     """Клавиатура выбора клиента из списка для создания записи"""
     builder = InlineKeyboardBuilder()
 
@@ -1552,7 +1552,7 @@ def client_list_for_booking_keyboard(clients: list) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def excursion_list_for_booking_keyboard(excursions: list) -> InlineKeyboardMarkup:
+def excursion_list_for_booking(excursions: list) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора экскурсии для создания записи
 
@@ -1576,7 +1576,7 @@ def excursion_list_for_booking_keyboard(excursions: list) -> InlineKeyboardMarku
     builder.adjust(1)
     return builder.as_markup()
 
-def slot_list_for_booking_keyboard(slots: list, excursion_id: int) -> InlineKeyboardMarkup:
+def slot_list_for_booking(slots: list, excursion_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора слота для создания записи
 
@@ -1615,7 +1615,7 @@ def slot_list_for_booking_keyboard(slots: list, excursion_id: int) -> InlineKeyb
     builder.adjust(1)
     return builder.as_markup()
 
-def admin_children_selection_keyboard(children: list, selected_ids: list = None, max_children: int = None) -> InlineKeyboardMarkup:
+def admin_children_selection(children: list, selected_ids: list = None, max_children: int = None) -> InlineKeyboardMarkup:
     """
     Клавиатура выбора детей для бронирования (админ-версия)
     Args:
@@ -1681,7 +1681,7 @@ def admin_children_selection_keyboard(children: list, selected_ids: list = None,
 
     return builder.as_markup()
 
-def admin_child_weight_keyboard(child_index: int, total_children: int) -> InlineKeyboardMarkup:
+def admin_child_weight(child_index: int, total_children: int) -> InlineKeyboardMarkup:
     """
     Клавиатура для ввода веса ребенка (админ-версия)
 
@@ -1722,7 +1722,7 @@ def admin_virtual_child_form_navigation() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def admin_confirm_virtual_child_keyboard() -> InlineKeyboardMarkup:
+def admin_confirm_virtual_child() -> InlineKeyboardMarkup:
     """Клавиатура подтверждения создания виртуального ребенка"""
     builder = InlineKeyboardBuilder()
 
@@ -1788,7 +1788,7 @@ def confirm_booking() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def slot_already_booked_keyboard(excursion_id: int) -> InlineKeyboardMarkup:
+def slot_already_booked(excursion_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура для случая, когда у клиента уже есть бронь на этот слот
 

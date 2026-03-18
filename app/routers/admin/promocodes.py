@@ -10,10 +10,10 @@ from app.database.session import async_session
 
 from app.admin_panel.states_adm import CreatePromocode
 from app.admin_panel.keyboards_adm import (
-    promocodes_menu, excursions_submenu, promo_list_keyboard,
+    promocodes_menu, excursions_submenu, promo_list,
     admin_main_menu, promo_type_selection_menu,
     promo_duration_selection_menu, promo_creation_confirmation_menu,
-    promo_actions_keyboard, deactivate_promo_confirmation_keyboard
+    promo_actions, deactivate_promo_confirm
 )
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
@@ -579,7 +579,7 @@ async def list_promocodes_callback(callback: CallbackQuery):
 
             await callback.message.answer(
                 "Выберите промокод для управления:",
-                reply_markup=promo_list_keyboard(promocodes)
+                reply_markup=promo_list(promocodes)
             )
 
     except Exception as e:
@@ -637,7 +637,7 @@ async def select_promocode_for_action(callback: CallbackQuery):
 
             await callback.message.answer(
                 info,
-                reply_markup=promo_actions_keyboard(promo_id, is_active)
+                reply_markup=promo_actions(promo_id, is_active)
             )
 
     except Exception as e:
@@ -702,7 +702,7 @@ async def show_promocode_stats(callback: CallbackQuery):
 
             await callback.message.answer(
                 stats,
-                reply_markup=promo_actions_keyboard(promo_id, promocode.is_valid)
+                reply_markup=promo_actions(promo_id, promocode.is_valid)
             )
 
     except Exception as e:
@@ -734,14 +734,14 @@ async def deactivate_promocode(callback: CallbackQuery):
             if not promocode.is_valid:
                 await callback.message.answer(
                     "Этот промокод уже неактивен.",
-                    reply_markup=promo_actions_keyboard(promo_id, False)
+                    reply_markup=promo_actions(promo_id, False)
                 )
                 return
 
             await callback.message.answer(
                 f"Вы уверены, что хотите завершить действие промокода {promocode.code}?\n\n"
                 f"После завершения промокод нельзя будет использовать для новых бронирований.",
-                reply_markup=deactivate_promo_confirmation_keyboard(promo_id)
+                reply_markup=deactivate_promo_confirm(promo_id)
             )
 
     except Exception as e:
@@ -799,7 +799,7 @@ async def back_to_promo_list(callback: CallbackQuery):
 
             await callback.message.answer(
                 "Выберите промокод для управления:",
-                reply_markup=promo_list_keyboard(promocodes)
+                reply_markup=promo_list(promocodes)
             )
 
     except Exception as e:

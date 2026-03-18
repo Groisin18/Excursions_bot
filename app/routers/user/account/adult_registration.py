@@ -4,7 +4,9 @@ from aiogram.fsm.context import FSMContext
 
 from app.schemas.user import UserRegistrationData
 
-import app.user_panel.keyboards as kb
+from app.user_panel.keyboards import (
+    main_menu, registration_data_menu, pd_consent, error_registration_menu
+)
 
 from app.user_panel.states import Reg_user, Reg_token
 from app.database.unit_of_work import UnitOfWork
@@ -50,7 +52,7 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
                     "2. Данные хранятся в соответствии с законодательством РФ\n"
                     "3. Вы можете отозвать согласие, обратившись к администратору\n\n"
                     "Для получения полной версии документа обратитесь к администратору.",
-                    reply_markup=kb.inline_pd_consent
+                    reply_markup=pd_consent()
                 )
                 return
 
@@ -65,7 +67,7 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
                     'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
                     'Для продолжения регистрации необходимо принять условия.'
                 ),
-                reply_markup=kb.inline_pd_consent
+                reply_markup=pd_consent()
             )
 
             logger.info(
@@ -77,7 +79,7 @@ async def reg_name(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при загрузке документа. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -89,12 +91,12 @@ async def reg_consest_false(callback: CallbackQuery, state: FSMContext):
         await callback.message.edit_text(
             'К сожалению, регистрация без согласия на обработку персональных'
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
-            reply_markup=kb.inline_pd_consent)
+            reply_markup=pd_consent())
     except Exception as e:
         logger.error(f"Ошибка при отказе от согласия: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -113,7 +115,7 @@ async def reg_consest_true(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка начала регистрации без токена: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -137,7 +139,7 @@ async def reg_surname(message: Message, state: FSMContext):
         logger.error(f"Неизвестная ошибка при вводе имени: {e}", exc_info=True)
         await message.answer(
             "Произошла внутренняя ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -164,7 +166,7 @@ async def reg_birth_date(message: Message, state: FSMContext):
         logger.error(f"Неизвестная ошибка при вводе фамилии: {e}", exc_info=True)
         await message.answer(
             "Произошла внутренняя ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -194,7 +196,7 @@ async def reg_age(message: Message, state: FSMContext):
         logger.error(f"Неизвестная ошибка при вводе даты рождения: {e}", exc_info=True)
         await message.answer(
             "Произошла внутренняя ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -219,7 +221,7 @@ async def reg_weight(message: Message, state: FSMContext):
         logger.error(f"Неизвестная ошибка при вводе веса: {e}", exc_info=True)
         await message.answer(
             "Произошла внутренняя ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -243,7 +245,7 @@ async def reg_address(message: Message, state: FSMContext):
         logger.error(f"Неизвестная ошибка при вводе адреса: {e}", exc_info=True)
         await message.answer(
             "Произошла внутренняя ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -267,7 +269,7 @@ async def reg_email(message: Message, state: FSMContext):
         logger.error(f"Неизвестная ошибка при вводе email: {e}", exc_info=True)
         await message.answer(
             "Произошла внутренняя ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -315,7 +317,7 @@ async def reg_phone_and_end(message: Message, state: FSMContext):
             f"Вес: {final_user.weight} кг\n"
             f"Телефон: {final_user.phone}\n"
             f"Email: {final_user.email}",
-            reply_markup=await kb.registration_data_menu_builder()
+            reply_markup=await registration_data_menu()
         )
 
         await state.clear()
@@ -323,5 +325,5 @@ async def reg_phone_and_end(message: Message, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка завершения регистрации: {e}", exc_info=True)
-        await message.answer(str(e), reply_markup=kb.err_reg)
+        await message.answer(str(e), reply_markup=error_registration_menu())
         await state.clear()

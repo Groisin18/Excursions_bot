@@ -10,8 +10,8 @@ from app.database.session import async_session
 
 from app.admin_panel.states_adm import NewExcursion, RedactExcursion
 from app.admin_panel.keyboards_adm import (
-    excursions_submenu, err_add_exc, exc_redaction_builder,
-    excursions_list_keyboard, excursion_actions_menu, inline_end_add_exc,
+    excursions_submenu, error_add_excursion, excursion_redaction,
+    excursions_list, excursion_actions_menu, end_add_excursion,
     admin_main_menu
 )
 from app.middlewares import AdminMiddleware
@@ -86,7 +86,7 @@ async def show_excursions(message: Message):
             logger.debug(f"Список экскурсий отправлен администратору {message.from_user.id}")
 
             await message.answer('Выберите экскурсию для дополнительных действий',
-                                reply_markup=excursions_list_keyboard(excursions, active_only=False))
+                                reply_markup=excursions_list(excursions, active_only=False))
             logger.debug(f"Клавиатура выбора экскурсий показана администратору {message.from_user.id}")
 
     except Exception as e:
@@ -294,7 +294,7 @@ async def reg_exc_base_price(message: Message, state: FSMContext):
             f' - Описание:\n"{final_exc.description}"\n'
             f" - Длительность в минутах: {final_exc.base_duration_minutes} минут\n"
             f" - Стоимость: {final_exc.base_price} рублей\n",
-            reply_markup=inline_end_add_exc(exc_id)
+            reply_markup=end_add_excursion(exc_id)
         )
 
         await state.clear()
@@ -303,12 +303,12 @@ async def reg_exc_base_price(message: Message, state: FSMContext):
     except ValueError as e:
         logger.error(f"Ошибка валидации при создании экскурсии: {e}")
         await message.answer(str(e),
-                            reply_markup=err_add_exc())
+                            reply_markup=error_add_excursion())
         await state.clear()
     except Exception as e:
         logger.error(f"Неожиданная ошибка при создании экскурсии: {e}", exc_info=True)
         await message.answer("Произошла непредвиденная ошибка при создании экскурсии",
-                            reply_markup=err_add_exc())
+                            reply_markup=error_add_excursion())
         await state.clear()
 
 
@@ -341,7 +341,7 @@ async def redact_exc_data(callback:CallbackQuery):
                 f" - Стоимость: {exc.base_price} рублей\n"
                 f" - Статус: {'Активна' if exc.is_active else 'Не активна'}\n"
                 "Выберите пункт, который хотите поменять",
-                reply_markup=exc_redaction_builder(exc_id))
+                reply_markup=excursion_redaction(exc_id))
 
     except Exception as e:
         logger.error(f"Ошибка получения данных экскурсии {exc_id}: {e}", exc_info=True)
@@ -398,7 +398,7 @@ async def redact_name_two(message: Message, state: FSMContext):
                 if not success:
                     logger.warning(f"Не удалось обновить название экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=inline_end_add_exc(exc_id))
+                                        reply_markup=end_add_excursion(exc_id))
                     await state.clear()
                     return
 
@@ -414,7 +414,7 @@ async def redact_name_two(message: Message, state: FSMContext):
                     f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                     f" - Стоимость: {updated_exc.base_price} рублей\n"
                     f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                    reply_markup=inline_end_add_exc(exc_id)
+                    reply_markup=end_add_excursion(exc_id)
                 )
 
         await state.clear()
@@ -467,7 +467,7 @@ async def redact_description_two(message: Message, state: FSMContext):
                 if not success:
                     logger.warning(f"Не удалось обновить описание экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=inline_end_add_exc(exc_id))
+                                        reply_markup=end_add_excursion(exc_id))
                     await state.clear()
                     return
 
@@ -482,7 +482,7 @@ async def redact_description_two(message: Message, state: FSMContext):
                     f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                     f" - Стоимость: {updated_exc.base_price} рублей\n"
                     f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                    reply_markup=inline_end_add_exc(exc_id)
+                    reply_markup=end_add_excursion(exc_id)
                 )
 
         await state.clear()
@@ -537,7 +537,7 @@ async def redact_duration_two(message: Message, state: FSMContext):
                 if not success:
                     logger.warning(f"Не удалось обновить продолжительность экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=inline_end_add_exc(exc_id))
+                                        reply_markup=end_add_excursion(exc_id))
                     await state.clear()
                     return
 
@@ -552,7 +552,7 @@ async def redact_duration_two(message: Message, state: FSMContext):
                     f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                     f" - Стоимость: {updated_exc.base_price} рублей\n"
                     f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                    reply_markup=inline_end_add_exc(exc_id)
+                    reply_markup=end_add_excursion(exc_id)
                 )
 
         await state.clear()
@@ -607,7 +607,7 @@ async def redact_price_two(message: Message, state: FSMContext):
                 if not success:
                     logger.warning(f"Не удалось обновить стоимость экскурсии {exc_id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=inline_end_add_exc(exc_id))
+                                        reply_markup=end_add_excursion(exc_id))
                     await state.clear()
                     return
 
@@ -622,7 +622,7 @@ async def redact_price_two(message: Message, state: FSMContext):
                     f" - Длительность в минутах: {updated_exc.base_duration_minutes} минут\n"
                     f" - Стоимость: {updated_exc.base_price} рублей\n"
                     f" - Статус: {'Активна' if updated_exc.is_active else 'Не активна'}\n",
-                    reply_markup=inline_end_add_exc(exc_id)
+                    reply_markup=end_add_excursion(exc_id)
                 )
 
         await state.clear()

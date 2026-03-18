@@ -18,14 +18,14 @@ from app.database.session import async_session
 
 from app.admin_panel.states_adm import AdminCreateBooking
 from app.admin_panel.keyboards_adm import (
-    bookings_submenu, cancel_button, admin_confirm_virtual_child_keyboard,
-    create_booking_client_choice_keyboard, client_list_for_booking_keyboard,
-    excursion_list_for_booking_keyboard, slot_list_for_booking_keyboard,
-    admin_children_selection_keyboard, create_virtual_child,
+    bookings_submenu, cancel_button, admin_confirm_virtual_child,
+    create_booking_client_choice, client_list_for_booking,
+    excursion_list_for_booking, slot_list_for_booking,
+    admin_children_selection, create_virtual_child,
     cancel_create_virtual_child, confirm_booking,
-    continue_booking_with_excess_weight, slot_already_booked_keyboard
+    continue_booking_with_excess_weight, slot_already_booked
 )
-from app.user_panel.keyboards import bookings_main_menu_keyboard
+from app.user_panel.keyboards import bookings_main_menu
 from app.middlewares import AdminMiddleware
 from app.utils.calculators import PriceCalculator, WeightCalculator
 from app.utils.logging_config import get_logger
@@ -50,7 +50,7 @@ async def start_create_booking(message: Message, state: FSMContext):
         await message.answer(
             "Создание новой записи на экскурсию.\n\n"
             "Для начала необходимо выбрать клиента:",
-            reply_markup=create_booking_client_choice_keyboard()
+            reply_markup=create_booking_client_choice()
         )
         await state.set_state(AdminCreateBooking.waiting_for_client_choice)
         logger.debug(f"Пользователь {message.from_user.id} перешел в состояние выбора клиента")
@@ -126,13 +126,13 @@ async def client_choice_recent(message: Message, state: FSMContext):
             if not recent_clients:
                 await message.answer(
                     "Нет недавних клиентов",
-                    reply_markup=create_booking_client_choice_keyboard()
+                    reply_markup=create_booking_client_choice()
                 )
                 return
 
             await message.answer(
                 "Выберите клиента из списка:",
-                reply_markup=client_list_for_booking_keyboard(recent_clients)
+                reply_markup=client_list_for_booking(recent_clients)
             )
             # Оставляем состояние - выбор будет обработан в callback
 
@@ -179,7 +179,7 @@ async def process_client_search(message: Message, state: FSMContext):
             await state.clear()
             await message.answer(
                 "Поиск отменен",
-                reply_markup=create_booking_client_choice_keyboard()
+                reply_markup=create_booking_client_choice()
             )
             return
 
@@ -251,21 +251,21 @@ async def process_client_search(message: Message, state: FSMContext):
                     f"Выбран клиент: {client.full_name}\n"
                     f"Телефон: {client.phone_number}\n\n"
                     f"Выберите экскурсию:",
-                    reply_markup=excursion_list_for_booking_keyboard(excursions)
+                    reply_markup=excursion_list_for_booking(excursions)
                 )
                 return
 
             # Если несколько - показываем список для выбора
             await message.answer(
                 f"Найдено клиентов: {len(clients)}\nВыберите нужного:",
-                reply_markup=client_list_for_booking_keyboard(clients)
+                reply_markup=client_list_for_booking(clients)
             )
 
     except Exception as e:
         logger.error(f"Ошибка поиска клиента: {e}", exc_info=True)
         await message.answer(
             "Ошибка при поиске. Попробуйте позже.",
-            reply_markup=create_booking_client_choice_keyboard()
+            reply_markup=create_booking_client_choice()
         )
         await state.clear()
 
@@ -305,12 +305,12 @@ async def select_client_for_booking(callback: CallbackQuery, state: FSMContext):
                     f"Выбран клиент: {client.full_name}\n"
                     f"Телефон: {client.phone_number}\n\n"
                     f"Выберите экскурсию:",
-                    reply_markup=excursion_list_for_booking_keyboard(excursions)
+                    reply_markup=excursion_list_for_booking(excursions)
                 )
             else:
                 await callback.message.edit_text(
                     "Клиент выбран. Выберите экскурсию:",
-                    reply_markup=excursion_list_for_booking_keyboard(excursions)
+                    reply_markup=excursion_list_for_booking(excursions)
                 )
 
     except Exception as e:
@@ -378,7 +378,7 @@ async def show_excursions_for_booking(message: Message, state: FSMContext):
 
             await message.answer(
                 "Выберите экскурсию:",
-                reply_markup=excursion_list_for_booking_keyboard(excursions)
+                reply_markup=excursion_list_for_booking(excursions)
             )
 
     except Exception as e:
@@ -485,7 +485,7 @@ async def process_date_for_booking(message: Message, state: FSMContext):
             await message.answer(
                 f"Доступные слоты на {target_date.strftime('%d.%m.%Y')}:\n\n"
                 f"Выберите время:",
-                reply_markup=slot_list_for_booking_keyboard(slots, excursion_id)
+                reply_markup=slot_list_for_booking(slots, excursion_id)
             )
             await state.set_state(AdminCreateBooking.waiting_for_slot)
 
@@ -531,7 +531,7 @@ async def select_slot_for_booking(callback: CallbackQuery, state: FSMContext):
                     f"Статус: {existing_booking.booking_status.value}\n"
                     f"Оплата: {'оплачено' if existing_booking.payment_status == 'paid' else 'не оплачено'}\n\n"
                     f"Выберите другой слот или отмените создание записи.",
-                    reply_markup=slot_already_booked_keyboard(data.get('excursion_id'))
+                    reply_markup=slot_already_booked(data.get('excursion_id'))
                 )
                 return
 
@@ -582,7 +582,7 @@ async def select_slot_for_booking(callback: CallbackQuery, state: FSMContext):
                 text += f"У клиента есть дети ({len(children)}). Выберите, кто поедет:"
                 await callback.message.edit_text(
                     text,
-                    reply_markup=admin_children_selection_keyboard(children, [])
+                    reply_markup=admin_children_selection(children, [])
                 )
             else:
                 text += "У клиента нет зарегистрированных детей. Вы можете создать виртуальных детей."
@@ -661,7 +661,7 @@ async def admin_toggle_child(callback: CallbackQuery, state: FSMContext):
 
             await callback.message.edit_text(
                 text,
-                reply_markup=admin_children_selection_keyboard(children, selected_children)
+                reply_markup=admin_children_selection(children, selected_children)
             )
 
     except Exception as e:
@@ -805,7 +805,7 @@ async def admin_cancel_virtual_child(callback: CallbackQuery, state: FSMContext)
 
             await callback.message.edit_text(
                 text,
-                reply_markup=admin_children_selection_keyboard(children, selected_children)
+                reply_markup=admin_children_selection(children, selected_children)
             )
             await state.set_state(AdminCreateBooking.waiting_for_children_selection)
 
@@ -1004,7 +1004,7 @@ async def admin_process_virtual_child_weight(message: Message, state: FSMContext
 
         await message.answer(
             text,
-            reply_markup=admin_confirm_virtual_child_keyboard()
+            reply_markup=admin_confirm_virtual_child()
         )
 
     except Exception as e:
@@ -1071,7 +1071,7 @@ async def admin_confirm_virtual_child(callback: CallbackQuery, state: FSMContext
 
             await callback.message.edit_text(
                 text,
-                reply_markup=admin_children_selection_keyboard(children, selected_children)
+                reply_markup=admin_children_selection(children, selected_children)
             )
             await state.set_state(AdminCreateBooking.waiting_for_children_selection)
 
@@ -1258,7 +1258,7 @@ async def back_to_children_selection(callback: CallbackQuery, state: FSMContext)
 
             await callback.message.edit_text(
                 text,
-                reply_markup=admin_children_selection_keyboard(children, selected_children)
+                reply_markup=admin_children_selection(children, selected_children)
             )
             await state.set_state(AdminCreateBooking.waiting_for_children_selection)
 
@@ -1511,7 +1511,7 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
                         await bot.send_message(
                             chat_id=client.telegram_id,
                             text="\n".join(notification_text),
-                            reply_markup=bookings_main_menu_keyboard()
+                            reply_markup=bookings_main_menu()
                         )
 
                         logger.info(f"Уведомление о бронировании #{booking.id} отправлено клиенту {client.telegram_id}")

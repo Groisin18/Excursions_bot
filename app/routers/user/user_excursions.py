@@ -4,7 +4,11 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
-import app.user_panel.keyboards as kb
+from app.user_panel.keyboards import(
+    main_menu, all_excursions, public_schedule_options, public_schedule_date_menu,
+    public_schedule_week_menu, public_schedule_month_menu, excursion_details,
+    excursion_schedule
+)
 from app.user_panel.states import UserScheduleStates
 
 from app.database.repositories import ExcursionRepository
@@ -25,7 +29,7 @@ logger = get_logger(__name__)
 # ===== НАЧАЛЬНОЕ МЕНЮ ВЫБОРА РАСПИСАНИЯ =====
 
 
-@router.message(F.text == 'Наши экскурсии')
+@router.message(F.text == 'Наши экскурсии и запись')
 async def excursions(message: Message):
     """Показать список экскурсий из базы данных"""
     logger.info(f"Пользователь {message.from_user.id} запросил список экскурсий")
@@ -44,7 +48,7 @@ async def excursions(message: Message):
                 logger.warning(f"Нет доступных экскурсий для пользователя {message.from_user.id}")
                 await message.answer(
                     "В настоящее время нет доступных экскурсий. Пожалуйста, проверьте позже.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -69,7 +73,7 @@ async def excursions(message: Message):
 
             await message.answer(
                 excursions_text,
-                reply_markup=await kb.all_excursions_inline()
+                reply_markup=await all_excursions()()
             )
             logger.debug(f"Список экскурсий отправлен пользователю {message.from_user.id}")
 
@@ -77,7 +81,7 @@ async def excursions(message: Message):
         logger.error(f"Ошибка показа экскурсий для пользователя {message.from_user.id}: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка при загрузке списка экскурсий. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
 
 @router.callback_query(F.data == "public_schedule_all")
@@ -87,7 +91,7 @@ async def show_public_schedule_all(callback: CallbackQuery):
         await callback.answer()
         await callback.message.edit_text(
             "Выберите период для просмотра расписания:",
-            reply_markup=kb.public_schedule_options()
+            reply_markup=public_schedule_options()
         )
     except Exception as e:
         logger.error(f"Ошибка показа опций расписания: {e}")
@@ -107,7 +111,7 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
             if not excursions_list:
                 await callback.message.answer(
                     "В настоящее время нет доступных экскурсий.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -130,7 +134,7 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
 
             excursions_text += "Выберите экскурсию для подробной информации или посмотрите общее расписание:"
 
-            keyboard = await kb.all_excursions_inline()
+            keyboard = await all_excursions()()
             await callback.message.edit_text(
                 excursions_text,
                 reply_markup=keyboard
@@ -154,17 +158,17 @@ async def show_date_schedule(message_or_callback, target_date: date, is_callback
                 if is_callback:
                     await message_or_callback.message.edit_text(
                         f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
-                        reply_markup=kb.public_schedule_options()
+                        reply_markup=public_schedule_options()
                     )
                     await message_or_callback.answer()
                 else:
                     await message_or_callback.edit_text(
                         f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
-                        reply_markup=kb.public_schedule_options()
+                        reply_markup=public_schedule_options()
                     )
                 return
 
-            keyboard = kb.public_schedule_date_menu(slots, target_date)
+            keyboard = public_schedule_date_menu(slots, target_date)
 
             if is_callback:
                 await message_or_callback.message.edit_text(formatted_text, reply_markup=keyboard)
@@ -202,11 +206,11 @@ async def handle_public_schedule(callback: CallbackQuery):
             if not slots:
                 await callback.message.edit_text(
                     f"На {date_name} ({target_date.strftime('%d.%m.%Y')}) нет доступных экскурсий.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
-            keyboard = kb.public_schedule_date_menu(slots, target_date)
+            keyboard = public_schedule_date_menu(slots, target_date)
             await callback.message.edit_text(formatted_text, reply_markup=keyboard)
 
     except Exception as e:
@@ -226,11 +230,11 @@ async def public_schedule_week(callback: CallbackQuery):
             if not slots_by_date:
                 await callback.message.edit_text(
                     "На ближайшую неделю нет доступных экскурсий.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
-            keyboard = kb.public_schedule_week_menu(slots_by_date)
+            keyboard = public_schedule_week_menu(slots_by_date)
             await callback.message.edit_text(text, reply_markup=keyboard)
 
     except Exception as e:
@@ -250,11 +254,11 @@ async def public_schedule_month(callback: CallbackQuery):
             if not slots_by_date:
                 await callback.message.edit_text(
                     "На ближайший месяц нет доступных экскурсий.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
-            keyboard = kb.public_schedule_month_menu(slots_by_date)
+            keyboard = public_schedule_month_menu(slots_by_date)
             await callback.message.edit_text(text, reply_markup=keyboard)
 
     except Exception as e:
@@ -275,7 +279,7 @@ async def public_schedule_by_date(callback: CallbackQuery, state: FSMContext):
 
     except Exception as e:
         logger.error(f"Ошибка запроса даты: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка. Попробуйте позже.", reply_markup=kb.main)
+        await callback.message.answer("Произошла ошибка. Попробуйте позже.", reply_markup=main_menu())
 
 @router.message(UserScheduleStates.waiting_for_schedule_date)
 async def handle_public_schedule_date(message: Message, state: FSMContext):
@@ -285,7 +289,7 @@ async def handle_public_schedule_date(message: Message, state: FSMContext):
             await state.clear()
             await message.answer(
                 "Просмотр расписания отменен.",
-                reply_markup=kb.public_schedule_options()
+                reply_markup=public_schedule_options()
             )
             return
 
@@ -306,12 +310,12 @@ async def handle_public_schedule_date(message: Message, state: FSMContext):
             if not slots:
                 await message.answer(
                     f"На {target_date.strftime('%d.%m.%Y')} нет доступных экскурсий.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 await state.clear()
                 return
 
-            keyboard = kb.public_schedule_date_menu(slots, target_date)
+            keyboard = public_schedule_date_menu(slots, target_date)
             await message.answer(formatted_text, reply_markup=keyboard)
 
         await state.clear()
@@ -335,11 +339,11 @@ async def public_back_to_schedule_options(callback: CallbackQuery):
         await callback.answer()
         await callback.message.edit_text(
             "Выберите период для просмотра расписания:",
-            reply_markup=kb.public_schedule_options()
+            reply_markup=public_schedule_options()
         )
     except Exception as e:
         logger.error(f"Ошибка возврата к выбору периода: {e}")
-        await callback.message.answer("Ошибка возврата к выбору периода", reply_markup=kb.main)
+        await callback.message.answer("Ошибка возврата к выбору периода", reply_markup=main_menu())
 
 
 # ===== ПРОСМОТР РАСПИСАНИЯ ПО ВИДУ ЭКСКУРСИИ =====
@@ -372,12 +376,12 @@ async def show_excursion_public_detail(callback: CallbackQuery):
             await callback.answer()
             await callback.message.edit_text(
                 details,
-                reply_markup=await kb.get_excursion_details_inline(exc_id)
+                reply_markup=await excursion_details(exc_id)
             )
 
     except Exception as e:
         logger.error(f"Ошибка показа деталей экскурсии: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при загрузке расписания", reply_markup=kb.main)
+        await callback.message.answer("Произошла ошибка при загрузке расписания", reply_markup=main_menu())
 
 @router.callback_query(F.data.startswith("public_schedule_exc:"))
 async def show_excursion_schedule(callback: CallbackQuery):
@@ -400,7 +404,7 @@ async def show_excursion_schedule(callback: CallbackQuery):
                 text += "Пожалуйста, проверьте позже или выберите другую экскурсию."
                 await callback.message.edit_text(
                     text=text,
-                    reply_markup=await kb.all_excursions_inline()
+                    reply_markup=await all_excursions()()
                 )
                 return
 
@@ -409,12 +413,12 @@ async def show_excursion_schedule(callback: CallbackQuery):
             for date_slots in slots_by_date.values():
                 all_slots.extend(date_slots)
 
-            keyboard = await kb.get_excursion_schedule_keyboard(all_slots)
+            keyboard = await excursion_schedule(all_slots)
             await callback.message.edit_text(text, reply_markup=keyboard)
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания экскурсии: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при загрузке расписания", reply_markup=kb.main)
+        await callback.message.answer("Произошла ошибка при загрузке расписания", reply_markup=main_menu())
 
 @router.callback_query(F.data.startswith("public_view_exc_date:"))
 async def public_view_exc_date(callback: CallbackQuery):
@@ -437,13 +441,13 @@ async def public_view_exc_date(callback: CallbackQuery):
                 await callback.answer("На эту дату нет слотов для этой экскурсии", show_alert=True)
                 return
 
-            keyboard = kb.public_schedule_date_menu(slots, target_date)
+            keyboard = public_schedule_date_menu(slots, target_date)
             await callback.message.edit_text(text, reply_markup=keyboard)
             await callback.answer()
 
     except Exception as e:
         logger.error(f"Ошибка показа слотов экскурсии на дату: {e}", exc_info=True)
-        await callback.message.answer("Произошла ошибка при загрузке расписания", reply_markup=kb.main)
+        await callback.message.answer("Произошла ошибка при загрузке расписания", reply_markup=main_menu())
 
 @router.callback_query(F.data.startswith("public_view_slot:"))
 async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
@@ -463,7 +467,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
                 logger.warning(f"Слот {slot_id} не найден для пользователя {user_telegram_id}")
                 await callback.message.edit_text(
                     "Слот не найден. Возможно, он был удален или изменен.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
@@ -472,7 +476,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
                 logger.error(f"Экскурсия не найдена для слота {slot.id}")
                 await callback.message.edit_text(
                     "Ошибка: данные экскурсии не найдены.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
@@ -480,7 +484,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
                 logger.warning(f"Слот {slot_id} не доступен для бронирования. Статус: {slot.status}")
                 await callback.message.edit_text(
                     "Этот слот недоступен для записи.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
@@ -548,7 +552,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
 
     except ValueError as e:
         logger.error(f"Ошибка парсинга slot_id для пользователя {user_telegram_id}: {e}")
-        await callback.message.answer("Ошибка: некорректный идентификатор слота", reply_markup=kb.main)
+        await callback.message.answer("Ошибка: некорректный идентификатор слота", reply_markup=main_menu())
 
     except Exception as e:
         logger.error(
@@ -557,7 +561,7 @@ async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
         )
         await callback.message.answer(
             "Произошла ошибка при загрузке деталей. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
 
 @router.callback_query(F.data == "public_schedule_back")
@@ -590,12 +594,12 @@ async def back_to_schedule_options(callback: CallbackQuery, state: FSMContext):
 
         await callback.message.edit_text(
             "Выберите период для просмотра расписания:",
-            reply_markup=kb.public_schedule_options()
+            reply_markup=public_schedule_options()
         )
 
     except Exception as e:
         logger.error(f"Ошибка возврата к опциям расписания: {e}", exc_info=True)
         await callback.message.answer(
             "Выберите период для просмотра расписания:",
-            reply_markup=kb.public_schedule_options()
+            reply_markup=public_schedule_options()
         )

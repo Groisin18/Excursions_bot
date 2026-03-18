@@ -5,9 +5,9 @@ from aiogram.fsm.context import FSMContext
 
 from app.admin_panel.states_adm import AdminStates, AdminEditClient
 from app.admin_panel.keyboards_adm import (
-    clients_submenu, cancel_button, client_actions_keyboard,
-    client_list_keyboard, client_role_change_keyboard,
-    back_to_client_actions_keyboard, client_virtual_actions_keyboard,
+    clients_submenu, cancel_button, client_actions,
+    client_list, client_role_change,
+    back_to_client_actions, client_virtual_actions,
     client_or_child_selection_menu
 )
 from app.routers.admin.client_redaction import show_client_edit_menu
@@ -100,9 +100,9 @@ async def show_client_details(message_or_callback, client_id: int, session, edit
 
     # Выбираем клавиатуру в зависимости от типа аккаунта
     if client.is_virtual:
-        reply_markup = client_virtual_actions_keyboard(client.id)
+        reply_markup = client_virtual_actions(client.id)
     else:
-        reply_markup = client_actions_keyboard(client.id)
+        reply_markup = client_actions(client.id)
 
     if isinstance(message_or_callback, CallbackQuery):
         if edit:
@@ -231,7 +231,7 @@ async def search_client_process(message: Message, state: FSMContext):
                 # Показываем список только клиентов для выбора
                 await message.answer(
                     "Выберите клиента:",
-                    reply_markup=client_list_keyboard(clients)  # передаем только клиентов
+                    reply_markup=client_list(clients)  # передаем только клиентов
                 )
 
     except Exception as e:
@@ -447,7 +447,7 @@ async def change_client_role_start(callback: CallbackQuery):
 
             await callback.message.edit_text(
                 f"Выберите новую роль для клиента {client.full_name}:",
-                reply_markup=client_role_change_keyboard(client_id, client.role.value)
+                reply_markup=client_role_change(client_id, client.role.value)
             )
     except Exception as e:
         logger.error(f"Ошибка при изменении роли клиента {client_id}: {e}", exc_info=True)
@@ -487,7 +487,7 @@ async def set_client_role(callback: CallbackQuery):
 
                 await callback.message.edit_text(
                     f"Роль пользователя {client.full_name} изменена на {role_display}",
-                    reply_markup=back_to_client_actions_keyboard(client_id)
+                    reply_markup=back_to_client_actions(client_id)
                 )
 
                 logger.info(f"Администратор {callback.from_user.id} изменил роль пользователя {client_id} на {new_role}")
@@ -522,7 +522,7 @@ async def show_client_children(callback: CallbackQuery):
             if not children:
                 await callback.message.edit_text(
                     f"У клиента {client.full_name} нет детей",
-                    reply_markup=back_to_client_actions_keyboard(client_id)
+                    reply_markup=back_to_client_actions(client_id)
                 )
                 return
 
@@ -541,7 +541,7 @@ async def show_client_children(callback: CallbackQuery):
 
             await callback.message.edit_text(
                 response,
-                reply_markup=back_to_client_actions_keyboard(client_id)
+                reply_markup=back_to_client_actions(client_id)
             )
 
     except Exception as e:

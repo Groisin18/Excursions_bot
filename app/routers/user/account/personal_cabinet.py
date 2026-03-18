@@ -6,8 +6,9 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 
-import app.user_panel.keyboards as kb
-
+from app.user_panel.keyboards import (
+    main_menu, registration_data_menu, token_check
+)
 from app.user_panel.states import Reg_user
 from app.database.repositories import UserRepository
 from app.database.session import async_session
@@ -39,7 +40,7 @@ async def registration_data(message: Message, state: FSMContext):
             if user:
                 logger.debug(f"Пользователь {user_telegram_id} зарегистрирован, показываем кабинет")
                 has_children = await user_repo.user_has_children(user.id)
-                keyboard = await kb.registration_data_menu_builder(has_children=has_children)
+                keyboard = await registration_data_menu(has_children=has_children)
 
                 user_info = (
                     f"Ваш личный кабинет\n\n"
@@ -64,14 +65,14 @@ async def registration_data(message: Message, state: FSMContext):
                     'Для начала давайте зарегистрируемся!\n\n'
                     'Если вас ранее регистрировал другой человек, то выдается '
                     'специальный токен (набор символов). Есть ли он у вас?',
-                    reply_markup=kb.inline_is_token
+                    reply_markup=token_check()
                 )
 
     except Exception as e:
         logger.error(f"Ошибка в личном кабинете для пользователя {user_telegram_id}: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка при открытии личного кабинета. Попробуйте еще раз.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
 
 @router.callback_query(F.data == 'child_choice')
@@ -148,7 +149,7 @@ async def child_choice(callback: CallbackQuery):
         logger.error(f"Ошибка при выводе списка детей: {e}")
         await callback.message.answer(
             "Произошла ошибка при выводе списка детей. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await callback.answer()
 
@@ -166,12 +167,12 @@ async def back_to_cabinet(callback: CallbackQuery):
             if not user:
                 await callback.message.answer(
                     "Произошла ошибка при возврате в личный кабинет. Попробуйте позже.",
-                    reply_markup=kb.main
+                    reply_markup=main_menu()
                 )
                 return
 
             has_children = await user_repo.user_has_children(user.id)
-            keyboard = await kb.registration_data_menu_builder(has_children=has_children)
+            keyboard = await registration_data_menu(has_children=has_children)
 
             user_info = (
                 f"Ваш личный кабинет\n\n"
@@ -193,5 +194,5 @@ async def back_to_cabinet(callback: CallbackQuery):
         logger.error(f"Ошибка возврата в кабинет: {e}")
         await callback.message.answer(
             "Произошла ошибка при возврате в личный кабинет. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )

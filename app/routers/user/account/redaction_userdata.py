@@ -1,9 +1,10 @@
-from datetime import datetime
 from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-import app.user_panel.keyboards as kb
+from app.user_panel.keyboards import (
+    redaction_menu, registration_data_menu
+)
 from app.user_panel.states import Red_user
 
 from app.database.unit_of_work import UnitOfWork
@@ -46,7 +47,7 @@ async def redact_users_data(callback: CallbackQuery, state: FSMContext):
                 f"Телефон: {user.phone_number}\n"
                 f"Email: {user.email}\n\n"
                 "Выберите пункт, который хотите поменять",
-                reply_markup=await kb.redaction_builder()
+                reply_markup=await redaction_menu()
             )
 
     except Exception as e:
@@ -108,12 +109,12 @@ async def redact_name_two(message: Message, state: FSMContext):
                         f"Адрес: {updated_user.address}\n"
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}",
-                        reply_markup=kb.inline_end_reg
+                        reply_markup=registration_data_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить имя пользователя {message.from_user.id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=kb.inline_end_reg)
+                                        reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
@@ -181,12 +182,12 @@ async def redact_surname_two(message: Message, state: FSMContext):
                         f"Адрес: {updated_user.address}\n"
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}",
-                        reply_markup=kb.inline_end_reg
+                        reply_markup=registration_data_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить фамилию пользователя {message.from_user.id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=kb.inline_end_reg)
+                                        reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
@@ -250,12 +251,12 @@ async def redact_phone_two(message: Message, state: FSMContext):
                         f"Адрес: {updated_user.address}\n"
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}",
-                        reply_markup=kb.inline_end_reg
+                        reply_markup=registration_data_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить телефон пользователя {message.from_user.id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=kb.inline_end_reg)
+                                        reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
@@ -323,10 +324,10 @@ async def redact_birth_date_two(message: Message, state: FSMContext):
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}"
                     )
-                    await message.answer(response_text, reply_markup=kb.inline_end_reg)
+                    await message.answer(response_text, reply_markup=registration_data_menu())
                 else:
                     logger.warning(f"Не удалось обновить дату рождения пользователя {message.from_user.id}")
-                    await message.answer("Ошибка обновления", reply_markup=kb.inline_end_reg)
+                    await message.answer("Ошибка обновления", reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
@@ -390,12 +391,12 @@ async def redact_weight_two(message: Message, state: FSMContext):
                         f"Адрес: {updated_user.address}\n"
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}",
-                        reply_markup=kb.inline_end_reg
+                        reply_markup=registration_data_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить вес пользователя {message.from_user.id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=kb.inline_end_reg)
+                                        reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
@@ -459,12 +460,12 @@ async def redact_address_two(message: Message, state: FSMContext):
                         f"Адрес: {updated_user.address}\n"
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}",
-                        reply_markup=kb.inline_end_reg
+                        reply_markup=registration_data_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить адрес пользователя {message.from_user.id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=kb.inline_end_reg)
+                                        reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")
@@ -528,12 +529,12 @@ async def redact_email_two(message: Message, state: FSMContext):
                         f"Адрес: {updated_user.address}\n"
                         f"Телефон: {updated_user.phone_number}\n"
                         f"Email: {updated_user.email}",
-                        reply_markup=kb.inline_end_reg
+                        reply_markup=registration_data_menu()
                     )
                 else:
                     logger.warning(f"Не удалось обновить email пользователя {message.from_user.id}")
                     await message.answer("Ошибка обновления",
-                                        reply_markup=kb.inline_end_reg)
+                                        reply_markup=registration_data_menu())
 
         await state.clear()
         logger.debug(f"Состояние очищено для пользователя {message.from_user.id}")

@@ -229,7 +229,7 @@ async def add_client_confirmation(message: Message, state: FSMContext):
         await state.set_state(AdminAddClient.waiting_for_confirmation)
         await message.answer(
             confirmation_text,
-            reply_markup=kb_adm.add_client_confirmation_keyboard(data)
+            reply_markup=kb_adm.add_client_confirmation(data)
         )
 
     except ValueError as e:
@@ -318,7 +318,7 @@ async def confirm_add_client(callback: CallbackQuery, state: FSMContext):
                     f"Клиент {user.full_name} успешно создан и выбран для бронирования.\n\n"
                     f"Телефон: {user.phone_number}\n\n"
                     f"Выберите экскурсию:",
-                    reply_markup=kb_adm.excursion_list_for_booking_keyboard(excursions)
+                    reply_markup=kb_adm.excursion_list_for_booking(excursions)
                 )
         else:
             # Обычный путь - просто показываем сообщение и возвращаемся в меню клиентов

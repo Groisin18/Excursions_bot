@@ -5,7 +5,10 @@ from aiogram import Router, F
 from aiogram.types import Message, CallbackQuery
 from aiogram.fsm.context import FSMContext
 
-import app.user_panel.keyboards as kb
+from app.user_panel.keyboards import (
+    main_menu, inline_navigation, token_confirmation, pd_consent_token,
+    registration_data_menu
+)
 from app.user_panel.states import Reg_token
 
 from app.database.models import RegistrationType, FileType
@@ -38,7 +41,7 @@ async def reg_has_token(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка начала регистрации по токену: {e}", exc_info=True)
         await callback.message.answer(
             'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -58,7 +61,7 @@ async def reg_is_token_right(message: Message, state: FSMContext):
                 logger.warning(f"Неверный токен от пользователя {message.from_user.id}: {token[:8]}...")
                 await message.answer(
                     'Данного токена не существует. Введите верный токен.',
-                    reply_markup=kb.inline_in_menu
+                    reply_markup=inline_navigation()
                 )
                 return
 
@@ -66,7 +69,7 @@ async def reg_is_token_right(message: Message, state: FSMContext):
                 logger.warning(f"Токен уже использован пользователем {message.from_user.id}: {token[:8]}...")
                 await message.answer(
                     'Этот токен уже использован и находится в управлении. Обратитесь к администратору.',
-                    reply_markup=kb.inline_in_menu
+                    reply_markup=inline_navigation()
                 )
                 return
 
@@ -86,14 +89,14 @@ async def reg_is_token_right(message: Message, state: FSMContext):
                 "Это верный токен!\n\n"
                 f"Вас зарегистрировал: {creator_name}\n"
                 f"При регистрации были указаны фамилия и имя: {user.full_name}\n",
-                reply_markup=kb.inline_is_token_right
+                reply_markup=token_confirmation()
             )
 
     except Exception as e:
         logger.error(f"Ошибка проверки токена: {e}", exc_info=True)
         await message.answer(
             'Произошла ошибка. Попробуйте снова или обратитесь к администратору',
-            reply_markup=kb.inline_in_menu
+            reply_markup=inline_navigation()
         )
         await state.clear()
 
@@ -112,7 +115,7 @@ async def reg_token_wrong(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка повторного ввода токена: {e}", exc_info=True)
         await callback.message.answer(
             'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -141,7 +144,7 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
                     "2. Данные хранятся в соответствии с законодательством РФ\n"
                     "3. Вы можете отозвать согласие, обратившись к администратору\n\n"
                     "Для получения полной версии документа обратитесь к администратору.",
-                    reply_markup=kb.inline_pd_consent_token
+                    reply_markup=pd_consent_token()
                 )
                 return
 
@@ -155,7 +158,7 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
                     'Пожалуйста, ознакомьтесь с согласием на обработку персональных данных.\n'
                     'Для продолжения регистрации необходимо принять условия.'
                 ),
-                reply_markup=kb.inline_pd_consent_token
+                reply_markup=pd_consent_token()
             )
 
             logger.info(
@@ -167,7 +170,7 @@ async def reg_token_right(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка согласия на обработку персональных данных: {e}", exc_info=True)
         await callback.message.answer(
             'Произошла ошибка при загрузке документа. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -180,13 +183,13 @@ async def reg_token_consest_false(callback: CallbackQuery, state: FSMContext):
         await callback.message.answer(
             'К сожалению, регистрация без согласия на обработку персональных'
             'данных невозможна. Для продолжения регистрации необходимо принять условия.',
-            reply_markup=kb.inline_pd_consent_token
+            reply_markup=pd_consent_token()
         )
     except Exception as e:
         logger.error(f"Ошибка при отказе от согласия: {e}", exc_info=True)
         await callback.message.answer(
             'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -208,7 +211,7 @@ async def reg_token_consest_true(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка перехода к вводу email: {e}", exc_info=True)
         await callback.message.answer(
             'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -233,7 +236,7 @@ async def reg_token_email(message: Message, state: FSMContext):
         logger.error(f"Ошибка обработки email: {e}", exc_info=True)
         await message.answer(
             'Произошла ошибка. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.main
+            reply_markup=main_menu()
         )
         await state.clear()
 
@@ -279,7 +282,7 @@ async def reg_token_end(message: Message, state: FSMContext):
                     logger.warning(f"Не удалось привязать пользователя по токену {token[:8]}...")
                     await message.answer(
                         'Токен недействителен или уже использован. Обратитесь к администратору.',
-                        reply_markup=kb.inline_in_menu
+                        reply_markup=inline_navigation()
                     )
                     await state.clear()
                     return
@@ -311,7 +314,7 @@ async def reg_token_end(message: Message, state: FSMContext):
                     f"Адрес: {updated_user.address}\n"
                     f"Телефон: {updated_user.phone_number}\n"
                     f"Email: {updated_user.email}",
-                    reply_markup=await kb.registration_data_menu_builder()
+                    reply_markup=await registration_data_menu()
                 )
 
         await state.clear()
@@ -326,5 +329,5 @@ async def reg_token_end(message: Message, state: FSMContext):
         await state.clear()
         await message.answer(
             'Произошла ошибка при регистрации. Попробуйте позже или обратитесь к администратору.',
-            reply_markup=kb.inline_in_menu
+            reply_markup=inline_navigation()
         )
