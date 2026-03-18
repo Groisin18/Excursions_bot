@@ -253,11 +253,29 @@ class PaymentManager(BaseManager):
     ) -> Payment:
         """
         Создать запись о платеже для бронирования.
-        Используется перед отправкой инвойса.
+        Перед созданием отменяет все существующие pending платежи по этой брони.
         """
         self._log_operation_start("create_payment_for_booking", booking_id=booking_id, amount=amount)
 
         try:
+            # Сначала отменяем все старые pending платежи по этой брони
+            old_payments = await self.payment_repo.get_pending_payments_by_booking(booking_id)
+
+            for old_payment in old_payments:
+                await self.payment_repo.update_payment_by_id(
+                    old_payment.id,
+                    status=YooKassaStatus.canceled
+                )
+                self._log_business_event(
+                    "old_payment_canceled",
+                    old_payment_id=old_payment.id,
+                    booking_id=booking_id
+                )
+
+            if old_payments:
+                self.logger.info(f"Отменено {len(old_payments)} старых платежей для бронирования {booking_id}")
+
+            # Создаем новый платеж
             payment = await self.payment_repo.create_payment(
                 booking_id=booking_id,
                 amount=amount,
@@ -326,6 +344,51 @@ class PaymentManager(BaseManager):
             self._log_operation_end("confirm_payment_success", success=False)
             self.logger.error(f"Ошибка подтверждения платежа: {e}", exc_info=True)
             return False
+
+    async def cancel_pending_payment(self, payment_id: int) -> bool:
+        """
+        Отменить ожидающий платеж.
+
+        Args:
+            payment_id: ID платежа
+
+        Returns:
+            bool: Успешность операции
+        """
+        self._log_operation_start("cancel_pending_payment", payment_id=payment_id)
+
+        try:
+            # Получаем платеж для проверки статуса
+            payment = await self.payment_repo.get_payment_by_id(payment_id)
+            if not payment:
+                self.logger.error(f"Платеж {payment_id} не найден")
+                return False
+
+            # Проверяем, что платеж в статусе pending
+            if payment.status != YooKassaStatus.pending:
+                self.logger.warning(
+                    f"Платеж {payment_id} не в статусе pending (текущий: {payment.status})"
+                )
+                return False
+
+            # Обновляем статус через репозиторий
+            success = await self.payment_repo.update_payment_by_id(
+                payment_id,
+                status=YooKassaStatus.canceled
+            )
+
+            if success:
+                self._log_operation_end("cancel_pending_payment", success=True)
+            else:
+                self._log_operation_end("cancel_pending_payment", success=False)
+
+            return success
+
+        except Exception as e:
+            self._log_operation_end("cancel_pending_payment", success=False)
+            self.logger.error(f"Ошибка отмены платежа: {e}", exc_info=True)
+            return False
+
 
 # TODO: Реализовать полноценную логику возврата:
 # - Интеграция с YooKassa API для создания возвратов

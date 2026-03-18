@@ -2,7 +2,7 @@
 
 from typing import Optional, List
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
+from sqlalchemy import select, and_
 from datetime import datetime
 
 from .base import BaseRepository
@@ -43,7 +43,7 @@ class PaymentRepository(BaseRepository):
             self.logger.error(f"Ошибка создания платежа: {e}", exc_info=True)
             raise
 
-    async def update_payment_status_by_id(
+    async def update_payment_status_by_yookassa_id(
         self,
         yookassa_payment_id: str,
         status: YooKassaStatus,
@@ -116,3 +116,28 @@ class PaymentRepository(BaseRepository):
             .order_by(Payment.created_at.desc())
         )
         return result.scalars().all()
+
+    async def get_pending_payments_by_user(self, user_id: int) -> List[Payment]:
+        """Получить все pending платежи пользователя"""
+        result = await self.session.execute(
+            select(Payment)
+            .join(Payment.booking)
+            .where(Booking.adult_user_id == user_id)
+            .where(Payment.status == YooKassaStatus.pending)
+            .order_by(Payment.created_at.desc())
+        )
+        return result.scalars().all()
+
+    async def get_pending_payments_by_booking(self, booking_id: int) -> List[Payment]:
+        """Получить все pending платежи по бронированию"""
+        result = await self.session.execute(
+            select(Payment)
+            .where(
+                and_(
+                    Payment.booking_id == booking_id,
+                    Payment.status == YooKassaStatus.pending
+                )
+            )
+            .order_by(Payment.created_at)
+        )
+        return list(result.scalars().all())

@@ -102,7 +102,6 @@ def build_receipt_data(user: User, booking, excursion) -> Optional[Dict]:
 
     return receipt_data
 
-
 @router.callback_query(F.data.startswith('pay_booking:'))
 async def initiate_payment(callback: CallbackQuery):
     """
@@ -245,11 +244,6 @@ async def initiate_payment(callback: CallbackQuery):
                 prices=[price],
                 start_parameter=f"pay_booking_{booking_id}",
                 payload=payload,
-                need_name=False,
-                need_phone=False,
-                need_email=False,
-                need_shipping_address=False,
-                is_flexible=False,
                 provider_data=provider_data,
                 disable_notification=False,
                 protect_content=False,
@@ -282,7 +276,6 @@ async def initiate_payment(callback: CallbackQuery):
             "Произошла ошибка при создании платежа. Попробуйте позже.",
             reply_markup=main_menu()
         )
-
 
 @router.pre_checkout_query()
 async def pre_checkout_query_handler(pre_checkout_q: PreCheckoutQuery):
@@ -374,7 +367,7 @@ async def pre_checkout_query_handler(pre_checkout_q: PreCheckoutQuery):
                 return
 
             # Проверяем запись платежа
-            payment = await payment_repo.get_by_id(payment_id)
+            payment = await payment_repo.get_payment_by_id(payment_id)
             if not payment or payment.booking_id != booking_id:
                 logger.error(f"Запись платежа {payment_id} не найдена или не соответствует бронированию")
                 await pre_checkout_q.bot.answer_pre_checkout_query(
@@ -419,7 +412,6 @@ async def pre_checkout_query_handler(pre_checkout_q: PreCheckoutQuery):
         except Exception as inner_e:
             logger.error(f"Ошибка при отправке отказа pre-checkout: {inner_e}")
 
-
 @router.message(F.content_type == ContentType.SUCCESSFUL_PAYMENT)
 async def successful_payment_handler(message: Message):
     """
@@ -430,14 +422,20 @@ async def successful_payment_handler(message: Message):
     logger.info(f"Успешный платеж от пользователя {user_id}")
 
     try:
-        # Получаем информацию о платеже
-        payment_info = message.successful_payment.to_python()
-        payload = payment_info.get('invoice_payload', '')
+        # Получаем информацию о платеже напрямую из объекта
+        successful_payment = message.successful_payment
+
+        # Извлекаем данные
+        payload = successful_payment.invoice_payload
+        telegram_payment_id = successful_payment.telegram_payment_charge_id
+        provider_payment_id = successful_payment.provider_payment_charge_id
+        total_amount = successful_payment.total_amount
+        currency = successful_payment.currency
 
         logger.info("Детали платежа:")
-        logger.info(f"  Telegram Payment ID: {payment_info.get('telegram_payment_charge_id')}")
-        logger.info(f"  Сумма: {payment_info.get('total_amount') // 100} {payment_info.get('currency')}")
-        logger.info(f"  Провайдер Payment ID: {payment_info.get('provider_payment_charge_id')}")
+        logger.info(f"  Telegram Payment ID: {telegram_payment_id}")
+        logger.info(f"  Сумма: {total_amount // 100} {currency}")
+        logger.info(f"  Провайдер Payment ID: {provider_payment_id}")
         logger.info(f"  Payload: {payload}")
 
         # Парсим payload
@@ -462,7 +460,7 @@ async def successful_payment_handler(message: Message):
                 # Подтверждаем платеж через менеджер
                 success = await payment_manager.confirm_payment_success(
                     payment_id=payment_id,
-                    yookassa_payment_id=payment_info.get('provider_payment_charge_id'),
+                    yookassa_payment_id=provider_payment_id,
                     booking_repo=booking_repo
                 )
 
@@ -476,8 +474,7 @@ async def successful_payment_handler(message: Message):
                     return
 
             # Отправляем подтверждение пользователю
-            amount_rub = payment_info.get('total_amount') // 100
-            currency = payment_info.get('currency')
+            amount_rub = total_amount // 100
 
             success_text = (
                 f"Оплата прошла успешно!\n\n"
@@ -504,7 +501,6 @@ async def successful_payment_handler(message: Message):
         except Exception as inner_e:
             logger.error(f"Не удалось уведомить пользователя об ошибке: {inner_e}")
 
-
 @router.message(F.successful_payment.is_(None) & F.content_type == 'invoice')
 async def payment_error_handler(message: Message):
     """
@@ -514,18 +510,32 @@ async def payment_error_handler(message: Message):
     logger.warning(f"Проблема с платежом у пользователя {user_id}")
 
     try:
-        # Здесь можно добавить логику поиска последнего pending платежа
-        # и его отмены, если потребуется
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_id)
+
+            if user:
+                payment_repo = PaymentRepository(session)
+                pending_payments = await payment_repo.get_pending_payments_by_user(user.id)
+
+                for payment in pending_payments:
+                    logger.info(f"Отмена pending платежа {payment.id}")
+                    await payment_repo.update_payment_by_id(
+                        payment.id,
+                        status=YooKassaStatus.canceled
+                    )
+
+                if pending_payments:
+                    logger.info(f"Отменено {len(pending_payments)} pending платежей пользователя {user_id}")
 
         await message.answer(
             "Платеж не прошел или был отменен.\n\n"
             "Вы можете попробовать снова в разделе 'Мои бронирования'.",
             reply_markup=main_menu()
         )
-        logger.debug(f"Сообщение об ошибке платежа отправлено пользователю {user_id}")
 
     except Exception as e:
-        logger.error(f"Ошибка отправки сообщения об ошибке платежа: {e}")
+        logger.error(f"Ошибка в обработчике ошибок платежа: {e}")
 
 
 @router.callback_query(F.data.startswith('payment_cancel:'))
@@ -553,7 +563,7 @@ async def cancel_payment_handler(callback: CallbackQuery):
                     return
 
                 # Получаем платеж для booking_id
-                payment = await payment_manager.payment_repo.get_by_id(payment_id)
+                payment = await payment_manager.payment_repo.get_payment_by_id(payment_id)
 
         await callback.answer("Платеж отменен")
         await callback.message.edit_text(
