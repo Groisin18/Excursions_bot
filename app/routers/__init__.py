@@ -23,7 +23,7 @@ from .admin.settings import router as admin_settings_router
 from .user.user_main import router as user_main_router
 from .user.user_excursions import router as user_excursions_router
 from .user.user_create_booking import router as user_create_booking_router
-from .user.test_payment import router as test_payment_router
+from .user.user_payment import router as user_payment_router
 from .user.account.main_router import router as account_main_router
 
 from .fallback import router as fallback_router
@@ -51,7 +51,7 @@ __all__ = [
     'user_main_router',
     'user_excursions_router',
     'user_create_booking_router',
-    'test_payment_router',
+    'user_payment_router',
     'account_main_router',
 
     'fallback_router',
@@ -97,7 +97,7 @@ def setup_routers(dp):
 
     dp.include_router(user_create_booking_router)
 
-    dp.include_router(test_payment_router)
+    dp.include_router(user_payment_router)
 
     dp.include_router(account_main_router)
 

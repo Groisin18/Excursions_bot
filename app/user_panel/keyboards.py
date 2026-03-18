@@ -138,36 +138,34 @@ def bookings_list_keyboard(
 
     return builder.as_markup()
 
-def booking_detail_keyboard(
-    booking_id: int,
-    show_cancel: bool = False,
-    show_refund_info: bool = False,
-    show_pay: bool = False
-) -> InlineKeyboardMarkup:
+async def post_booking_keyboard(booking_id: int) -> InlineKeyboardMarkup:
     """
-    Клавиатура для деталей бронирования
+    Клавиатура, показываемая сразу после успешного создания бронирования.
 
     Args:
-        booking_id: ID бронирования
-        show_cancel: показывать кнопку отмены
-        show_refund_info: показывать кнопку информации о возврате
-        show_pay: показывать кнопку оплаты (в разработке)
+        booking_id: ID созданного бронирования
     """
     builder = InlineKeyboardBuilder()
 
-    if show_cancel:
-        builder.button(text="Отменить бронирование", callback_data=f"cancel_booking:{booking_id}")
+    # Кнопка оплаты сейчас
+    builder.button(
+        text="Оплатить сейчас",
+        callback_data=f"pay_booking:{booking_id}"
+    )
 
-    if show_refund_info:
-        builder.button(text="Информация о возврате", callback_data=f"refund_info:{booking_id}")
+    # Кнопка отмены бронирования
+    builder.button(
+        text="Отменить бронирование",
+        callback_data=f"cancel_booking:{booking_id}"
+    )
 
-    if show_pay:
-        builder.button(text="Оплатить", callback_data=f"pay_booking:{booking_id}")
+    # Кнопка в главное меню
+    builder.button(
+        text="В главное меню",
+        callback_data="back_to_main_with_info"
+    )
 
-    builder.button(text="Назад к списку", callback_data="user_booking")
-    builder.button(text="В главное меню", callback_data="back_to_main")
-    builder.adjust(1)
-
+    builder.adjust(1)  # Все кнопки в столбик
     return builder.as_markup()
 
 def cancel_confirmation_keyboard(booking_id: int) -> InlineKeyboardMarkup:

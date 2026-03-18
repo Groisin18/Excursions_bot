@@ -12,7 +12,6 @@ from app.database.repositories import (
 from app.database.models import SlotStatus, DiscountType
 from app.database.session import async_session
 
-from app.services.redis import redis_client
 from app.schemas.booking import BookingCreationData, BookingChildData
 from app.utils.logging_config import get_logger
 from app.user_panel.states import UserBookingStates
@@ -22,8 +21,12 @@ from app.utils.calculators import (
     WeightCalculator, BookingCalculator
 )
 
-import app.user_panel.keyboards as kb
-
+from app.user_panel.keyboards import (
+    main, post_booking_keyboard, public_schedule_options,
+    booking_start_confirm_keyboard, create_participants_keyboard,
+    create_promo_code_keyboard, create_children_selection_keyboard,
+    create_child_weight_keyboard, create_confirmation_keyboard
+)
 
 router = Router(name="user_create_booking")
 logger = get_logger(__name__)
@@ -50,7 +53,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 logger.warning(f"Слот {slot_id} не найден для пользователя {user_telegram_id}")
                 await callback.message.answer(
                     "Слот не найден. Возможно, он был удален или изменен.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
@@ -58,7 +61,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 logger.warning(f"Слот {slot_id} не доступен для бронирования. Статус: {slot.status}")
                 await callback.message.answer(
                     "Этот слот недоступен для записи.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
@@ -68,7 +71,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 logger.info(f"Нет свободных мест в слоте {slot_id} для пользователя {user_telegram_id}")
                 await callback.message.answer(
                     "На этот слот нет свободных мест.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
@@ -77,7 +80,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 logger.error(f"Пользователь {user_telegram_id} не найден в БД")
                 await callback.message.answer(
                     "Вы не зарегистрированы в системе. Пожалуйста, завершите регистрацию.",
-                    reply_markup=kb.main
+                    reply_markup=main
                 )
                 return
 
@@ -86,7 +89,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 logger.info(f"У пользователя {user.id} уже есть активная бронь на слот {slot.id}")
                 await callback.message.answer(
                     "У вас уже есть активное бронирование на этот слот.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 return
 
@@ -95,7 +98,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 logger.error(f"Экскурсия не найдена для слота {slot.id}")
                 await callback.message.answer(
                     "Ошибка: данные экскурсии не найдены.",
-                    reply_markup=kb.main
+                    reply_markup=main
                 )
                 return
 
@@ -133,7 +136,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
                 "adult_price": excursion.base_price
             })
 
-            await callback.message.edit_text(excursion_info, reply_markup=await kb.booking_start_confirm_keyboard())
+            await callback.message.edit_text(excursion_info, reply_markup=await booking_start_confirm_keyboard())
             await state.set_state(UserBookingStates.checking_weight)
 
             logger.info(
@@ -152,7 +155,7 @@ async def start_booking(callback: CallbackQuery, state: FSMContext):
         )
         await callback.message.answer(
             "Произошла ошибка при начале бронирования. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -176,7 +179,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
             logger.error(f"Недостаточно данных в state для пользователя {user_telegram_id}")
             await callback.message.answer(
                 "Ошибка: недостаточно данных. Начните бронирование заново.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -216,7 +219,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                     f"Уже занято: {current_weight} кг\n\n"
                     f"К сожалению, вы не можете присоединиться к этой экскурсии.\n"
                     f"Пожалуйста, выберите другой слот или обратитесь к администратору.",
-                    reply_markup=kb.public_schedule_options()
+                    reply_markup=public_schedule_options()
                 )
                 await state.clear()
                 return
@@ -243,12 +246,12 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
                 await callback.message.edit_text(
                     f"У вас зарегистрировано детей: {children_count}\n"
                     f"Вы хотите записаться на экскурсию:",
-                    reply_markup=await kb.create_participants_keyboard(user_has_children)
+                    reply_markup=await create_participants_keyboard(user_has_children)
                 )
             else:
                 await callback.message.edit_text(
                     f"Вы хотите записаться на экскурсию:",
-                    reply_markup=await kb.create_participants_keyboard(user_has_children)
+                    reply_markup=await create_participants_keyboard(user_has_children)
                 )
 
     except Exception as e:
@@ -258,7 +261,7 @@ async def check_adult_weight(callback: CallbackQuery, state: FSMContext):
         )
         await callback.answer(
             "Произошла ошибка при проверке веса. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -271,7 +274,7 @@ async def request_adult_weight(message: Message, state: FSMContext):
         if message.text.lower() == "/cancel":
             await message.answer(
                 "Бронирование отменено.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -307,7 +310,7 @@ async def request_adult_weight(message: Message, state: FSMContext):
         )
         await message.answer(
             "Произошла ошибка при сохранении веса. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -333,14 +336,14 @@ async def handle_booking_alone(callback: CallbackQuery, state: FSMContext):
             "Вы записываетесь один на экскурсию.\n\n"
             "Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
             "Или нажмите кнопку ниже, чтобы пропустить этот шаг.",
-            reply_markup=await kb.create_promo_code_keyboard()
+            reply_markup=await create_promo_code_keyboard()
         )
 
     except Exception as e:
         logger.error(f"Ошибка обработки выбора 'Записываюсь только я' для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -366,7 +369,7 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
                 await callback.message.edit_text(
                     "У вас нет зарегистрированных детей в системе.\n"
                     "Пожалуйста, зарегистрируйте детей (Главное меню -> Личный кабинет) или выберите 'Записываюсь только я'.",
-                    reply_markup=await kb.create_participants_keyboard(True)
+                    reply_markup=await create_participants_keyboard(True)
                 )
                 await callback.answer()
                 return
@@ -394,14 +397,14 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
             await callback.message.edit_text(
                 f"У вас {len(children)} зарегистрированных детей.\n"
                 f"Выберите детей, которые поедут с вами (максимум 5):",
-                reply_markup=await kb.create_children_selection_keyboard(children, [])
+                reply_markup=await create_children_selection_keyboard(children, [])
             )
 
     except Exception as e:
         logger.error(f"Ошибка при выборе детей пользователем {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -478,7 +481,7 @@ async def handle_child_selection(callback: CallbackQuery, state: FSMContext):
                     children_objects.append(child_obj)
 
             await callback.message.edit_reply_markup(
-                reply_markup=await kb.create_children_selection_keyboard(children_objects, selected_ids)
+                reply_markup=await create_children_selection_keyboard(children_objects, selected_ids)
             )
 
             await callback.answer(message_text)
@@ -510,7 +513,7 @@ async def process_to_promo_code(message: Message, state: FSMContext):
             f"Общий вес участников: {total_weight} кг\n"
             f"Доступный вес: {available_weight} кг\n\n"
             f"Пожалуйста, уменьшите количество участников или выберите другой слот.",
-            reply_markup=kb.public_schedule_options()
+            reply_markup=public_schedule_options()
         )
         await state.clear()
         return
@@ -534,7 +537,7 @@ async def process_to_promo_code(message: Message, state: FSMContext):
         f"Общий вес участников: {total_weight} кг\n\n"
         f"Если у вас есть промокод, введите его сейчас (например: SUMMER2024).\n"
         f"Или нажмите кнопку ниже, чтобы пропустить этот шаг.",
-        reply_markup=await kb.create_promo_code_keyboard()
+        reply_markup=await create_promo_code_keyboard()
     )
 
 
@@ -593,7 +596,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
                 f"У ребенка {first_child['full_name']} не указан вес в профиле.\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 25):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await kb.create_child_weight_keyboard(first_child["id"])
+                reply_markup=await create_child_weight_keyboard(first_child["id"])
             )
 
         else:
@@ -604,7 +607,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка завершения выбора детей для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -620,7 +623,7 @@ async def cancel_booking(callback: CallbackQuery, state: FSMContext):
         await state.clear()
         await callback.message.answer(
             "Бронирование отменено.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await callback.answer()
 
@@ -628,7 +631,7 @@ async def cancel_booking(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка при отмене бронирования пользователем {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
                 "Произошла ошибка при отмене бронирования. Попробуйте позже.",
-                reply_markup=kb.main
+                reply_markup=main
             )
         await callback.answer()
 
@@ -642,7 +645,7 @@ async def request_child_weight(message: Message, state: FSMContext):
         if message.text.lower() == "/cancel":
             await message.answer(
                 "Бронирование отменено.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -657,7 +660,7 @@ async def request_child_weight(message: Message, state: FSMContext):
             logger.error(f"Индекс {current_index} выходит за пределы списка детей без веса")
             await message.answer(
                 "Ошибка: некорректный индекс ребенка. Начните бронирование заново.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -702,7 +705,7 @@ async def request_child_weight(message: Message, state: FSMContext):
                 f"Следующий ребенок без веса: {next_child['full_name']}\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 30):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await kb.create_child_weight_keyboard(next_child["id"])
+                reply_markup=await create_child_weight_keyboard(next_child["id"])
             )
         else:
             # Все дети обработаны, переходим дальше
@@ -721,7 +724,7 @@ async def request_child_weight(message: Message, state: FSMContext):
         )
         await message.answer(
             "Произошла ошибка при сохранении веса. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -798,7 +801,7 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
                 f"Следующий ребенок без веса: {next_child['full_name']}\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 30):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await kb.create_child_weight_keyboard(next_child["id"])
+                reply_markup=await create_child_weight_keyboard(next_child["id"])
             )
         else:
             # Все дети обработаны, переходим дальше
@@ -820,7 +823,7 @@ async def skip_child_weight(callback: CallbackQuery, state: FSMContext):
         )
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -834,7 +837,7 @@ async def process_promo_code(message: Message, state: FSMContext):
         if message.text.lower() == "/cancel":
             await message.answer(
                 "Бронирование отменено.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -844,7 +847,7 @@ async def process_promo_code(message: Message, state: FSMContext):
         if not promo_code:
             await message.answer(
                 "Пожалуйста, введите промокод или нажмите кнопку 'Пропустить'.",
-                reply_markup=await kb.create_promo_code_keyboard()
+                reply_markup=await create_promo_code_keyboard()
             )
             return
 
@@ -857,7 +860,7 @@ async def process_promo_code(message: Message, state: FSMContext):
                 await message.answer(
                     "Промокод недействителен, истек или достиг лимита использований.\n\n"
                     "Пожалуйста, проверьте правильность ввода или пропустите этот шаг:",
-                    reply_markup=await kb.create_promo_code_keyboard()
+                    reply_markup=await create_promo_code_keyboard()
                 )
                 return
 
@@ -890,7 +893,7 @@ async def process_promo_code(message: Message, state: FSMContext):
         logger.error(f"Ошибка обработки промокода для {user_telegram_id}: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка при проверке промокода. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -944,7 +947,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
                 f"У ребенка {first_child['full_name']} не указан вес в профиле.\n\n"
                 f"Пожалуйста, введите вес в кг (только цифры, например: 25):\n"
                 f"Или нажмите кнопку для использования среднего веса.",
-                reply_markup=await kb.create_child_weight_keyboard(first_child["id"])
+                reply_markup=await create_child_weight_keyboard(first_child["id"])
             )
         else:
             # У всех детей есть вес - переходим к расчету стоимости
@@ -955,7 +958,7 @@ async def finish_children_selection(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка завершения выбора детей для пользователя {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
     finally:
@@ -977,7 +980,7 @@ async def skip_promo_code(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка при пропуске промокода для {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -1036,14 +1039,14 @@ async def calculate_total_from_message(message: Message, state: FSMContext):
 
         await message.answer(
             summary,
-            reply_markup=await kb.create_confirmation_keyboard()
+            reply_markup=await create_confirmation_keyboard()
         )
 
     except Exception as e:
         logger.error(f"Ошибка расчета стоимости: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка при расчете стоимости. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()
 
@@ -1067,7 +1070,7 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
             logger.error(f"slot_id не найден в state для пользователя {user_telegram_id}")
             await callback.message.answer(
                 "Ошибка: данные слотов устарели. Начните бронирование заново.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -1089,7 +1092,7 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
             logger.error(f"Недостаточно данных в state для пользователя {user_telegram_id}")
             await callback.message.answer(
                 "Ошибка: недостаточно данных. Начните бронирование заново.",
-                reply_markup=kb.main
+                reply_markup=main
             )
             await state.clear()
             return
@@ -1141,7 +1144,7 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
                     logger.error(f"Ошибка создания бронирования: {error_msg}")
                     await callback.message.answer(
                         f"Ошибка при создании бронирования: {error_msg}",
-                        reply_markup=kb.main
+                        reply_markup=main
                     )
                     await state.clear()
                     return
@@ -1161,16 +1164,9 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
                     children_names = [child.full_name for child in booking_data.children]
                     success_message += f"Дети: {', '.join(children_names)}\n"
 
-                success_message += (
-                    f"\nСтатус: ожидает оплаты\n"
-                    f"Оплатить нужно в течение 24 часов.\n\n"
-                    f"После оплаты бронь станет активной.\n"
-                    f"Вы можете посмотреть свои бронирования в Личном кабинете."
-                )
-
                 await callback.message.answer(
                     success_message,
-                    reply_markup=kb.main
+                    reply_markup=await post_booking_keyboard(booking.id)
                 )
 
                 logger.info(f"Бронирование {booking.id} успешно создано для пользователя {user_telegram_id}")
@@ -1180,6 +1176,6 @@ async def confirm_booking(callback: CallbackQuery, state: FSMContext):
         logger.error(f"Ошибка подтверждения бронирования для {user_telegram_id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка при создании бронирования. Попробуйте позже.",
-            reply_markup=kb.main
+            reply_markup=main
         )
         await state.clear()

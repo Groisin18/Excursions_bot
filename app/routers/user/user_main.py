@@ -7,6 +7,7 @@ from aiogram.enums import ChatAction
 import app.user_panel.keyboards as kb
 from app.utils.logging_config import get_logger
 
+ADMIN_LOGIN = '@EkaterinkaMinyaylova'
 
 router = Router(name="user")
 
@@ -141,7 +142,7 @@ async def questions(message: Message):
         await message.answer(
             'Ответы на основные вопросы.\n\n'
             'Если у вас есть другой вопрос, можете задать его нашему администратору\n'
-            '@EkaterinkaMinyaylova',
+            f'{ADMIN_LOGIN}',
             reply_markup=ReplyKeyboardRemove()
         )
         await message.answer(
@@ -242,7 +243,7 @@ async def qu_self_co(callback: CallbackQuery):
             'Мы готовы предоставить вам экскурсию.\n'
             'Если вы хотите пойти на экскурсию исключительно своей компанией,'
             ' то напишите администратору:\n'
-            '@EkaterinkaMinyaylova\n'
+            f'{ADMIN_LOGIN}\n'
             'Мы выберем подходящий маршрут, день и время.\n'
             'Доступны и будние дни, и выходные.\n\n'
             'Индивидуальные экскурсии проводятся компаниям от 4 человек.',
@@ -264,7 +265,7 @@ async def mention_admin(message: Message):
     try:
         await message.answer(
             'Для связи с администратором используйте контакт:\n'
-            '@EkaterinkaMinyaylova\n\n'
+            f'{ADMIN_LOGIN}\n\n'
             'Или выберите нужный пункт в меню.',
             reply_markup=kb.main
         )
@@ -287,7 +288,7 @@ async def mention_price(message: Message):
         await message.answer(
             'Стоимость экскурсий зависит от выбранного маршрута и количества человек.\n'
             'Выберите "Наши экскурсии" в меню, чтобы увидеть доступные варианты.\n\n'
-            'Для индивидуального расчета стоимости свяжитесь с администратором: @EkaterinkaMinyaylova',
+            f'Для индивидуального расчета стоимости свяжитесь с администратором: {ADMIN_LOGIN}',
             reply_markup=kb.main
         )
 
@@ -297,5 +298,39 @@ async def mention_price(message: Message):
         logger.error(f"Ошибка отправки ответа о стоимости: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка. Попробуйте позже.",
+            reply_markup=kb.main
+        )
+
+
+@router.callback_query(F.data == "back_to_main_with_info")
+async def back_to_main_with_info(callback: CallbackQuery):
+    """
+    Возврат в главное меню с информацией о необходимости оплаты.
+    Вызывается сразу после создания бронирования.
+    """
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} возвращается в главное меню после бронирования")
+
+    try:
+        await callback.answer()
+
+        info_text = (
+            "Бронирование создано!\n\n"
+            "Важно: оплатить нужно в течение 24 часов, иначе бронь автоматически отменится.\n\n"
+            "Вы всегда можете:\n"
+            "• Оплатить бронь в разделе 'Личный кабинет' → 'Мои бронирования'\n"
+            "• Отменить бронь там же, если передумаете\n\n"
+            "Спасибо, что выбираете нас!"
+        )
+
+        await callback.message.answer(
+            info_text,
+            reply_markup=kb.main  # Обычная главная клавиатура
+        )
+
+    except Exception as e:
+        logger.error(f"Ошибка при возврате в главное меню: {e}", exc_info=True)
+        await callback.message.answer(
+            "Возврат в главное меню",
             reply_markup=kb.main
         )
