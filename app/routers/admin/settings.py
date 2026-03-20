@@ -10,7 +10,7 @@ from app.database.repositories import (
 from app.database.models import UserRole, FileType
 from app.database.session import async_session
 
-from app.admin_panel.states_adm import UploadConcent, AdminSettingsStates
+from app.admin_panel.states_adm import UploadConcent
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 
@@ -664,6 +664,9 @@ async def receipt_toggle_send(callback: CallbackQuery):
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 settings_repo = SettingsRepository(uow.session)
+                user_repo = UserRepository(uow.session)
+                user = await user_repo.get_by_telegram_id(callback.from_user.id)
+                admin_user_id = user.id
 
                 current = await settings_repo.get_bool(SETTING_SEND_RECEIPT, default=False)
                 new_value = "false" if current else "true"
@@ -672,7 +675,7 @@ async def receipt_toggle_send(callback: CallbackQuery):
                     key=SETTING_SEND_RECEIPT,
                     value=new_value,
                     description="Включение/выключение отправки чеков по 54-ФЗ",
-                    updated_by=callback.from_user.id
+                    updated_by=admin_user_id
                 )
 
                 logger.info(f"Отправка чеков изменена: {current} -> {not current}")
@@ -734,12 +737,15 @@ async def receipt_set_vat_value(callback: CallbackQuery):
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 settings_repo = SettingsRepository(uow.session)
+                user_repo = UserRepository(uow.session)
+                user = await user_repo.get_by_telegram_id(callback.from_user.id)
+                admin_user_id = user.id
 
                 await settings_repo.set(
                     key=SETTING_VAT_RATE,
                     value=str(vat_rate),
                     description="Ставка НДС для чеков",
-                    updated_by=callback.from_user.id
+                    updated_by=admin_user_id
                 )
 
                 send_receipt, _, tax_system = await _get_receipt_settings(session)
@@ -800,12 +806,15 @@ async def receipt_set_tax_value(callback: CallbackQuery):
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 settings_repo = SettingsRepository(uow.session)
+                user_repo = UserRepository(uow.session)
+                user = await user_repo.get_by_telegram_id(callback.from_user.id)
+                admin_user_id = user.id
 
                 await settings_repo.set(
                     key=SETTING_TAX_SYSTEM,
                     value=str(tax_code),
                     description="Система налогообложения для чеков",
-                    updated_by=callback.from_user.id
+                    updated_by=admin_user_id
                 )
 
                 send_receipt, vat_rate, _ = await _get_receipt_settings(session)
