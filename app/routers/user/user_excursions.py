@@ -24,7 +24,6 @@ router = Router(name="user_excursions")
 
 logger = get_logger(__name__)
 
-# TODO Исправить коллбэк-ансверы в блоках ошибок
 
 # ===== НАЧАЛЬНОЕ МЕНЮ ВЫБОРА РАСПИСАНИЯ =====
 
@@ -87,23 +86,21 @@ async def excursions(message: Message):
 @router.callback_query(F.data == "public_schedule_all")
 async def show_public_schedule_all(callback: CallbackQuery):
     """Показать опции просмотра расписания"""
+    await callback.answer()
     try:
-        await callback.answer()
         await callback.message.edit_text(
             "Выберите период для просмотра расписания:",
             reply_markup=public_schedule_options()
         )
     except Exception as e:
         logger.error(f"Ошибка показа опций расписания: {e}")
-        await callback.answer("Ошибка загрузки", show_alert=True)
+        await callback.message.answer("Ошибка загрузки", reply_markup=main_menu())
 
 @router.callback_query(F.data == "public_back_to_excursions")
 async def back_to_excursions_list_public(callback: CallbackQuery):
     """Вернуться к списку экскурсий (публичная версия)"""
+    await callback.answer()
     try:
-        await callback.answer()
-
-        # Просто отправляем новое сообщение со списком экскурсий
         async with async_session() as session:
             exc_repo = ExcursionRepository(session)
             excursions_list = await exc_repo.get_all(active_only=True)
@@ -142,7 +139,7 @@ async def back_to_excursions_list_public(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка возврата к списку экскурсий: {e}", exc_info=True)
-        await callback.answer("Ошибка загрузки списка", show_alert=True)
+        await callback.message.answer("Ошибка загрузки списка", reply_markup=main_menu())
 
 
 # ===== ПРОСМОТР РАСПИСАНИЯ ПО ДАТЕ =====
@@ -187,9 +184,8 @@ async def show_date_schedule(message_or_callback, target_date: date, is_callback
 @router.callback_query(F.data.startswith("public_schedule:"))
 async def handle_public_schedule(callback: CallbackQuery):
     """Обработчик для публичного расписания (сегодня/завтра)"""
+    await callback.answer()
     try:
-        await callback.answer()
-
         if callback.data == "public_schedule:today":
             target_date = datetime.now().date()
             date_name = "сегодня"
@@ -215,14 +211,14 @@ async def handle_public_schedule(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания ({callback.data}): {e}", exc_info=True)
-        await callback.answer("Ошибка загрузки расписания", show_alert=True)
+        await callback.message.answer("Ошибка загрузки расписания", reply_markup=main_menu())
 
 @router.callback_query(F.data == "public_schedule_week")
 async def public_schedule_week(callback: CallbackQuery):
     """Показать расписание на неделю для пользователей"""
-    try:
-        await callback.answer()
+    await callback.answer()
 
+    try:
         async with async_session() as session:
             slot_manager = SlotManager(session)
             text, slots_by_date = await slot_manager.get_week_schedule()
@@ -239,14 +235,13 @@ async def public_schedule_week(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на неделю: {e}", exc_info=True)
-        await callback.answer("Ошибка загрузки расписания", show_alert=True)
+        await callback.message.answer("Ошибка загрузки расписания", reply_markup=main_menu())
 
 @router.callback_query(F.data == "public_schedule_month")
 async def public_schedule_month(callback: CallbackQuery):
     """Показать расписание на месяц для пользователей"""
+    await callback.answer()
     try:
-        await callback.answer()
-
         async with async_session() as session:
             slot_manager = SlotManager(session)
             text, slots_by_date = await slot_manager.get_month_schedule()
@@ -263,13 +258,13 @@ async def public_schedule_month(callback: CallbackQuery):
 
     except Exception as e:
         logger.error(f"Ошибка показа расписания на месяц: {e}", exc_info=True)
-        await callback.answer("Ошибка загрузки расписания", show_alert=True)
+        await callback.message.answer("Ошибка загрузки расписания", reply_markup=main_menu())
 
 @router.callback_query(F.data == "public_schedule_by_date")
 async def public_schedule_by_date(callback: CallbackQuery, state: FSMContext):
     """Запрос даты для просмотра расписания"""
+    await callback.answer()
     try:
-        await callback.answer()
         await callback.message.edit_text(
             "Введите дату для просмотра расписания в формате ДД.ММ.ГГГГ\n"
             "Например: 15.01.2024\n\n"
@@ -352,6 +347,7 @@ async def public_back_to_schedule_options(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("public_exc_detail:"))
 async def show_excursion_public_detail(callback: CallbackQuery):
     """Показать детали экскурсии для пользователя"""
+    callback.answer()
     try:
         exc_id = int(callback.data.split(":")[-1])
 
@@ -360,7 +356,7 @@ async def show_excursion_public_detail(callback: CallbackQuery):
             excursion = await exc_repo.get_by_id(exc_id)
 
             if not excursion:
-                await callback.answer("Экскурсия не найдена", show_alert=True)
+                await callback.message.answer("Экскурсия не найдена", reply_markup=all_excursions())
                 return
 
             details = (
@@ -372,8 +368,6 @@ async def show_excursion_public_detail(callback: CallbackQuery):
             )
             if excursion.description:
                 details += f"Описание:\n{excursion.description}\n\n"
-
-            await callback.answer()
             await callback.message.edit_text(
                 details,
                 reply_markup=excursion_details(exc_id)
@@ -386,16 +380,19 @@ async def show_excursion_public_detail(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("public_schedule_exc:"))
 async def show_excursion_schedule(callback: CallbackQuery):
     """Показать расписание конкретной экскурсии"""
+    await callback.answer()
     try:
         exc_id = int(callback.data.split(":")[-1])
-        await callback.answer()
 
         async with async_session() as session:
             slot_manager = SlotManager(session)
             excursion, text, slots_by_date = await slot_manager.get_excursion_schedule_period(exc_id, days_ahead=30)
 
             if not excursion:
-                await callback.answer("Экскурсия не найдена", show_alert=True)
+                await callback.message.answer(
+                    "Экскурсия не найдена",
+                    reply_markup=await all_excursions()
+                )
                 return
 
             if not slots_by_date:
@@ -422,6 +419,7 @@ async def show_excursion_schedule(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("public_view_exc_date:"))
 async def public_view_exc_date(callback: CallbackQuery):
     """Показать слоты конкретной экскурсии на выбранную дату"""
+    await callback.answer()
     try:
         parts = callback.data.split(":")
         date_str = parts[1]
@@ -433,16 +431,15 @@ async def public_view_exc_date(callback: CallbackQuery):
             excursion, text, slots = await slot_manager.get_excursion_slots_for_date(exc_id, target_date)
 
             if not excursion:
-                await callback.answer("Экскурсия не найдена", show_alert=True)
+                await callback.message.answer("Экскурсия не найдена", reply_markup=await all_excursions())
                 return
 
             if not slots:
-                await callback.answer("На эту дату нет слотов для этой экскурсии", show_alert=True)
+                await callback.message.answer("На эту дату нет слотов для этой экскурсии", reply_markup=await all_excursions())
                 return
 
             keyboard = public_schedule_date_menu(slots, target_date)
             await callback.message.edit_text(text, reply_markup=keyboard)
-            await callback.answer()
 
     except Exception as e:
         logger.error(f"Ошибка показа слотов экскурсии на дату: {e}", exc_info=True)
@@ -451,12 +448,12 @@ async def public_view_exc_date(callback: CallbackQuery):
 @router.callback_query(F.data.startswith("public_view_slot:"))
 async def public_view_slot_details(callback: CallbackQuery, state: FSMContext):
     """Просмотр деталей слота перед бронированием"""
+    await callback.answer()
     user_telegram_id = callback.from_user.id
     logger.info(f"Пользователь {user_telegram_id} просматривает детали слота")
 
     try:
         slot_id = int(callback.data.split(":")[-1])
-        await callback.answer()
 
         async with async_session() as session:
             slot_manager = SlotManager(session)
@@ -568,6 +565,7 @@ async def public_schedule_back(callback: CallbackQuery, state: FSMContext):
     """Возврат к расписанию из деталей слота"""
     user_telegram_id = callback.from_user.id
     logger.info(f"Пользователь {user_telegram_id} вернулся к расписанию")
+    await callback.answer()
 
     # Очищаем состояние если есть
     await state.clear()
@@ -579,18 +577,14 @@ async def public_schedule_back(callback: CallbackQuery, state: FSMContext):
     # Показываем расписание на выбранную дату
     await show_date_schedule(callback, target_date, is_callback=True)
 
-    await callback.answer()
-
-
 @router.callback_query(F.data == "public_back_to_date_schedule")
 async def back_to_schedule_options(callback: CallbackQuery, state: FSMContext):
     """Возврат к опциям расписания из просмотра даты"""
+    await callback.answer()
     logger.info(f"Пользователь {callback.from_user.id} вернулся к опциям расписания")
 
     try:
-        await callback.answer()
         await state.clear()
-
         await callback.message.edit_text(
             "Выберите период для просмотра расписания:",
             reply_markup=public_schedule_options()
