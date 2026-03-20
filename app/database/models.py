@@ -660,6 +660,34 @@ class TelegramFile(Base):
             'uploaded_at': self.uploaded_at.isoformat() if self.uploaded_at else None
         }
 
+class SystemSetting(Base):
+    """Модель системных настроек"""
+    __tablename__ = 'system_settings'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    key: Mapped[str] = mapped_column(String(100), unique=True, nullable=False, index=True)
+    value: Mapped[str] = mapped_column(String(500), nullable=False)
+    description: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now)
+    updated_by: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id"), nullable=True)
+
+    # Relationship
+    updater: Mapped[Optional["User"]] = relationship("User", foreign_keys=[updated_by])
+
+    def __repr__(self) -> str:
+        return f"SystemSetting(key='{self.key}', value='{self.value}')"
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'key': self.key,
+            'value': self.value,
+            'description': self.description,
+            'updated_at': self.updated_at.isoformat() if self.updated_at else None,
+            'updated_by': self.updated_by
+        }
+
+
 
 # Функция для создания всех таблиц
 async def init_models():

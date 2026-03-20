@@ -4,11 +4,13 @@ from aiogram.fsm.context import FSMContext
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 from app.database.unit_of_work import UnitOfWork
-from app.database.repositories import UserRepository, FileRepository
+from app.database.repositories import (
+    UserRepository, FileRepository, SettingsRepository
+)
 from app.database.models import UserRole, FileType
 from app.database.session import async_session
 
-from app.admin_panel.states_adm import UploadConcent
+from app.admin_panel.states_adm import UploadConcent, AdminSettingsStates
 from app.middlewares import AdminMiddleware
 from app.utils.logging_config import get_logger
 
@@ -558,3 +560,266 @@ async def settings_main_callback(callback: CallbackQuery):
             "Произошла ошибка при открытии настроек",
             reply_markup=kb.settings_submenu()
         )
+
+
+# ===== НАСТРОЙКИ ОТПРАВКИ ЧЕКОВ И СИСТЕМЫ НАЛОГООБЛОЖЕНИЯ =====
+
+# ===== НАСТРОЙКИ ЧЕКОВ 54-ФЗ =====
+
+# Ключи настроек
+SETTING_SEND_RECEIPT = "send_receipt"
+SETTING_VAT_RATE = "vat_rate"
+SETTING_TAX_SYSTEM = "tax_system_code"
+
+# Значения по умолчанию
+DEFAULT_SEND_RECEIPT = "false"
+DEFAULT_VAT_RATE = "0"
+DEFAULT_TAX_SYSTEM = "1"
+
+
+async def _get_receipt_settings(session) -> tuple:
+    """Получить текущие настройки чеков"""
+    settings_repo = SettingsRepository(session)
+
+    send_receipt = await settings_repo.get_bool(
+        SETTING_SEND_RECEIPT,
+        default=False
+    )
+    vat_rate = await settings_repo.get_int(
+        SETTING_VAT_RATE,
+        default=0
+    )
+    tax_system = await settings_repo.get_int(
+        SETTING_TAX_SYSTEM,
+        default=1
+    )
+
+    return send_receipt, vat_rate, tax_system
+
+@router.message(F.text == "Настройки чеков 54-ФЗ")
+async def receipt_settings_menu(message: Message):
+    """Меню настроек чеков 54-ФЗ"""
+    logger.info(f"Администратор {message.from_user.id} открыл настройки чеков")
+
+    try:
+        async with async_session() as session:
+            send_receipt, vat_rate, tax_system = await _get_receipt_settings(session)
+
+            text = (
+                "Настройки чеков по 54-ФЗ\n\n"
+                "Здесь можно настроить параметры отправки чеков через YooKassa.\n\n"
+                "Доступные опции:\n"
+                "• Отправка чеков - включить/выключить\n"
+                "• Ставка НДС - выбор ставки для экскурсионных услуг\n"
+                "• Система налогообложения - выбор режима для чека\n\n"
+                "Текущие настройки:"
+            )
+
+            await message.answer(
+                text,
+                reply_markup=kb.receipt_settings_menu(send_receipt, vat_rate, tax_system)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка открытия настроек чеков: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при открытии настроек",
+            reply_markup=kb.settings_submenu()
+        )
+
+@router.callback_query(F.data == "receipt_settings")
+async def receipt_settings_callback(callback: CallbackQuery):
+    """Возврат в меню настроек чеков"""
+    logger.info(f"Администратор {callback.from_user.id} вернулся в настройки чеков")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            send_receipt, vat_rate, tax_system = await _get_receipt_settings(session)
+
+            await callback.message.edit_text(
+                "Настройки чеков по 54-ФЗ\n\n"
+                "Доступные опции:\n"
+                "• Отправка чеков - включить/выключить\n"
+                "• Ставка НДС - выбор ставки для экскурсионных услуг\n"
+                "• Система налогообложения - выбор режима для чека\n\n"
+                "Текущие настройки:",
+                reply_markup=kb.receipt_settings_menu(send_receipt, vat_rate, tax_system)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка возврата в настройки чеков: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка",
+            reply_markup=kb.settings_submenu()
+        )
+
+@router.callback_query(F.data == "receipt_toggle_send")
+async def receipt_toggle_send(callback: CallbackQuery):
+    """Переключение отправки чеков"""
+    logger.info(f"Администратор {callback.from_user.id} переключает отправку чеков")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                settings_repo = SettingsRepository(uow.session)
+
+                current = await settings_repo.get_bool(SETTING_SEND_RECEIPT, default=False)
+                new_value = "false" if current else "true"
+
+                await settings_repo.set(
+                    key=SETTING_SEND_RECEIPT,
+                    value=new_value,
+                    description="Включение/выключение отправки чеков по 54-ФЗ",
+                    updated_by=callback.from_user.id
+                )
+
+                logger.info(f"Отправка чеков изменена: {current} -> {not current}")
+
+                send_receipt, vat_rate, tax_system = await _get_receipt_settings(session)
+
+                await callback.message.edit_text(
+                    "Настройки чеков по 54-ФЗ\n\n"
+                    "Доступные опции:\n"
+                    "• Отправка чеков - включить/выключить\n"
+                    "• Ставка НДС - выбор ставки для экскурсионных услуг\n"
+                    "• Система налогообложения - выбор режима для чека\n\n"
+                    "Текущие настройки:",
+                    reply_markup=kb.receipt_settings_menu(send_receipt, vat_rate, tax_system)
+                )
+
+    except Exception as e:
+        logger.error(f"Ошибка переключения отправки чеков: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка при изменении настройки")
+
+@router.callback_query(F.data == "receipt_set_vat")
+async def receipt_set_vat_menu(callback: CallbackQuery):
+    """Меню выбора ставки НДС"""
+    logger.info(f"Администратор {callback.from_user.id} открыл выбор ставки НДС")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            settings_repo = SettingsRepository(session)
+            current_rate = await settings_repo.get_int(SETTING_VAT_RATE, default=0)
+
+            text = (
+                "Выберите ставку НДС для экскурсионных услуг:\n\n"
+                "• 0% - без НДС (освобождение, упрощенка)\n"
+                "• 5% - пониженная ставка (УСН)\n"
+                "• 7% - пониженная ставка (УСН)\n"
+                "• 10% - льготная ставка\n"
+                "• 22% - основная ставка с 2026 года\n\n"
+                f"Текущая ставка: {current_rate}%"
+            )
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=kb.vat_rate_selection_menu(current_rate)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка открытия выбора ставки НДС: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка")
+
+@router.callback_query(F.data.startswith("receipt_set_vat_"))
+async def receipt_set_vat_value(callback: CallbackQuery):
+    """Установка ставки НДС"""
+    vat_rate = int(callback.data.split("_")[-1])
+    logger.info(f"Администратор {callback.from_user.id} установил ставку НДС: {vat_rate}%")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                settings_repo = SettingsRepository(uow.session)
+
+                await settings_repo.set(
+                    key=SETTING_VAT_RATE,
+                    value=str(vat_rate),
+                    description="Ставка НДС для чеков",
+                    updated_by=callback.from_user.id
+                )
+
+                send_receipt, _, tax_system = await _get_receipt_settings(session)
+
+                await callback.message.edit_text(
+                    "Настройки чеков по 54-ФЗ\n\n"
+                    "Доступные опции:\n"
+                    "• Отправка чеков - включить/выключить\n"
+                    "• Ставка НДС - выбор ставки для экскурсионных услуг\n"
+                    "• Система налогообложения - выбор режима для чека\n\n"
+                    "Текущие настройки:",
+                    reply_markup=kb.receipt_settings_menu(send_receipt, vat_rate, tax_system)
+                )
+
+    except Exception as e:
+        logger.error(f"Ошибка установки ставки НДС: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка при сохранении настройки")
+
+@router.callback_query(F.data == "receipt_set_tax")
+async def receipt_set_tax_menu(callback: CallbackQuery):
+    """Меню выбора системы налогообложения"""
+    logger.info(f"Администратор {callback.from_user.id} открыл выбор системы налогообложения")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            settings_repo = SettingsRepository(session)
+            current_code = await settings_repo.get_int(SETTING_TAX_SYSTEM, default=1)
+
+            text = (
+                "Выберите систему налогообложения:\n\n"
+                "1 - Общая система налогообложения (ОСН)\n"
+                "2 - Упрощенная (УСН, доходы)\n"
+                "3 - Упрощенная (УСН, доходы минус расходы)\n"
+                "4 - Единый налог на вмененный доход (ЕНВД)\n"
+                "5 - Единый сельскохозяйственный налог (ЕСН)\n"
+                "6 - Патентная система налогообложения\n\n"
+                f"Текущий режим: код {current_code}"
+            )
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=kb.tax_system_selection_menu(current_code)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка открытия выбора системы налогообложения: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка")
+
+@router.callback_query(F.data.startswith("receipt_set_tax_"))
+async def receipt_set_tax_value(callback: CallbackQuery):
+    """Установка системы налогообложения"""
+    tax_code = int(callback.data.split("_")[-1])
+    logger.info(f"Администратор {callback.from_user.id} установил систему налогообложения: {tax_code}")
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            async with UnitOfWork(session) as uow:
+                settings_repo = SettingsRepository(uow.session)
+
+                await settings_repo.set(
+                    key=SETTING_TAX_SYSTEM,
+                    value=str(tax_code),
+                    description="Система налогообложения для чеков",
+                    updated_by=callback.from_user.id
+                )
+
+                send_receipt, vat_rate, _ = await _get_receipt_settings(session)
+
+                await callback.message.edit_text(
+                    "Настройки чеков по 54-ФЗ\n\n"
+                    "Доступные опции:\n"
+                    "• Отправка чеков - включить/выключить\n"
+                    "• Ставка НДС - выбор ставки для экскурсионных услуг\n"
+                    "• Система налогообложения - выбор режима для чека\n\n"
+                    "Текущие настройки:",
+                    reply_markup=kb.receipt_settings_menu(send_receipt, vat_rate, tax_code)
+                )
+
+    except Exception as e:
+        logger.error(f"Ошибка установки системы налогообложения: {e}", exc_info=True)
+        await callback.message.answer("Произошла ошибка при сохранении настройки")

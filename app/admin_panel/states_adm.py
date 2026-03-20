@@ -106,3 +106,9 @@ class EditPromocode(StatesGroup):
 class UploadConcent(StatesGroup):
     """Состояния для загрузки файлов согласия"""
     waiting_for_file = State()
+
+class AdminSettingsStates(StatesGroup):
+    """Состояния для настроек админ-панели"""
+    waiting_for_send_receipt = State()
+    waiting_for_vat_rate = State()
+    waiting_for_tax_system = State()

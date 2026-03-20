@@ -15,7 +15,7 @@ from dotenv import load_dotenv
 from app.database.session import async_session
 from app.database.unit_of_work import UnitOfWork
 from app.database.repositories import (
-    BookingRepository, UserRepository, PaymentRepository
+    BookingRepository, UserRepository, PaymentRepository, SettingsRepository
 )
 from app.database.managers import PaymentManager
 from app.database.models import (
@@ -34,9 +34,6 @@ from app.user_panel.keyboards import (
 
 load_dotenv()
 PAYMENTS_TOKEN = os.getenv('PAYMENTS_TOKEN')
-# Флаг отправки чеков по 54-ФЗ (true/false)
-SEND_RECEIPT = os.getenv('SEND_RECEIPT', 'false').lower() == 'true'
-
 if not PAYMENTS_TOKEN:
     logger = get_logger(__name__)
     logger.error("PAYMENTS_TOKEN не установлен в переменных окружения")
@@ -48,36 +45,59 @@ logger = get_logger(__name__)
 PAYMENT_TIMEOUT_HOURS = 24
 
 
-def build_receipt_data(user: User, booking, excursion) -> Optional[Dict]:
+async def build_receipt_data(user: User, booking, excursion, session) -> Optional[Dict]:
     """
     Формирует данные для чека по 54-ФЗ.
+
+    Настройки чеков читаются из БД (таблица system_settings).
+    Администратор может изменять их через админ-панель.
 
     Args:
         user: Объект пользователя
         booking: Объект бронирования
         excursion: Объект экскурсии
+        session: Асинхронная сессия SQLAlchemy
 
     Returns:
         Dict с данными для чека или None, если отправка чеков отключена
     """
-    if not SEND_RECEIPT:
+    settings_repo = SettingsRepository(session)
+
+    send_receipt = await settings_repo.get_bool("send_receipt", default=False)
+
+    if not send_receipt:
         return None
 
-    # TODO: Сделать возможность изменения SEND_RECEIPT через админ-панель
-    # Планируется добавить в раздел настроек админки:
-    # - Вкл/Выкл отправку чеков
-    # - Выбор системы налогообложения
-    # - Настройку ставок НДС
+    vat_rate = await settings_repo.get_int("vat_rate", default=0)
+    tax_system_code = await settings_repo.get_int("tax_system_code", default=1)
+
+    # Определяем код ставки НДС по документации YooKassa
+    # 1 - Без НДС
+    # 3 - НДС 10%
+    # 7 - НДС 5%
+    # 8 - НДС 7%
+    # 11 - НДС 22%
+
+    vat_code_map = {
+        0: 1,    # Без НДС
+        5: 7,    # НДС 5%
+        7: 8,    # НДС 7%
+        10: 3,   # НДС 10%
+        22: 11,  # НДС 22%
+    }
+
+    vat_code = vat_code_map.get(vat_rate, 1)
 
     # Базовая структура чека
     receipt_data = {
         "receipt": {
             "customer": {},
-            "items": []
+            "items": [],
+            "tax_system_code": tax_system_code
         }
     }
 
-    # Добавляем данные клиента (что есть)
+    # Добавляем данные клиента
     if user.full_name:
         receipt_data["receipt"]["customer"]["full_name"] = user.full_name
     if user.phone_number:
@@ -86,8 +106,6 @@ def build_receipt_data(user: User, booking, excursion) -> Optional[Dict]:
         receipt_data["receipt"]["customer"]["email"] = user.email
 
     # Формируем позицию в чеке
-    # Внимание! vat_code нужно настроить под систему налогообложения ИП
-    # По умолчанию ставим 1 (НДС 20%), но лучше уточнить у заказчика
     item = {
         "description": f"Экскурсия {excursion.name}",
         "quantity": 1,
@@ -95,7 +113,9 @@ def build_receipt_data(user: User, booking, excursion) -> Optional[Dict]:
             "value": f"{booking.total_price}.00",
             "currency": "RUB"
         },
-        "vat_code": 1  # TODO: Сделать настраиваемым через админ-панель
+        "vat_code": vat_code,
+        "payment_subject": "service",  # Услуга
+        "payment_mode": "full_prepayment"  # Полная предоплата
     }
 
     receipt_data["receipt"]["items"].append(item)
@@ -230,7 +250,7 @@ async def initiate_payment(callback: CallbackQuery):
             payload = f"booking:{booking_id}:{payment.id}"
 
             # Формируем данные для чека (если включено)
-            provider_data = build_receipt_data(user, booking, excursion)
+            provider_data = await build_receipt_data(user, booking, excursion, session)
             if provider_data:
                 logger.info(f"Для платежа #{payment.id} будут отправлены чеки по 54-ФЗ")
 

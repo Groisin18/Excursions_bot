@@ -9,6 +9,8 @@ from dotenv import load_dotenv
 
 from app.routers import setup_routers
 from app.database.models import init_models
+from app.database.repositories import SettingsRepository
+from app.database.session import async_session
 from app.services.redis import redis_client, dumps, loads
 from app.services.scheduler.scheduler import scheduler_service
 from app.utils.logging_config import setup_logging
@@ -81,6 +83,21 @@ async def startup(dispatcher: Dispatcher):
     """Обработчик запуска бота"""
     try:
         await init_models()
+        # Инициализация настроек по умолчанию
+        async with async_session() as session:
+            settings_repo = SettingsRepository(session)
+
+            # Создаем настройки по умолчанию, если их нет
+            default_settings = {
+                "send_receipt": ("false", "Включение/выключение отправки чеков по 54-ФЗ"),
+                "vat_rate": ("0", "Ставка НДС для чеков (0, 5, 7, 10, 22)"),
+                "tax_system_code": ("1", "Система налогообложения для чеков (1-6)"),
+            }
+
+            for key, (default_value, description) in default_settings.items():
+                existing = await settings_repo.get_by_key(key)
+                if not existing:
+                    await settings_repo.set(key, default_value, description)
     except Exception as e:
         logger.error(f"Ошибка инициализации базы данных: {e}", exc_info=True)
         raise

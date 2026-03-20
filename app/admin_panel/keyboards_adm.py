@@ -179,13 +179,14 @@ def settings_submenu():
     buttons = [
         "Управление администраторами",
         "Файлы согласия на обработку ПД",
+        "Настройки чеков 54-ФЗ",
         "Назад"
     ]
 
     for button in buttons:
         builder.add(KeyboardButton(text=button))
 
-    builder.adjust(2, 1)
+    builder.adjust(2, 2, )
     return builder.as_markup(resize_keyboard=True)
 
 
@@ -1459,6 +1460,107 @@ def concent_file_selection_menu(
         )
 
     builder.button(text="Назад", callback_data="concent_files")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+def receipt_settings_menu(
+    send_receipt: bool,
+    vat_rate: int,
+    tax_system_code: int
+) -> InlineKeyboardMarkup:
+    """Меню настроек чеков 54-ФЗ"""
+    builder = InlineKeyboardBuilder()
+
+    # Статус отправки чеков
+    status_text = "Включена" if send_receipt else "Выключена"
+    builder.button(
+        text=f"Отправка чеков: {status_text}",
+        callback_data="receipt_toggle_send"
+    )
+
+    # Ставка НДС
+    vat_text = {
+        0: "0% (без НДС)",
+        5: "5%",
+        7: "7%",
+        10: "10%",
+        22: "22%"
+    }.get(vat_rate, f"{vat_rate}%")
+    builder.button(
+        text=f"Ставка НДС: {vat_text}",
+        callback_data="receipt_set_vat"
+    )
+
+    # Система налогообложения
+    tax_text = {
+        1: "ОСН",
+        2: "УСН (доходы)",
+        3: "УСН (доходы минус расходы)",
+        4: "ЕНВД",
+        5: "ЕСН",
+        6: "Патент"
+    }.get(tax_system_code, f"Код {tax_system_code}")
+    builder.button(
+        text=f"Система налогообложения: {tax_text}",
+        callback_data="receipt_set_tax"
+    )
+
+    builder.button(text="Назад в настройки", callback_data="admin_settings")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+def vat_rate_selection_menu(current_rate: int) -> InlineKeyboardMarkup:
+    """Меню выбора ставки НДС"""
+    builder = InlineKeyboardBuilder()
+
+    rates = [0, 5, 7, 10, 22]
+    rate_names = {
+        0: "0% (без НДС)",
+        5: "5%",
+        7: "7%",
+        10: "10%",
+        22: "22%"
+    }
+
+    for rate in rates:
+        text = rate_names[rate]
+        if rate == current_rate:
+            text = f"✓ {text}"
+        builder.button(
+            text=text,
+            callback_data=f"receipt_set_vat_{rate}"
+        )
+
+    builder.button(text="Назад", callback_data="receipt_settings")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+def tax_system_selection_menu(current_code: int) -> InlineKeyboardMarkup:
+    """Меню выбора системы налогообложения"""
+    builder = InlineKeyboardBuilder()
+
+    systems = {
+        1: "ОСН",
+        2: "УСН (доходы)",
+        3: "УСН (доходы минус расходы)",
+        4: "ЕНВД",
+        5: "ЕСН",
+        6: "Патент"
+    }
+
+    for code, name in systems.items():
+        text = name
+        if code == current_code:
+            text = f"✓ {text}"
+        builder.button(
+            text=text,
+            callback_data=f"receipt_set_tax_{code}"
+        )
+
+    builder.button(text="Назад", callback_data="receipt_settings")
     builder.adjust(1)
 
     return builder.as_markup()
