@@ -60,6 +60,7 @@ async def build_receipt_data(user: User, booking, excursion, session) -> Optiona
 
     Returns:
         Dict с данными для чека или None, если отправка чеков отключена
+        или у пользователя нет email
     """
     settings_repo = SettingsRepository(session)
 
@@ -68,16 +69,15 @@ async def build_receipt_data(user: User, booking, excursion, session) -> Optiona
     if not send_receipt:
         return None
 
+    # Для отправки чека обязателен email пользователя
+    if not user.email:
+        logger.warning(f"Невозможно отправить чек: у пользователя {user.id} нет email")
+        return None
+
     vat_rate = await settings_repo.get_int("vat_rate", default=0)
     tax_system_code = await settings_repo.get_int("tax_system_code", default=1)
 
     # Определяем код ставки НДС по документации YooKassa
-    # 1 - Без НДС
-    # 3 - НДС 10%
-    # 7 - НДС 5%
-    # 8 - НДС 7%
-    # 11 - НДС 22%
-
     vat_code_map = {
         0: 1,    # Без НДС
         5: 7,    # НДС 5%
@@ -91,19 +91,19 @@ async def build_receipt_data(user: User, booking, excursion, session) -> Optiona
     # Базовая структура чека
     receipt_data = {
         "receipt": {
-            "customer": {},
+            "customer": {
+                "email": user.email  # обязательное поле для отправки чека
+            },
             "items": [],
             "tax_system_code": tax_system_code
         }
     }
 
-    # Добавляем данные клиента
+    # Добавляем ФИО и телефон для идентификации (необязательно)
     if user.full_name:
         receipt_data["receipt"]["customer"]["full_name"] = user.full_name
     if user.phone_number:
         receipt_data["receipt"]["customer"]["phone"] = user.phone_number
-    if user.email:
-        receipt_data["receipt"]["customer"]["email"] = user.email
 
     # Формируем позицию в чеке
     item = {
@@ -235,9 +235,10 @@ async def initiate_payment(callback: CallbackQuery):
             # Формируем описание для инвойса
             date_str = slot.start_datetime.strftime("%d.%m.%Y в %H:%M")
             description = (
-                f"{excursion.name}\n"
+                f"{excursion.name[:30]}\n"
                 f"{date_str}\n"
                 f"Участников: {booking.people_count}"
+                f"Бронь #{booking_id}"
             )
 
             # Создаем цену (сумма в рублях * 100 = копейки)
