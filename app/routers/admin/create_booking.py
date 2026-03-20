@@ -479,7 +479,7 @@ async def process_date_for_booking(message: Message, state: FSMContext):
                 )
                 return
 
-            await state.update_data(selected_date=target_date)
+            await state.update_data(selected_date=target_date.isoformat())
 
             # Показываем список слотов
             await message.answer(
@@ -931,7 +931,7 @@ async def admin_process_virtual_child_age(message: Message, state: FSMContext):
 
         await state.update_data(
             virtual_child_age=age,
-            virtual_child_birth_date=birth_date
+            virtual_child_birth_date=birth_date.isoformat()
         )
 
         await message.answer(
@@ -1028,12 +1028,15 @@ async def admin_confirm_virtual_child(callback: CallbackQuery, state: FSMContext
         virtual_children = data.get('virtual_children', [])
 
         # Создаем запись о виртуальном ребенке (пока только в state, не в БД)
+        birth_date = data.get('virtual_child_birth_date')
+        if birth_date and not isinstance(birth_date, str):
+            birth_date = birth_date.isoformat()
         new_child = {
             'id': f"temp_{len(virtual_children)}",  # временный ID
             'surname': data.get('virtual_child_surname'),
             'name': data.get('virtual_child_name'),
             'full_name': f"{data.get('virtual_child_surname')} {data.get('virtual_child_name')}",
-            'birth_date': data.get('virtual_child_birth_date'),
+            'birth_date': birth_date,
             'age': data.get('virtual_child_age'),
             'weight': data.get('virtual_child_weight'),
             'is_virtual': True
@@ -1379,7 +1382,11 @@ async def admin_confirm_booking_final(callback: CallbackQuery, state: FSMContext
         await callback.answer()
 
         data = await state.get_data()
-
+        virtual_children = data.get('virtual_children', [])
+        for child in virtual_children:
+            birth_date_str = child.get('birth_date')
+            if birth_date_str and isinstance(birth_date_str, str):
+                child['birth_date'] = date.fromisoformat(birth_date_str)
         client_id = data.get('client_id')
         slot_id = data.get('slot_id')
         admin_telegram_id = callback.from_user.id

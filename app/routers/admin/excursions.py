@@ -103,7 +103,7 @@ async def exc_actions(callback:CallbackQuery):
     try:
         async with async_session() as session:
             exc_repo = ExcursionRepository(session)
-            excursion = await exc_repo.get_by_id()
+            excursion = await exc_repo.get_by_id(exc_id)
 
             if not excursion:
                 logger.warning(f"Экскурсия {exc_id} не найдена")

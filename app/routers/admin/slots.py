@@ -628,7 +628,7 @@ async def handle_reschedule_datetime(message: Message, state: FSMContext):
             await message.answer("Нельзя перенести слот на прошедшее время.")
             return
 
-        await state.update_data(new_datetime=new_datetime)
+        await state.update_data(new_datetime=new_datetime.isoformat())
         await state.set_state(RescheduleSlot.waiting_for_confirmation)
 
         data = await state.get_data()
@@ -710,7 +710,7 @@ async def confirm_reschedule(callback: CallbackQuery, state: FSMContext):
                             error_type="slot_conflict",
                             error_message=error_message,
                             retry_slot_id=slot_id,
-                            retry_datetime=new_datetime
+                            retry_datetime=new_datetime.isoformat()
                         )
                         match = re.search(r'слотом #(\d+)', error_message)
                         if match:
@@ -727,7 +727,7 @@ async def confirm_reschedule(callback: CallbackQuery, state: FSMContext):
                             error_type="captain_busy",
                             error_message=error_message,
                             retry_slot_id=slot_id,
-                            retry_datetime=new_datetime
+                            retry_datetime=new_datetime.isoformat()
                         )
                         await callback.message.answer(
                             f"{error_message}\n\n"
@@ -968,7 +968,11 @@ async def handle_change_captain(callback: CallbackQuery, state: FSMContext):
 
         slot_id = int(callback.data.split(":")[1])
         data = await state.get_data()
-        new_datetime = data.get('retry_datetime')
+        new_datetime_str = data.get('retry_datetime')
+        if new_datetime_str:
+            new_datetime = datetime.fromisoformat(new_datetime_str)
+        else:
+            new_datetime = None
 
         if not new_datetime:
             await callback.message.answer("Ошибка: время не указано.")
@@ -1000,8 +1004,7 @@ async def handle_change_captain(callback: CallbackQuery, state: FSMContext):
 
             await state.update_data(
                 slot_id=slot_id,
-                new_datetime=new_datetime,
-                new_end_datetime=new_end_datetime,
+                new_datetime=new_datetime.isoformat(),
                 available_captains=[c.id for c in available_captains]
             )
 
@@ -1051,7 +1054,11 @@ async def select_captain_for_reschedule(callback: CallbackQuery, state: FSMConte
         await callback.answer()
 
         data = await state.get_data()
-        new_datetime = data.get('new_datetime')
+        new_datetime_str = data.get('new_datetime')
+        if new_datetime_str:
+            new_datetime = datetime.fromisoformat(new_datetime_str)
+        else:
+            new_datetime = None
 
         if not new_datetime:
             await callback.message.answer("Ошибка: время не указано.")
@@ -1324,7 +1331,11 @@ async def show_available_captains(callback: CallbackQuery, state: FSMContext):
 
         slot_id = int(callback.data.split(":")[1])
         data = await state.get_data()
-        new_datetime = data.get('retry_datetime')
+        new_datetime_str = data.get('retry_datetime')
+        if new_datetime_str:
+            new_datetime = datetime.fromisoformat(new_datetime_str)
+        else:
+            new_datetime = None
 
         if not new_datetime:
             await callback.message.answer("Ошибка: время не указано.")
@@ -1398,7 +1409,11 @@ async def reschedule_without_captain(callback: CallbackQuery, state: FSMContext)
         slot_id = int(callback.data.split(":")[1])
         logger.info(f"Админ {callback.from_user.id} переносит слот {slot_id} без капитана")
         data = await state.get_data()
-        new_datetime = data.get('retry_datetime')
+        new_datetime_str = data.get('retry_datetime')
+        if new_datetime_str:
+            new_datetime = datetime.fromisoformat(new_datetime_str)
+        else:
+            new_datetime = None
 
         if not new_datetime:
             await callback.message.answer("Ошибка: время не указано.")

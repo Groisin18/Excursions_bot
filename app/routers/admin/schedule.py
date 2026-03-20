@@ -270,9 +270,8 @@ async def schedule_month_callback(callback: CallbackQuery, state: FSMContext):
                 )
                 return
 
-            # Сохраняем в состоянии для использования в show_more
+            # Сохраняем только количество дней, слоты не сохраняем
             await state.update_data(
-                monthly_slots_by_date=slots_by_date,
                 monthly_total_days=len(slots_by_date)
             )
 
@@ -319,26 +318,34 @@ async def schedule_month_callback(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data == "show_more_month_dates")
 async def show_more_month_dates_callback(callback: CallbackQuery, state: FSMContext):
-    """Показать остальные дни месяца из сохраненных данных"""
+    """Показать остальные дни месяца (загружаем из БД заново)"""
     logger.info(f"Администратор {callback.from_user.id} запросил продолжение расписания на месяц")
 
     try:
         await callback.answer()
 
-        # Получаем данные из состояния
+        # Получаем только количество дней из state
         data = await state.get_data()
-        slots_by_date = data.get('monthly_slots_by_date', {})
         total_days = data.get('monthly_total_days', 0)
 
-        if not slots_by_date or total_days <= 7:
+        if total_days <= 7:
             await callback.message.answer("Нет дополнительных дней для показа")
             return
+
+        # Загружаем расписание заново из БД
+        async with async_session() as session:
+            slot_manager = SlotManager(session)
+            schedule_text, slots_by_date = await slot_manager.get_weekly_schedule(days_ahead=30)
+
+            if not schedule_text:
+                await callback.message.answer("Нет данных для показа")
+                return
 
         # Показываем дни с 8-го и дальше
         response = "Продолжение расписания на месяц:\n\n"
         sorted_dates = sorted(slots_by_date.keys())
 
-        for slot_date in sorted_dates[7:min(total_days, 20)]:  # Показываем до 20 дней
+        for slot_date in sorted_dates[7:min(total_days, 20)]:
             date_slots = slots_by_date[slot_date]
             response += f"{slot_date.strftime('%d.%m.%Y (%A)')}:\n"
 
@@ -388,19 +395,14 @@ async def back_to_month_menu_callback(callback: CallbackQuery, state: FSMContext
     try:
         await callback.answer()
 
-        data = await state.get_data()
-        slots_by_date_str = data.get('monthly_slots_by_date', {})
+        # Загружаем расписание заново из БД
+        async with async_session() as session:
+            slot_manager = SlotManager(session)
+            schedule_text, slots_by_date = await slot_manager.get_weekly_schedule(days_ahead=30)
 
-        if not slots_by_date_str:
-            await callback.message.answer("Данные устарели. Запросите расписание заново.")
-            return
-
-        # Конвертируем обратно
-        slots_by_date = {}
-        for date_str, date_slots in slots_by_date_str.items():
-            slot_date = datetime.fromisoformat(date_str).date()
-            # Восстанавливаем оригинальные объекты или оставляем как есть
-            slots_by_date[slot_date] = date_slots
+            if not schedule_text:
+                await callback.message.answer("Нет данных для отображения")
+                return
 
         # Показываем меню
         await callback.message.answer(

@@ -7,7 +7,7 @@ from app.database.models import PaymentStatus, YooKassaStatus
 from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
-from app.admin_panel.keyboards_adm import admin_main_menu, finances_submenu
+from app.admin_panel.keyboards_adm import finances_submenu
 from app.utils.logging_config import get_logger
 
 

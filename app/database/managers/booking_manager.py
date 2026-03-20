@@ -529,6 +529,49 @@ class BookingManager(BaseManager):
         result = await self.session.execute(query)
         return list(result.scalars().all())
 
+    async def get_bookings_by_promocode(self, promo_code_id: int) -> List[Booking]:
+        """
+        Получить все бронирования, использовавшие данный промокод.
+
+        Args:
+            promo_code_id: ID промокода
+
+        Returns:
+            List[Booking]: Список бронирований с полной информацией,
+                        отсортированных по дате создания (сначала новые)
+        """
+        self._log_operation_start("get_bookings_by_promocode", promo_code_id=promo_code_id)
+
+        try:
+            query = (
+                select(Booking)
+                .options(
+                    selectinload(Booking.slot).selectinload(ExcursionSlot.excursion),
+                    selectinload(Booking.slot).selectinload(ExcursionSlot.captain),
+                    selectinload(Booking.adult_user),
+                    selectinload(Booking.payments),
+                    selectinload(Booking.booking_children)
+                )
+                .where(Booking.promo_code_id == promo_code_id)
+                .order_by(Booking.created_at.desc())
+            )
+
+            result = await self.session.execute(query)
+            bookings = list(result.scalars().all())
+
+            self._log_operation_end(
+                "get_bookings_by_promocode",
+                success=True,
+                count=len(bookings)
+            )
+
+            return bookings
+
+        except Exception as e:
+            self._log_operation_end("get_bookings_by_promocode", success=False)
+            self.logger.error(f"Ошибка получения бронирований по промокоду {promo_code_id}: {e}", exc_info=True)
+            return []
+
     async def cancel_booking(
         self,
         booking_id: int,

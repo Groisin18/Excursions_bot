@@ -5,7 +5,8 @@ from datetime import datetime, timedelta
 
 from app.database.repositories import PromoCodeRepository
 from app.database.unit_of_work import UnitOfWork
-from app.database.models import DiscountType
+from app.database.managers import BookingManager
+from app.database.models import DiscountType, PaymentStatus, BookingStatus
 from app.database.session import async_session
 
 from app.admin_panel.states_adm import CreatePromocode
@@ -666,18 +667,17 @@ async def show_promocode_stats(callback: CallbackQuery):
                 )
                 return
 
-            # Получаем статистику использования
-            # TODO: Добавить информацию о бронированиях с этим промокодом
-            # когда будет готова связь с Booking
+            booking_manager = BookingManager(session)
+            bookings = await booking_manager.get_bookings_by_promocode(promo_id)
 
             if promocode.discount_type == DiscountType.percent:
                 discount_text = f"{promocode.discount_value}%"
             else:
                 discount_text = f"{promocode.discount_value} руб."
 
-            # Статистика
+            # Базовая статистика промокода
             stats = (
-                f"Статистика промокода {promocode.code}\n\n"
+                f"Промокод: {promocode.code}\n"
                 f"Тип скидки: {discount_text}\n"
                 f"Всего использований: {promocode.used_count}\n"
             )
@@ -691,7 +691,7 @@ async def show_promocode_stats(callback: CallbackQuery):
 
             stats += (
                 f"\nДата создания: {promocode.valid_from.strftime('%d.%m.%Y %H:%M')}\n"
-                f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M') if promocode.valid_until else 'бессрочноpromo_stats'}\n"
+                f"Действует до: {promocode.valid_until.strftime('%d.%m.%Y %H:%M') if promocode.valid_until else 'бессрочно'}\n"
             )
 
             if not promocode.is_valid:
@@ -699,6 +699,23 @@ async def show_promocode_stats(callback: CallbackQuery):
                     stats += "\nСтатус: Срок действия истек"
                 elif (promocode.usage_limit != 0) and (promocode.used_count >= promocode.usage_limit):
                     stats += "\nСтатус: Достигнут лимит использований"
+
+            # Добавляем информацию о бронированиях
+            if bookings:
+                total_bookings = len(bookings)
+                paid_bookings = sum(1 for b in bookings if b.payment_status == PaymentStatus.paid)
+                pending_bookings = sum(1 for b in bookings if b.payment_status == PaymentStatus.pending)
+                cancelled_bookings = sum(1 for b in bookings if b.booking_status == BookingStatus.cancelled)
+
+
+                stats += f"\nСтатистика по бронированиям с этим промокодом:\n"
+                stats += f"Всего бронирований: {total_bookings}\n"
+                stats += f"Оплачено: {paid_bookings}\n"
+                stats += f"Ожидают оплаты: {pending_bookings}\n"
+                stats += f"Отменено: {cancelled_bookings}\n"
+
+            else:
+                stats += f"\nБронирований с этим промокодом пока нет."
 
             await callback.message.answer(
                 stats,

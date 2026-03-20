@@ -142,7 +142,7 @@ async def handle_schedule_date(message: Message, state: FSMContext):
 
         slot_date = validate_slot_date(message.text)
 
-        await state.update_data(slot_date=slot_date)
+        await state.update_data(slot_date=slot_date.isoformat())
         data = await state.get_data()
         excursion_id = data.get('excursion_id')
 
@@ -178,7 +178,11 @@ async def handle_time_selection(callback: CallbackQuery, state: FSMContext):
         time_str = parts[3]
 
         data = await state.get_data()
-        slot_date = data.get('slot_date')
+        slot_date_str = data.get('slot_date')
+        if slot_date_str:
+            slot_date = datetime.fromisoformat(slot_date_str)
+        else:
+            slot_date = None
         validated_time = validate_slot_time(time_str)
         start_datetime = datetime.combine(slot_date, validated_time)
 
@@ -196,7 +200,7 @@ async def handle_time_selection(callback: CallbackQuery, state: FSMContext):
             return
 
         await state.update_data(
-            start_datetime=start_datetime,
+            start_datetime=start_datetime.isoformat(),
             excursion_id=excursion_id,
         )
 
@@ -245,7 +249,11 @@ async def handle_schedule_time(message: Message, state: FSMContext):
         validated_time = validate_slot_time(message.text)
 
         data = await state.get_data()
-        slot_date = data.get('slot_date')
+        slot_date_str = data.get('slot_date')
+        if slot_date_str:
+            slot_date = datetime.fromisoformat(slot_date_str)
+        else:
+            slot_date = None
         start_datetime = datetime.combine(slot_date, validated_time)
 
         # Проверяем, что время не в прошлом (если сегодняшняя дата)
@@ -257,7 +265,7 @@ async def handle_schedule_time(message: Message, state: FSMContext):
             )
             return
 
-        await state.update_data(start_datetime=start_datetime)
+        await state.update_data(start_datetime=start_datetime.isoformat())
         await state.set_state(AddToSchedule.waiting_for_capacity)
 
         await message.answer(
@@ -328,7 +336,11 @@ async def handle_max_weight(message: Message, state: FSMContext):
         await state.update_data(max_weight=max_weight)
 
         data = await state.get_data()
-        start_datetime = data.get('start_datetime')
+        start_datetime_str = data.get('start_datetime')
+        if start_datetime_str:
+            start_datetime = datetime.fromisoformat(start_datetime_str)
+        else:
+            start_datetime = None
         excursion_id = data.get('excursion_id')
         max_people = data.get('max_people')
 
@@ -350,7 +362,7 @@ async def handle_max_weight(message: Message, state: FSMContext):
             )
 
             await state.update_data(
-                end_datetime=end_datetime,
+                end_datetime=end_datetime.isoformat(),
                 excursion_duration=excursion.base_duration_minutes
             )
 
@@ -410,11 +422,16 @@ async def select_captain_for_new_slot(callback: CallbackQuery, state: FSMContext
 
         captain_id = int(callback.data.split(":")[2])
         data = await state.get_data()
+        start_datetime_str = data.get('start_datetime')
+        if start_datetime_str:
+            start_datetime = datetime.fromisoformat(start_datetime_str)
+        else:
+            start_datetime = None
 
         try:
             slot_data = ExcursionSlotCreate(
                 excursion_id=data['excursion_id'],
-                start_datetime=data['start_datetime'],
+                start_datetime=start_datetime,
                 max_people=data['max_people'],
                 max_weight=data['max_weight'],
                 captain_id=captain_id
@@ -484,11 +501,16 @@ async def create_without_captain(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
         data = await state.get_data()
+        start_datetime_str = data.get('start_datetime')
+        if start_datetime_str:
+            start_datetime = datetime.fromisoformat(start_datetime_str)
+        else:
+            start_datetime = None
 
         try:
             slot_data = ExcursionSlotCreate(
                 excursion_id=data['excursion_id'],
-                start_datetime=data['start_datetime'],
+                start_datetime=start_datetime,
                 max_people=data['max_people'],
                 max_weight=data['max_weight'],
                 captain_id=None
@@ -577,7 +599,11 @@ async def handle_change_time(callback: CallbackQuery, state: FSMContext):
         await callback.answer()
 
         data = await state.get_data()
-        slot_date = data.get('slot_date')
+        slot_date_str = data.get('slot_date')
+        if slot_date_str:
+            slot_date = datetime.fromisoformat(slot_date_str)
+        else:
+            slot_date = None
         excursion_id = data.get('excursion_id')
 
         if slot_date and excursion_id:
@@ -633,7 +659,7 @@ async def add_to_specific_date_callback(callback: CallbackQuery, state: FSMConte
         await callback.answer()
 
         target_date = datetime.strptime(date_str, "%Y-%m-%d").date()
-        await state.update_data(slot_date=target_date)
+        await state.update_data(slot_date=target_date.isoformat())
 
         async with async_session() as session:
             exc_repo = ExcursionRepository(session)

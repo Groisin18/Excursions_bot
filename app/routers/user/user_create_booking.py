@@ -378,15 +378,14 @@ async def handle_booking_with_children(callback: CallbackQuery, state: FSMContex
                 children_data.append({
                     "id": child.id,
                     "full_name": child.full_name,
-                    "birthdate": child.date_of_birth,
                     "weight": child.weight,
                     "age": child.age if child.date_of_birth else None
                 })
 
             await state.update_data({
                 "available_children": children_data,
-                "selected_children_ids": [],  # Пока никого не выбрали
-                "children_weights": {},  # Словарь child_id: weight
+                "selected_children_ids": [],
+                "children_weights": {},
                 "selected_participants": "with_children"
             })
 
