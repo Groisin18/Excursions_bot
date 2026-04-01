@@ -10,6 +10,7 @@ from .expense_repository import ExpenseRepository
 from .file_repository import FileRepository
 from .statistic_repository import StatisticsRepository
 from .settings_repository import SettingsRepository
+from .refund_repository import RefundRepository
 
 __all__ = [
     'UserRepository',
@@ -23,5 +24,6 @@ __all__ = [
     'ExpenseRepository',
     'FileRepository',
     'StatisticsRepository',
-    'SettingsRepository'
+    'SettingsRepository',
+    'RefundRepository'
 ]

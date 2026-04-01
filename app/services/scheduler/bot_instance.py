@@ -1,11 +1,17 @@
-# app/services/scheduler/bot_instance.py
 """Глобальный экземпляр бота для задач планировщика."""
 
-_bot_instance = None
+from typing import Optional
+from aiogram import Bot
 
-async def set_bot_instance(bot):
+_bot_instance: Optional[Bot] = None
+
+
+def set_bot_instance(bot: Bot) -> None:
+    """Установить глобальный экземпляр бота (синхронная функция)"""
     global _bot_instance
     _bot_instance = bot
 
-def get_bot_instance():
+
+def get_bot_instance() -> Optional[Bot]:
+    """Получить глобальный экземпляр бота"""
     return _bot_instance

@@ -1,5 +1,7 @@
 """Репозиторий для работы с бронированиями (CRUD операции)"""
 
+import os
+
 from typing import List, Optional
 from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
@@ -129,6 +131,64 @@ class BookingRepository(BaseRepository):
         except Exception as e:
             self.logger.error(f"Ошибка получения количества забронированных людей: {e}")
             return 0
+
+    async def get_with_slot(self, booking_id: int) -> Optional[Booking]:
+        """Получить бронирование с загруженным слотом и экскурсией"""
+        result = await self.session.execute(
+            select(Booking)
+            .where(Booking.id == booking_id)
+            .options(selectinload(Booking.slot).selectinload(ExcursionSlot.excursion))
+        )
+        return result.scalar_one_or_none()
+
+    async def get_cancelled_paid_bookings(self, user_id: int) -> List[Booking]:
+        """
+        Получить отмененные, но оплаченные бронирования пользователя,
+        которые имеют право на возврат (отмена была более чем за 4 часа до начала)
+
+        Args:
+            user_id: ID пользователя
+
+        Returns:
+            List[Booking]: Список бронирований, требующих возврата
+        """
+
+        refund_hours_before = int(os.getenv('REFUND_HOURS_BEFORE', default=4))
+
+        # Получаем все отмененные оплаченные бронирования
+        result = await self.session.execute(
+            select(Booking)
+            .where(Booking.adult_user_id == user_id)
+            .where(Booking.booking_status == BookingStatus.cancelled)
+            .where(Booking.payment_status == PaymentStatus.paid)
+            .options(
+                selectinload(Booking.slot).selectinload(ExcursionSlot.excursion)
+            )
+            .order_by(Booking.created_at.desc())
+        )
+
+        all_bookings = list(result.scalars().all())
+
+        # Фильтруем те, которые имеют право на возврат
+        eligible_bookings = []
+        for booking in all_bookings:
+            if not booking.slot:
+                continue
+
+            # Проверяем, была ли отмена вовремя
+            cancelled_at = booking.cancelled_at
+            if not cancelled_at:
+                # Если нет времени отмены, используем время создания как отмену?
+                # Или считаем, что возврат невозможен?
+                continue
+
+            time_until_start = booking.slot.start_datetime - cancelled_at
+            hours_until_start = time_until_start.total_seconds() / 3600
+
+            if hours_until_start > refund_hours_before:
+                eligible_bookings.append(booking)
+
+        return eligible_bookings
 
     async def create(
         self,

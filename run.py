@@ -13,6 +13,7 @@ from app.database.repositories import SettingsRepository
 from app.database.session import async_session
 from app.services.redis import redis_client, dumps, loads
 from app.services.scheduler.scheduler import scheduler_service
+from app.services.scheduler.bot_instance import set_bot_instance
 from app.utils.logging_config import setup_logging
 
 load_dotenv()
@@ -39,6 +40,7 @@ bot = Bot(
     token=os.getenv('TG_TOKEN'),
     default=DefaultBotProperties(parse_mode=ParseMode.HTML)
 )
+set_bot_instance(bot)
 
 async def main():
     logger.info("Запуск бота...")

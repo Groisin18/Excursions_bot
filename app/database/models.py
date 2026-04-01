@@ -8,7 +8,6 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.ext.asyncio import AsyncAttrs
-from sqlalchemy.sql import func
 
 from app.database.session import engine
 
@@ -66,6 +65,14 @@ class YooKassaStatus(enum.Enum):
     succeeded = "succeeded"
     canceled = "canceled"
     waiting_for_capture = "waiting_for_capture"
+
+class RefundStatus(str, enum.Enum):
+    """Статусы возврата"""
+    PENDING = "pending"       # Ожидает создания в YooKassa
+    PROCESSING = "processing" # Создан в YooKassa, ожидает завершения
+    SUCCEEDED = "succeeded"   # Успешно выполнен
+    FAILED = "failed"         # Ошибка при возврате
+    CANCELED = "canceled"     # Отменен (например, по истечении времени)
 
 class DiscountType(enum.Enum):
     """Типы скидок"""
@@ -334,6 +341,7 @@ class Booking(Base):
     payment_status: Mapped[PaymentStatus] = mapped_column(Enum(PaymentStatus), default=PaymentStatus.not_paid, index=True)
     promo_code_id: Mapped[Optional[int]] = mapped_column(ForeignKey("promo_codes.id"), nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    cancelled_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
 
     # Relationships
     slot: Mapped["ExcursionSlot"] = relationship("ExcursionSlot", back_populates="bookings")
@@ -342,6 +350,7 @@ class Booking(Base):
     promo_code: Mapped["PromoCode"] = relationship("PromoCode", back_populates="bookings")
     payments: Mapped[List["Payment"]] = relationship("Payment", back_populates="booking", cascade="all, delete-orphan")
     booking_children: Mapped[List["BookingChild"]] = relationship("BookingChild", back_populates="booking",cascade="all, delete-orphan")
+    refunds: Mapped[List["Refund"]] = relationship("Refund", back_populates="booking", cascade="all, delete-orphan")
 
     @property
     def people_count(self) -> int:
@@ -413,6 +422,7 @@ class Payment(Base):
 
     # Relationships
     booking: Mapped["Booking"] = relationship("Booking", back_populates="payments")
+    refunds: Mapped[List["Refund"]] = relationship("Refund", back_populates="payment", cascade="all, delete-orphan")
 
     def __repr__(self) -> str:
         """Строковое представление платежа для отладки"""
@@ -444,6 +454,59 @@ class Payment(Base):
             'is_online': self.is_online,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
+
+class Refund(Base):
+    """Модель возврата средств"""
+    __tablename__ = 'refunds'
+
+    id: Mapped[int] = mapped_column(primary_key=True)
+    payment_id: Mapped[int] = mapped_column(ForeignKey("payments.id"), nullable=False, index=True)
+    booking_id: Mapped[int] = mapped_column(ForeignKey("bookings.id"), nullable=False, index=True)
+
+    amount: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[RefundStatus] = mapped_column(Enum(RefundStatus), default=RefundStatus.PENDING, index=True)
+
+    yookassa_refund_id: Mapped[str] = mapped_column(String(255), nullable=True, index=True)
+
+    reason: Mapped[str] = mapped_column(String(500), nullable=True)
+
+    retry_count: Mapped[int] = mapped_column(Integer, default=0)
+
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    completed_at: Mapped[datetime] = mapped_column(DateTime, nullable=True)
+
+    cancellation_details_party: Mapped[str] = mapped_column(String(100), nullable=True)
+    cancellation_details_reason: Mapped[str] = mapped_column(String(100), nullable=True)
+
+    # Relationships
+    payment: Mapped["Payment"] = relationship("Payment", back_populates="refunds")
+    booking: Mapped["Booking"] = relationship("Booking", back_populates="refunds")
+
+    def __repr__(self) -> str:
+        return f"Refund(id={self.id}, payment={self.payment_id}, amount={self.amount}, status={self.status.value})"
+
+    def __str__(self) -> str:
+        return f"Возврат #{self.id} (сумма: {self.amount} руб., статус: {self.status.value})"
+
+    @property
+    def is_completed(self) -> bool:
+        """Завершен ли возврат (успешно или с ошибкой)"""
+        return self.status in (RefundStatus.SUCCEEDED, RefundStatus.FAILED, RefundStatus.CANCELED)
+
+    def to_dict(self) -> dict:
+        return {
+            'id': self.id,
+            'payment_id': self.payment_id,
+            'booking_id': self.booking_id,
+            'amount': self.amount,
+            'status': self.status.value,
+            'yookassa_refund_id': self.yookassa_refund_id,
+            'reason': self.reason,
+            'retry_count': self.retry_count,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None,
+        }
+
 
 class PromoCode(Base):
     """Модель промокода"""

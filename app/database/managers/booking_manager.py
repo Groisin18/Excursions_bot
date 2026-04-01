@@ -18,6 +18,9 @@ from app.database.models import (
 from app.database.managers import SlotManager
 from app.utils.calculators import PriceCalculator
 from app.utils.logging_config import get_logger
+from app.utils.admin_notifications import notify_admins_about_refund_failure
+from app.services.scheduler.bot_instance import get_bot_instance
+
 
 logger = get_logger(__name__)
 
@@ -575,7 +578,8 @@ class BookingManager(BaseManager):
     async def cancel_booking(
         self,
         booking_id: int,
-        auto_refund: bool = True
+        auto_refund: bool = True,
+        reason: str = None
     ) -> Tuple[bool, str, Optional[Dict]]:
         """
         Отменить бронирование.
@@ -583,22 +587,21 @@ class BookingManager(BaseManager):
         Args:
             booking_id: ID бронирования
             auto_refund: Автоматически инициировать возврат если возможно
+            reason: Причина отмены (будет передана в возврат)
 
         Returns:
-            Tuple[bool, str, Optional[Dict]]:
-                - Успех операции
-                - Сообщение
-                - Данные для возврата (если требуется и auto_refund=True)
+            Tuple[bool, str, Optional[Dict]]: (успех, сообщение, данные о возврате)
         """
         self._log_operation_start(
             "cancel_booking",
             booking_id=booking_id,
-            auto_refund=auto_refund
+            auto_refund=auto_refund,
+            reason=reason
         )
 
         try:
-            # Получаем бронирование
-            booking = await self.booking_repo.get_by_id(booking_id)
+            # Получаем бронирование со слотом
+            booking = await self.booking_repo.get_with_slot(booking_id)
 
             if not booking:
                 error_msg = "Бронирование не найдено"
@@ -616,44 +619,107 @@ class BookingManager(BaseManager):
                 self.logger.warning(error_msg)
                 return False, error_msg, None
 
+            # Сохраняем информацию о бронировании до отмены
+            was_paid = booking.is_paid
+            total_price = booking.total_price
+            slot_start_time = booking.slot.start_datetime if booking.slot else None
+
+            # Запоминаем время отмены
+            cancelled_at = datetime.now()
+
             # Меняем статус бронирования
             await self.booking_repo.update(
                 booking_id,
-                booking_status=BookingStatus.cancelled
+                booking_status=BookingStatus.cancelled,
+                cancelled_at=cancelled_at  # сохраняем время отмены
             )
 
             self._log_business_event(
                 "booking_cancelled",
                 booking_id=booking_id,
                 slot_id=booking.slot_id,
-                was_paid=booking.is_paid
+                was_paid=was_paid,
+                cancelled_at=cancelled_at
             )
 
-            # Проверяем необходимость возврата
-            refund_data = None
+            # Инициализируем возврат если требуется
+            refund_info = None
+            message_parts = ["Бронирование отменено"]
 
-            if auto_refund and booking.is_paid:
-                # TODO Проверяем возможность возврата через PaymentManager
-                # (PaymentManager будет добавлен позже)
-                refund_data = {
-                    "booking_id": booking_id,
-                    "amount": booking.total_price,
-                    "reason": "user_cancelled",
-                    "needs_refund": True
-                }
+            if auto_refund and was_paid:
+                # Отложенный импорт для избежания циклической зависимости
+                from app.database.managers import PaymentManager
 
-                self.logger.info(
-                    f"Требуется возврат для бронирования {booking_id}, "
-                    f"сумма: {booking.total_price}"
+                payment_manager = PaymentManager(self.session)
+
+                # Проверяем возможность возврата с учетом времени отмены
+                can_refund, refund_reason = await payment_manager.can_refund_with_cancel_time(
+                    booking=booking,
+                    cancelled_at=cancelled_at
                 )
+
+                if can_refund:
+                    success, refund_msg, refund = await payment_manager.process_refund(
+                        booking_id=booking_id,
+                        reason=reason or f"Отмена бронирования #{booking_id}",
+                        amount=total_price * 100
+                    )
+
+                    if success:
+                        message_parts.append(refund_msg)
+                        refund_info = {
+                            "booking_id": booking_id,
+                            "amount": total_price,
+                            "reason": reason or "user_cancelled",
+                            "refund_id": refund.id if refund else None,
+                            "status": refund.status.value if refund else None,
+                            "cancelled_at": cancelled_at.isoformat()
+                        }
+                    else:
+                        message_parts.append(f"Не удалось автоматически вернуть средства: {refund_msg}")
+                        refund_info = {
+                            "booking_id": booking_id,
+                            "amount": total_price,
+                            "reason": reason or "user_cancelled",
+                            "error": refund_msg,
+                            "needs_manual": True,
+                            "cancelled_at": cancelled_at.isoformat()
+                        }
+
+                        # Уведомляем администраторов
+                        try:
+
+                            bot = get_bot_instance()
+                            if bot:
+                                await notify_admins_about_refund_failure(
+                                    bot,
+                                    self.session,
+                                    refund.id if refund else 0,
+                                    booking_id,
+                                    refund_msg
+                                )
+                        except ImportError:
+                            self.logger.warning("Не удалось импортировать функции уведомления админов")
+                else:
+                    message_parts.append(f"Возврат средств невозможен: {refund_reason}")
+                    refund_info = {
+                        "booking_id": booking_id,
+                        "amount": total_price,
+                        "reason": reason or "user_cancelled",
+                        "can_refund": False,
+                        "reason_not_refund": refund_reason,
+                        "cancelled_at": cancelled_at.isoformat()
+                    }
+
+            result_message = "\n\n".join(message_parts)
 
             self._log_operation_end(
                 "cancel_booking",
                 success=True,
-                needs_refund=refund_data is not None
+                needs_refund=refund_info is not None
             )
 
-            return True, "Бронирование отменено", refund_data
+            return True, result_message, refund_info
 
         except Exception as e:
             self._log_operation_end("cancel_booking", success=False)

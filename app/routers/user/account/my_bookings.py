@@ -1,19 +1,26 @@
-'''
+"""
 Роутер для управления бронированиями пользователя
-'''
+"""
+import os
+
 from aiogram import Router, F
 from aiogram.types import CallbackQuery
 
 from app.database.session import async_session
 from app.database.managers import BookingManager, PaymentManager
-from app.database.repositories import UserRepository, BookingRepository
+from app.database.repositories import (
+    UserRepository, BookingRepository, RefundRepository
+)
 from app.database.models import BookingStatus, PaymentStatus
 from app.utils.logging_config import get_logger
 from app.user_panel.keyboards import (
-    main_menu, bookings_main_menu, empty_bookings,
+    main_menu, bookings_main_menu, empty_bookings, back_to_booking,
     bookings_list, paid_booking_actions, cancel_confirmation,
-    back_to_booking, active_booking_actions
+    active_booking_actions, cancel_booking_button, cancel_booking_warning_button,
+    back_to_booking_menu
 )
+from app.utils.admin_notifications import notify_admins
+from app.services.scheduler.bot_instance import get_bot_instance
 
 router = Router(name="user_bookings")
 logger = get_logger(__name__)
@@ -38,7 +45,6 @@ async def bookings_main(callback: CallbackQuery):
             "Произошла ошибка. Попробуйте позже.",
             reply_markup=main_menu()
         )
-
 
 @router.callback_query(F.data == 'my_active_bookings')
 async def active_bookings_list(callback: CallbackQuery):
@@ -100,7 +106,6 @@ async def active_bookings_list(callback: CallbackQuery):
             "Произошла ошибка при загрузке бронирований.",
             reply_markup=main_menu()
         )
-
 
 @router.callback_query(F.data == 'my_history_bookings')
 async def history_bookings_list(callback: CallbackQuery):
@@ -167,7 +172,6 @@ async def history_bookings_list(callback: CallbackQuery):
             reply_markup=main_menu()
         )
 
-
 @router.callback_query(F.data.startswith('booking_detail:'))
 async def booking_detail(callback: CallbackQuery):
     """Детальная информация о бронировании"""
@@ -190,7 +194,6 @@ async def booking_detail(callback: CallbackQuery):
                 )
                 return
 
-            # Проверяем принадлежность
             user_repo = UserRepository(session)
             user = await user_repo.get_by_telegram_id(user_telegram_id)
 
@@ -202,7 +205,6 @@ async def booking_detail(callback: CallbackQuery):
                 )
                 return
 
-            # Получаем информацию о платежах
             payment_manager = PaymentManager(session)
             payments_info = await payment_manager.get_booking_payments_info(booking_id)
 
@@ -216,7 +218,6 @@ async def booking_detail(callback: CallbackQuery):
                 )
                 return
 
-            # Формируем детальную информацию
             date_str = slot.start_datetime.strftime("%d.%m.%Y")
             time_str = slot.start_datetime.strftime("%H:%M")
 
@@ -251,17 +252,11 @@ async def booking_detail(callback: CallbackQuery):
                     payment_date = payment['created_at'].strftime("%d.%m.%Y %H:%M") if payment['created_at'] else "дата неизвестна"
                     text += f"- {payment['amount']} руб. ({payment['payment_method']}), статус: {payment['status'] or 'завершён'}\n"
 
-            # Определяем, какую клавиатуру показать
             if booking.booking_status == BookingStatus.active and booking.payment_status == PaymentStatus.not_paid:
-                # Активное неоплаченное - показываем кнопки оплаты и отмены
                 reply_markup = active_booking_actions(booking_id)
-
             elif booking.payment_status == PaymentStatus.paid:
-                # Оплаченное - показываем информацию о возврате
                 reply_markup = paid_booking_actions(booking_id)
-
             else:
-                # Для всех остальных случаев - только кнопка назад
                 reply_markup = bookings_main_menu()
 
             await callback.message.edit_text(
@@ -279,8 +274,7 @@ async def booking_detail(callback: CallbackQuery):
             reply_markup=main_menu()
         )
 
-
-@router.callback_query(F.data.startswith('cancel_booking:'))
+@router.callback_query(F.data.startswith('user_cancel_booking:'))
 async def cancel_booking_confirm(callback: CallbackQuery):
     """Подтверждение отмены бронирования"""
     user_telegram_id = callback.from_user.id
@@ -290,12 +284,51 @@ async def cancel_booking_confirm(callback: CallbackQuery):
         logger.info(f"Пользователь {user_telegram_id} запросил подтверждение отмены бронирования {booking_id}")
 
         await callback.answer()
-        await callback.message.edit_text(
-            "Вы уверены, что хотите отменить бронирование?\n\n"
-            "Если бронирование оплачено и до начала экскурсии осталось больше 4 часов, "
-            "деньги будут возвращены.",
-            reply_markup=cancel_confirmation(booking_id)
-        )
+
+        async with async_session() as session:
+            booking_repo = BookingRepository(session)
+            booking = await booking_repo.get_by_id(booking_id)
+
+            if not booking:
+                await callback.message.edit_text(
+                    "Бронирование не найдено.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            if booking.payment_status == PaymentStatus.paid:
+                payment_manager = PaymentManager(session)
+                can_refund, reason = await payment_manager.can_refund(booking)
+
+                if can_refund:
+                    refund_amount = await payment_manager.calculate_refund_amount(booking)
+                    confirm_text = (
+                        "Подтверждение отмены\n\n"
+                        "Вы уверены, что хотите отменить бронирование?\n\n"
+                        f"Сумма к возврату: {refund_amount // 100} руб.\n\n"
+                        "Деньги будут возвращены на карту в течение 3-5 рабочих дней."
+                    )
+                else:
+                    user_friendly_reason = _get_user_friendly_refund_reason(reason)
+                    confirm_text = (
+                        "Подтверждение отмены\n\n"
+                        "Вы уверены, что хотите отменить бронирование?\n\n"
+                        f"Внимание! Возврат невозможен.\n"
+                        f"Причина: {user_friendly_reason}\n\n"
+                        "Деньги возвращены не будут."
+                    )
+            else:
+                confirm_text = (
+                    "Подтверждение отмены\n\n"
+                    "Вы уверены, что хотите отменить бронирование?\n\n"
+                    "Это действие нельзя отменить.\n"
+                    "Оплата не производилась, возврат не требуется."
+                )
+
+            await callback.message.edit_text(
+                confirm_text,
+                reply_markup=cancel_confirmation(booking_id)
+            )
 
     except ValueError:
         logger.error(f"Ошибка парсинга booking_id для пользователя {user_telegram_id}")
@@ -307,10 +340,9 @@ async def cancel_booking_confirm(callback: CallbackQuery):
             reply_markup=main_menu()
         )
 
-
-@router.callback_query(F.data.startswith('confirm_cancel:'))
+@router.callback_query(F.data.startswith('user_confirm_cancel:'))
 async def confirm_cancel_booking(callback: CallbackQuery):
-    """Финальная отмена бронирования"""
+    """Финальная отмена бронирования с автоматическим возвратом"""
     user_telegram_id = callback.from_user.id
 
     try:
@@ -320,7 +352,6 @@ async def confirm_cancel_booking(callback: CallbackQuery):
         await callback.answer()
 
         async with async_session() as session:
-            # Проверяем принадлежность
             user_repo = UserRepository(session)
             user = await user_repo.get_by_telegram_id(user_telegram_id)
 
@@ -342,9 +373,12 @@ async def confirm_cancel_booking(callback: CallbackQuery):
                 )
                 return
 
-            # Отменяем бронирование через менеджер
             booking_manager = BookingManager(session)
-            success, message, refund_data = await booking_manager.cancel_booking(booking_id)
+            success, message, refund_data = await booking_manager.cancel_booking(
+                booking_id=booking_id,
+                auto_refund=True,
+                reason=f"Отмена пользователем {user_telegram_id}"
+            )
 
             if not success:
                 await callback.message.answer(
@@ -353,32 +387,30 @@ async def confirm_cancel_booking(callback: CallbackQuery):
                 )
                 return
 
-            # Если есть данные для возврата, инициируем возврат
             if refund_data:
-                payment_manager = PaymentManager(session)
-                can_refund, refund_reason = await payment_manager.can_refund(booking)
-
-                if can_refund:
-                    refund_amount = await payment_manager.calculate_refund_amount(booking)
-                    await payment_manager.process_refund(booking_id, refund_amount)
-
-                    await callback.message.answer(
-                        f"Бронирование отменено.\n"
-                        f"Запрос на возврат средств в размере {refund_amount} руб. принят в обработку.\n"
-                        f"Деньги поступят на карту в течение 3-5 рабочих дней.",
-                        reply_markup=main_menu()
+                if refund_data.get('refund_id'):
+                    response_text = (
+                        f"Бронирование отменено.\n\n"
+                        f"Запрос на возврат средств в размере {refund_data.get('amount', 0)} руб. принят.\n"
+                        f"Деньги поступят на карту в течение 3-5 рабочих дней."
+                    )
+                elif refund_data.get('needs_manual'):
+                    response_text = (
+                        f"Бронирование отменено.\n\n"
+                        f"Произошла ошибка при автоматическом возврате средств.\n"
+                        f"Администратор уже уведомлен. В ближайшее время с вами свяжутся.\n"
+                        f"Также вы можете самостоятельно связаться с администратором по поводу возврата.\n\n"
+                        f"Приносим извинения за неудобства."
                     )
                 else:
-                    await callback.message.answer(
-                        f"Бронирование отменено.\n"
-                        f"Возврат невозможен: {refund_reason}",
-                        reply_markup=main_menu()
-                    )
+                    response_text = f"Бронирование отменено.\n\n{message}"
             else:
-                await callback.message.answer(
-                    "Бронирование успешно отменено.",
-                    reply_markup=main_menu()
-                )
+                response_text = "Бронирование успешно отменено."
+
+            await callback.message.answer(
+                response_text,
+                reply_markup=main_menu()
+            )
 
     except ValueError:
         logger.error(f"Ошибка парсинга booking_id для пользователя {user_telegram_id}")
@@ -389,7 +421,6 @@ async def confirm_cancel_booking(callback: CallbackQuery):
             "Произошла ошибка при отмене бронирования.",
             reply_markup=main_menu()
         )
-
 
 @router.callback_query(F.data.startswith('refund_info:'))
 async def refund_info(callback: CallbackQuery):
@@ -418,26 +449,26 @@ async def refund_info(callback: CallbackQuery):
 
             if can_refund:
                 refund_amount = await payment_manager.calculate_refund_amount(booking)
-
                 text = (
                     f"Возврат средств\n\n"
-                    f"Сумма к возврату: {refund_amount} руб.\n"
-                    f"Для оформления возврата нажмите кнопку 'Отменить бронирование' в деталях.\n\n"
+                    f"Сумма к возврату: {refund_amount // 100} руб.\n\n"
+                    f"Для оформления возврата нажмите кнопку 'Отменить бронирование'.\n\n"
                     f"Деньги будут возвращены на карту, с которой производилась оплата, "
                     f"в течение 3-5 рабочих дней."
                 )
+                reply_markup = cancel_booking_button(booking_id)
             else:
+                user_friendly_reason = _get_user_friendly_refund_reason(reason)
                 text = (
                     f"Возврат невозможен\n\n"
-                    f"Причина: {reason}\n\n"
+                    f"Причина: {user_friendly_reason}\n\n"
                     f"Вы можете отменить бронирование, но деньги не будут возвращены."
                 )
-
-                # TODO Реализовать отмену бронирования с возвратом и без
+                reply_markup = cancel_booking_warning_button(booking_id)
 
             await callback.message.edit_text(
                 text,
-                reply_markup=back_to_booking(booking_id)
+                reply_markup=reply_markup
             )
 
     except ValueError:
@@ -450,13 +481,24 @@ async def refund_info(callback: CallbackQuery):
             reply_markup=main_menu()
         )
 
+def _get_user_friendly_refund_reason(reason: str) -> str:
+    """Преобразует техническую причину в понятное пользователю сообщение"""
+    reason_lower = reason.lower()
+
+    if "не оплачено" in reason_lower:
+        return "бронирование не было оплачено"
+    elif "часов" in reason_lower:
+        return "до начала экскурсии осталось менее 4 часов"
+    elif "слот" in reason_lower or "информация" in reason_lower:
+        return "информация о времени экскурсии отсутствует"
+    else:
+        return reason
 
 @router.callback_query(F.data == 'back_to_bookings_menu')
 async def back_to_bookings_menu(callback: CallbackQuery):
     """Возврат в главное меню бронирований"""
     await callback.answer()
     await bookings_main(callback)
-
 
 @router.callback_query(F.data == 'back_to_cabinet')
 async def back_to_cabinet_from_bookings(callback: CallbackQuery):
@@ -478,7 +520,6 @@ async def back_to_cabinet_from_bookings(callback: CallbackQuery):
                 )
                 return
 
-            # Импортируем функцию из personal_cabinet
             from app.routers.user.account.personal_cabinet import back_to_cabinet as pc_back_to_cabinet
             await pc_back_to_cabinet(callback)
 
@@ -489,8 +530,6 @@ async def back_to_cabinet_from_bookings(callback: CallbackQuery):
             reply_markup=main_menu()
         )
 
-
-# TODO: Хэндлер для истории платежей (будет реализован позже)
 @router.callback_query(F.data.startswith('payment_history:'))
 async def payment_history(callback: CallbackQuery):
     """История платежей по бронированию (в разработке)"""
@@ -499,3 +538,283 @@ async def payment_history(callback: CallbackQuery):
         "Функция просмотра истории платежей находится в разработке.",
         reply_markup=main_menu()
     )
+
+@router.callback_query(F.data == "my_cancelled_paid_bookings")
+async def cancelled_paid_bookings_list(callback: CallbackQuery):
+    """
+    Список отмененных, но оплаченных бронирований (требуют возврата)
+    """
+    user_telegram_id = callback.from_user.id
+    logger.info(f"Пользователь {user_telegram_id} запросил список отмененных оплаченных бронирований")
+
+    try:
+        await callback.answer()
+
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
+
+            if not user:
+                await callback.message.answer(
+                    "Пользователь не найден. Пожалуйста, зарегистрируйтесь.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            # Получаем отмененные, но оплаченные бронирования
+            booking_repo = BookingRepository(session)
+            cancelled_paid_bookings = await booking_repo.get_cancelled_paid_bookings(user.id)
+
+            if not cancelled_paid_bookings:
+                await callback.message.edit_text(
+                    "Нет отмененных оплаченных бронирований.\n\n"
+                    "Если вы отменили оплаченную экскурсию, но деньги не вернулись, "
+                    "пожалуйста, свяжитесь с администратором.",
+                    reply_markup=back_to_booking_menu()
+                )
+                return
+
+            text = "Отмененные, но не возвращенные бронирования:\n\n"
+
+            for booking in cancelled_paid_bookings:
+                slot = booking.slot
+                excursion = slot.excursion if slot else None
+
+                if slot and excursion:
+                    date_str = slot.start_datetime.strftime("%d.%m.%Y")
+                    time_str = slot.start_datetime.strftime("%H:%M")
+
+                    text += (
+                        f"{excursion.name}\n"
+                        f"Дата: {date_str} в {time_str}\n"
+                        f"Сумма: {booking.total_price} руб.\n"
+                        f"Статус: Отменено, ожидает возврата\n\n"
+                    )
+
+            from app.user_panel.keyboards import cancelled_paid_bookings_list
+            await callback.message.edit_text(
+                text,
+                reply_markup=cancelled_paid_bookings_list(cancelled_paid_bookings)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка получения отмененных оплаченных бронирований: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при загрузке данных.",
+            reply_markup=main_menu()
+        )
+
+@router.callback_query(F.data.startswith('request_refund:'))
+async def request_refund(callback: CallbackQuery):
+    """
+    Запрос на возврат средств для отмененного оплаченного бронирования
+    """
+    user_telegram_id = callback.from_user.id
+
+    try:
+        booking_id = int(callback.data.split(':')[1])
+        logger.info(f"Пользователь {user_telegram_id} запросил возврат для бронирования {booking_id}")
+
+        await callback.answer()
+
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
+
+            if not user:
+                await callback.message.answer(
+                    "Пользователь не найден.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            booking_repo = BookingRepository(session)
+            booking = await booking_repo.get_with_slot(booking_id)
+
+            if not booking or booking.adult_user_id != user.id:
+                logger.warning(f"Пользователь {user_telegram_id} пытается запросить возврат чужого бронирования {booking_id}")
+                await callback.message.answer(
+                    "У вас нет доступа к этому бронированию.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            # Проверяем, что бронирование отменено и оплачено
+            if booking.booking_status != BookingStatus.cancelled:
+                await callback.message.answer(
+                    "Возврат возможен только для отмененных бронирований.",
+                    reply_markup=back_to_booking(booking_id)
+                )
+                return
+
+            if booking.payment_status != PaymentStatus.paid:
+                await callback.message.answer(
+                    f"Бронирование не оплачено. Статус: {booking.payment_status.value}",
+                    reply_markup=back_to_booking(booking_id)
+                )
+                return
+
+            # Проверяем время отмены
+            refund_hours_before = int(os.getenv('REFUND_HOURS_BEFORE', default=4))
+
+            if booking.cancelled_at:
+                time_until_start = booking.slot.start_datetime - booking.cancelled_at
+                hours_until_start = time_until_start.total_seconds() / 3600
+
+                if hours_until_start <= refund_hours_before:
+                    await callback.message.answer(
+                        f"Возврат невозможен, так как бронирование было отменено "
+                        f"менее чем за {refund_hours_before} часов до начала экскурсии.\n\n"
+                        f"Время отмены: {booking.cancelled_at.strftime('%d.%m.%Y %H:%M')}\n"
+                        f"Время начала: {booking.slot.start_datetime.strftime('%d.%m.%Y %H:%M')}",
+                        reply_markup=back_to_booking(booking_id)
+                    )
+                    return
+            else:
+                # Если нет времени отмены (старые бронирования), считаем возврат невозможным
+                await callback.message.answer(
+                    "Не удается определить время отмены бронирования. "
+                    "Пожалуйста, обратитесь к администратору.",
+                    reply_markup=back_to_booking(booking_id)
+                )
+                return
+
+            # Проверяем, не было ли уже возврата
+            refund_repo = RefundRepository(session)
+            existing_refunds = await refund_repo.get_refunds_by_booking(booking_id)
+            successful_refunds = [r for r in existing_refunds if r.status.value == "succeeded"]
+
+            if successful_refunds:
+                await callback.message.answer(
+                    f"Для этого бронирования уже был выполнен возврат на сумму "
+                    f"{successful_refunds[0].amount // 100} руб.\n\n"
+                    f"Если деньги не поступили, обратитесь к администратору.",
+                    reply_markup=back_to_booking(booking_id)
+                )
+                return
+
+            # Показываем подтверждение
+            payment_manager = PaymentManager(session)
+            refund_amount = await payment_manager.calculate_refund_amount(booking)
+
+            text = (
+                f"Запрос на возврат средств\n\n"
+                f"Бронирование #{booking_id}\n"
+                f"Сумма к возврату: {refund_amount // 100} руб.\n\n"
+                f"Бронирование было отменено: {booking.cancelled_at.strftime('%d.%m.%Y %H:%M')}\n"
+                f"Начало экскурсии: {booking.slot.start_datetime.strftime('%d.%m.%Y %H:%M')}\n\n"
+                f"После подтверждения мы инициируем возврат денег.\n"
+                f"Деньги поступят на карту в течение 3-5 рабочих дней.\n\n"
+                f"Подтверждаете запрос?"
+            )
+
+            from app.user_panel.keyboards import refund_request_confirmation
+            await callback.message.edit_text(
+                text,
+                reply_markup=refund_request_confirmation(booking_id)
+            )
+
+    except ValueError:
+        logger.error(f"Ошибка парсинга booking_id для пользователя {user_telegram_id}")
+        await callback.message.answer("Ошибка: некорректный идентификатор бронирования")
+    except Exception as e:
+        logger.error(f"Ошибка при запросе возврата: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Попробуйте позже.",
+            reply_markup=main_menu()
+        )
+
+@router.callback_query(F.data.startswith('confirm_refund_request:'))
+async def confirm_refund_request(callback: CallbackQuery):
+    """
+    Подтверждение запроса на возврат
+    """
+    user_telegram_id = callback.from_user.id
+
+    try:
+        booking_id = int(callback.data.split(':')[1])
+        logger.info(f"Пользователь {user_telegram_id} подтвердил запрос на возврат для бронирования {booking_id}")
+
+        await callback.answer()
+
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
+
+            if not user:
+                await callback.message.answer(
+                    "Пользователь не найден.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            booking_repo = BookingRepository(session)
+            booking = await booking_repo.get_with_slot(booking_id)
+
+            if not booking or booking.adult_user_id != user.id:
+                await callback.message.answer(
+                    "У вас нет доступа к этому бронированию.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            # Повторная проверка статусов
+            if booking.booking_status != BookingStatus.cancelled:
+                await callback.message.answer(
+                    "Возврат возможен только для отмененных бронирований.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            if booking.payment_status != PaymentStatus.paid:
+                await callback.message.answer(
+                    "Бронирование не оплачено.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            # Инициируем возврат
+            payment_manager = PaymentManager(session)
+            success, refund_msg, refund = await payment_manager.process_refund(
+                booking_id=booking_id,
+                reason=f"Запрос пользователя {user_telegram_id}",
+                amount=None
+            )
+
+            if success:
+                await callback.message.delete()
+                await callback.message.answer(
+                    f"Запрос на возврат принят!\n\n"
+                    f"{refund_msg}\n\n"
+                    f"Если деньги не поступят в течение 5 рабочих дней, "
+                    f"пожалуйста, обратитесь к администратору.",
+                    reply_markup=main_menu()
+                )
+
+                # Уведомляем админов
+
+                bot = get_bot_instance()
+                if bot:
+                    admin_message = (
+                        f"Пользователь {user.full_name} запросил возврат\n"
+                        f"Бронирование #{booking_id}\n"
+                        f"Сумма: {booking.total_price} руб.\n"
+                        f"Статус: успешно\n\n"
+                        f"{refund_msg}"
+                    )
+                    await notify_admins(bot, session, admin_message)
+
+            else:
+                await callback.message.delete()
+                await callback.message.answer(
+                    f"Не удалось инициировать возврат:\n\n{refund_msg}\n\n"
+                    f"Пожалуйста, обратитесь к администратору.",
+                    reply_markup=main_menu()
+                )
+
+    except Exception as e:
+        logger.error(f"Ошибка при подтверждении возврата: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка. Пожалуйста, обратитесь к администратору.",
+            reply_markup=main_menu()
+        )

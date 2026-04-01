@@ -4,10 +4,13 @@ from .bot_instance import get_bot_instance
 
 from app.services.redis import redis_client
 from app.database.unit_of_work import UnitOfWork
-from app.database.managers import BookingManager, SlotManager, UserManager
+from app.database.managers import (
+    BookingManager, SlotManager, UserManager, PaymentManager
+)
 from app.database.models import SlotStatus
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
+from app.utils.admin_notifications import notify_admins_about_refund_failure
 
 logger = get_logger(__name__)
 
@@ -345,3 +348,104 @@ async def notify_admins_about_slots_without_captain():
                 logger.error(f"Ошибка при уведомлении о слотах без капитана: {e}", exc_info=True)
             finally:
                 await redis_client.release_lock(lock_key, token)
+
+
+async def check_pending_refunds():
+    """
+    Периодическая проверка статусов возвратов.
+    Проверяет возвраты в статусе PROCESSING и обновляет их статус.
+    """
+    logger.info("Запуск проверки статусов возвратов")
+
+    try:
+        async with async_session() as session:
+            payment_manager = PaymentManager(session)
+
+            # Получаем репозиторий возвратов
+            from app.database.repositories.refund_repository import RefundRepository
+            refund_repo = RefundRepository(session)
+
+            # Находим возвраты в статусе PROCESSING
+            processing_refunds = await refund_repo.get_processing_refunds()
+
+            if not processing_refunds:
+                logger.debug("Нет возвратов для проверки")
+                return
+
+            logger.info(f"Найдено {len(processing_refunds)} возвратов для проверки")
+
+            for refund in processing_refunds:
+                try:
+                    success, message = await payment_manager.check_refund_status(refund.id)
+
+                    if not success:
+                        logger.error(f"Ошибка проверки возврата #{refund.id}: {message}")
+
+                except Exception as e:
+                    logger.error(f"Исключение при проверке возврата #{refund.id}: {e}", exc_info=True)
+
+            logger.info("Проверка статусов возвратов завершена")
+
+    except Exception as e:
+        logger.error(f"Ошибка в задаче проверки возвратов: {e}", exc_info=True)
+
+
+# Добавить задачу для повторной обработки неудачных возвратов
+async def retry_failed_refunds():
+    """
+    Повторная обработка возвратов, которые не удалось создать.
+    """
+    logger.info("Запуск повторной обработки неудачных возвратов")
+
+    try:
+        async with async_session() as session:
+            payment_manager = PaymentManager(session)
+
+            from app.database.repositories.refund_repository import RefundRepository
+            refund_repo = RefundRepository(session)
+
+            # Находим возвраты для повторной попытки
+            failed_refunds = await refund_repo.get_refunds_for_retry(max_retries=1)
+
+            if not failed_refunds:
+                logger.debug("Нет возвратов для повторной обработки")
+                return
+
+            logger.info(f"Найдено {len(failed_refunds)} возвратов для повторной обработки")
+
+            for refund in failed_refunds:
+                try:
+                    # Получаем платеж
+                    payment = await payment_manager.payment_repo.get_payment_by_id(refund.payment_id)
+
+                    if not payment or not payment.yookassa_payment_id:
+                        logger.error(f"Не найден платеж или yookassa_id для возврата #{refund.id}")
+                        continue
+
+                    # Повторяем создание возврата
+                    success, message = await payment_manager._execute_refund_with_retry(
+                        refund=refund,
+                        payment=payment,
+                        amount=refund.amount,
+                        max_retries=0  # только одна попытка сейчас
+                    )
+
+                    if not success:
+                        # Уведомляем админов
+                        bot_instance = await get_bot_instance()
+                        if bot_instance:
+                            await notify_admins_about_refund_failure(
+                                bot_instance,
+                                session,
+                                refund.id,
+                                refund.booking_id,
+                                message
+                            )
+
+                except Exception as e:
+                    logger.error(f"Исключение при повторной обработке возврата #{refund.id}: {e}", exc_info=True)
+
+            logger.info("Повторная обработка неудачных возвратов завершена")
+
+    except Exception as e:
+        logger.error(f"Ошибка в задаче повторной обработки возвратов: {e}", exc_info=True)

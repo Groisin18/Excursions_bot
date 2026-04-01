@@ -72,6 +72,7 @@ def bookings_main_menu() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Активные бронирования", callback_data="my_active_bookings")
     builder.button(text="История бронирований", callback_data="my_history_bookings")
+    builder.button(text="Требуют возврата", callback_data="my_cancelled_paid_bookings")
     builder.button(text="Назад в кабинет", callback_data="back_to_cabinet")
     builder.adjust(1)
     return builder.as_markup()
@@ -120,13 +121,10 @@ def bookings_list(
 def post_booking(booking_id: int) -> InlineKeyboardMarkup:
     """
     Клавиатура после успешного создания бронирования
-
-    Args:
-        booking_id: ID созданного бронирования
     """
     builder = InlineKeyboardBuilder()
     builder.button(text="Оплатить сейчас", callback_data=f"pay_booking:{booking_id}")
-    builder.button(text="Отменить бронирование", callback_data=f"cancel_booking:{booking_id}")
+    builder.button(text="Отменить бронирование", callback_data=f"user_cancel_booking:{booking_id}")
     builder.button(text="В главное меню", callback_data="back_to_main_with_info")
     builder.adjust(1)
     return builder.as_markup()
@@ -134,8 +132,14 @@ def post_booking(booking_id: int) -> InlineKeyboardMarkup:
 def cancel_confirmation(booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура подтверждения отмены"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="Да, отменить", callback_data=f"confirm_cancel:{booking_id}")
-    builder.button(text="Нет, вернуться", callback_data=f"booking_detail:{booking_id}")
+    builder.button(
+        text="Да, отменить",
+        callback_data=f"user_confirm_cancel:{booking_id}"
+    )
+    builder.button(
+        text="Нет, вернуться",
+        callback_data=f"booking_detail:{booking_id}"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -146,11 +150,18 @@ def back_to_booking(booking_id: int) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+def back_to_booking_menu() -> InlineKeyboardMarkup:
+    """Кнопка возврата в меню бронирований"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад в меню бронирований", callback_data="user_booking")
+    builder.adjust(1)
+    return builder.as_markup()
+
 def active_booking_actions(booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для активного неоплаченного бронирования"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Оплатить", callback_data=f"pay_booking:{booking_id}")
-    builder.button(text="Отменить бронирование", callback_data=f"cancel_booking:{booking_id}")
+    builder.button(text="Отменить бронирование", callback_data=f"user_cancel_booking:{booking_id}")
     builder.button(text="Назад к списку", callback_data="user_booking")
     builder.button(text="В главное меню", callback_data="back_to_main")
     builder.adjust(1)
@@ -159,9 +170,18 @@ def active_booking_actions(booking_id: int) -> InlineKeyboardMarkup:
 def paid_booking_actions(booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для оплаченного бронирования"""
     builder = InlineKeyboardBuilder()
-    builder.button(text="Информация о возврате", callback_data=f"refund_info:{booking_id}")
-    builder.button(text="Назад к списку", callback_data="user_booking")
-    builder.button(text="В главное меню", callback_data="back_to_main")
+    builder.button(
+        text="Отмена записи и возврат оплаты",
+        callback_data=f"refund_info:{booking_id}"
+    )
+    builder.button(
+        text="Назад к списку",
+        callback_data="user_booking"
+    )
+    builder.button(
+        text="В главное меню",
+        callback_data="back_to_main"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
@@ -616,5 +636,160 @@ def booking_start() -> InlineKeyboardMarkup:
     builder = InlineKeyboardBuilder()
     builder.button(text="Начать бронирование", callback_data="confirm_start_booking")
     builder.button(text="Другие варианты", callback_data="public_schedule_back")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+# ===== КНОПКИ ДЛЯ ВОЗВРАТА СРЕДСТВ =====
+
+def cancel_booking_button(booking_id: int) -> InlineKeyboardMarkup:
+    """
+    Кнопка отмены бронирования для сообщения о возврате (когда возврат возможен)
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отменить бронирование",
+        callback_data=f"user_cancel_booking:{booking_id}"
+    )
+    builder.button(
+        text="Назад к бронированию",
+        callback_data=f"booking_detail:{booking_id}"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def cancel_booking_warning_button(booking_id: int) -> InlineKeyboardMarkup:
+    """
+    Кнопка отмены бронирования для сообщения о возврате (когда возврат невозможен)
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отменить без возврата",
+        callback_data=f"user_cancel_booking:{booking_id}"
+    )
+    builder.button(
+        text="Назад к бронированию",
+        callback_data=f"booking_detail:{booking_id}"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def cancel_with_refund_confirmation(booking_id: int, refund_amount: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура подтверждения отмены с информацией о возврате
+
+    Args:
+        booking_id: ID бронирования
+        refund_amount: Сумма возврата в рублях
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Да, отменить и вернуть деньги",
+        callback_data=f"confirm_cancel:{booking_id}"
+    )
+    builder.button(
+        text="Нет, вернуться",
+        callback_data=f"booking_detail:{booking_id}"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def cancel_without_refund_confirmation(booking_id: int, reason: str) -> InlineKeyboardMarkup:
+    """
+    Клавиатура подтверждения отмены без возврата
+
+    Args:
+        booking_id: ID бронирования
+        reason: Причина невозможности возврата
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Да, отменить без возврата",
+        callback_data=f"confirm_cancel:{booking_id}"
+    )
+    builder.button(
+        text="Нет, вернуться",
+        callback_data=f"booking_detail:{booking_id}"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def refund_info_with_cancel(booking_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для информации о возврате с кнопкой отмены
+    Используется когда возврат возможен
+
+    Args:
+        booking_id: ID бронирования
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отменить бронирование",
+        callback_data=f"cancel_booking:{booking_id}"
+    )
+    builder.button(
+        text="Назад к бронированию",
+        callback_data=f"booking_detail:{booking_id}"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def refund_info_no_refund(booking_id: int, reason: str) -> InlineKeyboardMarkup:
+    """
+    Клавиатура для информации о возврате когда возврат невозможен
+
+    Args:
+        booking_id: ID бронирования
+        reason: Причина невозможности возврата
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отменить без возврата",
+        callback_data=f"cancel_booking:{booking_id}"
+    )
+    builder.button(
+        text="Назад к бронированию",
+        callback_data=f"booking_detail:{booking_id}"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def cancelled_paid_bookings_list(bookings: list) -> InlineKeyboardMarkup:
+    """
+    Клавиатура со списком отмененных оплаченных бронирований
+    """
+    builder = InlineKeyboardBuilder()
+
+    for booking in bookings:
+        slot = booking.slot
+        excursion = slot.excursion if slot else None
+
+        if slot and excursion:
+            date_str = slot.start_datetime.strftime("%d.%m.%Y")
+            button_text = f"{excursion.name} ({date_str}) - {booking.total_price} руб."
+            builder.button(
+                text=button_text,
+                callback_data=f"request_refund:{booking.id}"
+            )
+
+    builder.button(text="Назад в меню", callback_data="user_booking")
+    builder.button(text="В главное меню", callback_data="back_to_main")
+    builder.adjust(1)
+
+    return builder.as_markup()
+
+def refund_request_confirmation(booking_id: int) -> InlineKeyboardMarkup:
+    """
+    Клавиатура подтверждения запроса на возврат
+    """
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Да, подтверждаю возврат",
+        callback_data=f"confirm_refund_request:{booking_id}"
+    )
+    builder.button(
+        text="Нет, отменить",
+        callback_data=f"booking_detail:{booking_id}"
+    )
     builder.adjust(1)
     return builder.as_markup()

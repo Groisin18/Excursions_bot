@@ -20,7 +20,8 @@ from app.utils.logging_config import get_logger
 from .tasks import (
     auto_cancel_unpaid_bookings, auto_complete_excursions,
     send_excursion_reminder, send_payment_reminder,
-    notify_admins_about_slots_without_captain
+    notify_admins_about_slots_without_captain, check_pending_refunds,
+    retry_failed_refunds
 )
 from .bot_instance import set_bot_instance
 
@@ -138,6 +139,24 @@ class SchedulerService:
             'interval',
             hours=3,
             id='notify_admins_about_slots_without_captain',
+            replace_existing=True
+        )
+
+        # Проверка статусов возвратов (каждые 5 минут)
+        self.scheduler.add_job(
+            check_pending_refunds,
+            'interval',
+            minutes=5,
+            id='check_pending_refunds',
+            replace_existing=True
+        )
+
+        # Повторная обработка неудачных возвратов (каждые 30 минут)
+        self.scheduler.add_job(
+            retry_failed_refunds,
+            'interval',
+            minutes=30,
+            id='retry_failed_refunds',
             replace_existing=True
         )
 
