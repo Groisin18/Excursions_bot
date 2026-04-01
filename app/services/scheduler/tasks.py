@@ -7,6 +7,7 @@ from app.database.unit_of_work import UnitOfWork
 from app.database.managers import (
     BookingManager, SlotManager, UserManager, PaymentManager
 )
+from app.database.repositories.refund_repository import RefundRepository
 from app.database.models import SlotStatus
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
@@ -362,7 +363,6 @@ async def check_pending_refunds():
             payment_manager = PaymentManager(session)
 
             # Получаем репозиторий возвратов
-            from app.database.repositories.refund_repository import RefundRepository
             refund_repo = RefundRepository(session)
 
             # Находим возвраты в статусе PROCESSING
@@ -400,11 +400,8 @@ async def retry_failed_refunds():
     try:
         async with async_session() as session:
             payment_manager = PaymentManager(session)
-
-            from app.database.repositories.refund_repository import RefundRepository
             refund_repo = RefundRepository(session)
 
-            # Находим возвраты для повторной попытки
             failed_refunds = await refund_repo.get_refunds_for_retry(max_retries=1)
 
             if not failed_refunds:
@@ -422,17 +419,21 @@ async def retry_failed_refunds():
                         logger.error(f"Не найден платеж или yookassa_id для возврата #{refund.id}")
                         continue
 
+                    # Конвертируем сумму из рублей в копейки
+                    amount_kopecks = refund.amount * 100
+                    logger.info(f"Повторная попытка возврата #{refund.id}: сумма {refund.amount} руб. = {amount_kopecks} коп.")
+
                     # Повторяем создание возврата
                     success, message = await payment_manager._execute_refund_with_retry(
                         refund=refund,
                         payment=payment,
-                        amount=refund.amount,
+                        amount=amount_kopecks,  # передаем в копейках
                         max_retries=0  # только одна попытка сейчас
                     )
 
                     if not success:
                         # Уведомляем админов
-                        bot_instance = await get_bot_instance()
+                        bot_instance = get_bot_instance()
                         if bot_instance:
                             await notify_admins_about_refund_failure(
                                 bot_instance,
