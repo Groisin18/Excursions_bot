@@ -112,3 +112,8 @@ class AdminSettingsStates(StatesGroup):
     waiting_for_send_receipt = State()
     waiting_for_vat_rate = State()
     waiting_for_tax_system = State()
+
+class RefundActions(StatesGroup):
+    """Состояния для управления возвратами"""
+    waiting_for_refund_id = State()
+    waiting_for_manual_refund_amount = State()

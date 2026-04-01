@@ -91,6 +91,24 @@ class RefundRepository(BaseRepository):
         )
         return list(result.scalars().all())
 
+    async def get_failed_refunds(self, limit: int = None) -> List[Refund]:
+        """
+        Получить все неудачные возвраты (статус FAILED).
+
+        Args:
+            limit: Максимальное количество записей (опционально)
+
+        Returns:
+            List[Refund]: Список неудачных возвратов
+        """
+        query = select(Refund).where(Refund.status == RefundStatus.FAILED).order_by(Refund.created_at.desc())
+
+        if limit:
+            query = query.limit(limit)
+
+        result = await self.session.execute(query)
+        return list(result.scalars().all())
+
     async def update_refund_status(
         self,
         refund_id: int,

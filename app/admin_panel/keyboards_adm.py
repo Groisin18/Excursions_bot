@@ -1910,3 +1910,48 @@ def slot_already_booked(excursion_id: int) -> InlineKeyboardMarkup:
 
     builder.adjust(1)
     return builder.as_markup()
+
+
+# ===== ВОЗВРАТ СРЕДСТВ =====
+
+def refunds_admin_menu() -> InlineKeyboardMarkup:
+    """Меню управления возвратами"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Неудачные возвраты", callback_data="admin_failed_refunds")
+    builder.button(text="Ручной возврат (по ID брони)", callback_data="admin_manual_refund")
+    builder.button(text="Назад в финансы", callback_data="finances_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def refunds_list_keyboard(refunds: list) -> InlineKeyboardMarkup:
+    """Клавиатура со списком возвратов"""
+    builder = InlineKeyboardBuilder()
+
+    for refund in refunds[:10]:
+        builder.button(
+            text=f"Возврат #{refund.id} (бронь #{refund.booking_id}) - {refund.amount} руб.",
+            callback_data=f"admin_refund_detail:{refund.id}"
+        )
+
+    builder.button(text="Назад в меню возвратов", callback_data="admin_refunds_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def refund_detail_actions(refund_id: int) -> InlineKeyboardMarkup:
+    """Клавиатура для деталей возврата"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Повторить попытку", callback_data=f"admin_retry_refund:{refund_id}")
+    builder.button(text="Отметить как требующий ручного возврата", callback_data=f"admin_mark_refund_failed:{refund_id}")
+    builder.button(text="Назад к списку", callback_data="admin_failed_refunds")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_admin_menu(back_callback: str) -> InlineKeyboardMarkup:
+    """Кнопка возврата в админ-меню"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад", callback_data=back_callback)
+    builder.adjust(1)
+    return builder.as_markup()

@@ -389,8 +389,7 @@ async def check_pending_refunds():
     except Exception as e:
         logger.error(f"Ошибка в задаче проверки возвратов: {e}", exc_info=True)
 
-
-# Добавить задачу для повторной обработки неудачных возвратов
+# TODO Разобраться, нужны ли две последних задачи
 async def retry_failed_refunds():
     """
     Повторная обработка возвратов, которые не удалось создать.
@@ -402,6 +401,7 @@ async def retry_failed_refunds():
             payment_manager = PaymentManager(session)
             refund_repo = RefundRepository(session)
 
+            # Находим возвраты для повторной попытки (неудачные, с retry_count < 1)
             failed_refunds = await refund_repo.get_refunds_for_retry(max_retries=1)
 
             if not failed_refunds:
@@ -423,20 +423,26 @@ async def retry_failed_refunds():
                     amount_kopecks = refund.amount * 100
                     logger.info(f"Повторная попытка возврата #{refund.id}: сумма {refund.amount} руб. = {amount_kopecks} коп.")
 
+                    # Сбрасываем счетчик попыток перед повторной попыткой
+                    refund.retry_count = 0
+                    await session.flush()
+
                     # Повторяем создание возврата
                     success, message = await payment_manager._execute_refund_with_retry(
                         refund=refund,
                         payment=payment,
-                        amount=amount_kopecks,  # передаем в копейках
-                        max_retries=0  # только одна попытка сейчас
+                        amount=amount_kopecks,
+                        max_retries=1
                     )
 
                     if not success:
+                        logger.error(f"Повторная попытка возврата #{refund.id} не удалась: {message}")
+
                         # Уведомляем админов
-                        bot_instance = get_bot_instance()
-                        if bot_instance:
+                        bot = get_bot_instance()
+                        if bot:
                             await notify_admins_about_refund_failure(
-                                bot_instance,
+                                bot,
                                 session,
                                 refund.id,
                                 refund.booking_id,

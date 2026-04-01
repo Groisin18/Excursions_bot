@@ -8,6 +8,7 @@ from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.admin_panel.keyboards_adm import finances_submenu
+from app.routers.admin.refunds import show_refunds_menu, refunds_menu
 from app.utils.logging_config import get_logger
 
 
@@ -61,6 +62,7 @@ async def show_online_payments(message: Message):
         logger.error(f"Ошибка получения онлайн-платежей: {e}", exc_info=True)
         await message.answer("Ошибка при получении списка платежей", reply_markup=finances_submenu())
 
+
 @router.message(F.text == "Сводка и текущие платежи")
 async def finances_summary(message: Message):
     """Сводка по финансам и текущие платежи"""
@@ -85,14 +87,22 @@ async def finances_analytics(message: Message):
 
 @router.message(F.text == "Возвраты и проблемные операции")
 async def finances_refunds(message: Message):
-    """Возвраты и проблемные операции"""
-    logger.info(f"Администратор {message.from_user.id} запросил информацию о возвратах")
+    """
+    Возвраты и проблемные операции.
+    Переход в меню управления возвратами.
+    """
+    logger.info(f"Администратор {message.from_user.id} запросил управление возвратами")
 
     try:
-        await message.answer("Функция 'Возвраты и проблемные операции' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        await show_refunds_menu(message, is_callback=False)
 
+    except Exception as e:
+        logger.error(f"Ошибка при открытии меню возвратов: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка при открытии раздела возвратов.\n"
+            "Пожалуйста, попробуйте позже.",
+            reply_markup=finances_submenu()
+        )
 
 @router.message(F.text == "Интеграция с Ю-кассой")
 async def yookassa_integration(message: Message):
@@ -105,6 +115,11 @@ async def yookassa_integration(message: Message):
         logger.error(f"Ошибка: {e}", exc_info=True)
 
 
+@router.callback_query(F.data == "finances_refunds")
+async def finances_refunds_callback(callback: CallbackQuery):
+    """Переход в меню управления возвратами из раздела финансов (callback)"""
+    await callback.answer()
+    await refunds_menu(callback)
 
 
 @router.callback_query(F.data.startswith("paid:"))
