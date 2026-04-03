@@ -77,6 +77,16 @@ class RefundRepository(BaseRepository):
         )
         return list(result.scalars().all())
 
+    async def get_refunds_by_statuses(self, statuses: list, limit: int = 20) -> List[Refund]:
+        """Получить возвраты по списку статусов"""
+        result = await self.session.execute(
+            select(Refund)
+            .where(Refund.status.in_(statuses))
+            .order_by(Refund.created_at.desc())
+            .limit(limit)
+        )
+        return result.scalars().all()
+
     async def get_pending_refunds(self) -> List[Refund]:
         """Получить возвраты в статусе PENDING (ожидают создания в YooKassa)"""
         result = await self.session.execute(

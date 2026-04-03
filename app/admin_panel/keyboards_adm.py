@@ -1918,7 +1918,7 @@ def refunds_admin_menu() -> InlineKeyboardMarkup:
     """Меню управления возвратами"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Неудачные возвраты", callback_data="admin_failed_refunds")
-    builder.button(text="Ручной возврат (по ID брони)", callback_data="admin_manual_refund")
+    builder.button(text="Возврат по ID бронирования", callback_data="admin_refund_by_booking")
     builder.button(text="Назад в финансы", callback_data="finances_menu")
     builder.adjust(1)
     return builder.as_markup()
@@ -1937,12 +1937,47 @@ def refunds_list_keyboard(refunds: list) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-def refund_detail_actions(refund_id: int) -> InlineKeyboardMarkup:
+def refund_detail_actions(refund_id: int, booking_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для деталей возврата"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Повторить попытку", callback_data=f"admin_retry_refund:{refund_id}")
-    builder.button(text="Отметить как требующий ручного возврата", callback_data=f"admin_mark_refund_failed:{refund_id}")
+    builder.button(
+        text="Отметить как успешный (ручной возврат)",
+        callback_data=f"admin_mark_refund_successful:{refund_id}:{booking_id}"
+    )
+    builder.button(
+        text="Отметить как требующий ручного возврата",
+        callback_data=f"admin_mark_refund_failed:{refund_id}"
+    )
     builder.button(text="Назад к списку", callback_data="admin_failed_refunds")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_mark_booking_refunded_menu(booking_id: int) -> InlineKeyboardMarkup:
+    """Меню для отметки бронирования как возвращенного вручную"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Да, отметить возврат как успешный",
+        callback_data=f"admin_mark_booking_refunded:{booking_id}"
+    )
+    builder.button(
+        text="Нет, вернуться в меню",
+        callback_data="admin_refunds_menu"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_mark_refund_successful_menu(refund_id: int, booking_id: int) -> InlineKeyboardMarkup:
+    """Меню для отметки конкретного возврата как успешного"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отметить возврат как успешный",
+        callback_data=f"admin_mark_refund_successful:{refund_id}:{booking_id}"
+    )
+    builder.button(
+        text="Назад к списку",
+        callback_data="admin_failed_refunds"
+    )
     builder.adjust(1)
     return builder.as_markup()
 
