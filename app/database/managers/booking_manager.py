@@ -277,16 +277,20 @@ class BookingManager(BaseManager):
             if not booking:
                 return None
 
+            # Получаем ID детей из бронирования
+            child_user_ids = [bc.child_user_id for bc in booking.booking_children]
+
             # Расчетная стоимость
-            calculated_price = await self.calculate_price(
-                booking.slot_id,
-                booking.adult_user_id,
-                # TODO: получить ID детей
+            calculated_price, price_details = await self.calculate_price(
+                slot_id=booking.slot_id,
+                adult_user_id=booking.adult_user_id,
+                child_user_ids=child_user_ids
             )
 
             return {
                 'booking': booking,
                 'calculated_price': calculated_price,
+                'price_details': price_details,
                 'slot_info': await self.slot_repo.get_with_bookings(booking.slot_id),
                 'adult_user': booking.adult_user,
                 'payments': booking.payments

@@ -507,7 +507,6 @@ class Refund(Base):
             'completed_at': self.completed_at.isoformat() if self.completed_at else None,
         }
 
-
 class PromoCode(Base):
     """Модель промокода"""
     __tablename__ = 'promo_codes'
