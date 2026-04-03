@@ -140,12 +140,13 @@ class PaymentManager(BaseManager):
             self.logger.error(f"Ошибка проверки возможности возврата: {e}", exc_info=True)
             return False, "Ошибка при проверке возможности возврата"
 
-    async def get_booking_payments_info(self, booking_id: int) -> Dict:
+    async def get_booking_payments_info(self, booking_id: int, booking: Booking = None) -> Dict:
         """
         Получить информацию о платежах по бронированию.
 
         Args:
             booking_id: ID бронирования
+            booking: Объект бронирования (опционально, если передан - используется для проверки возврата)
 
         Returns:
             Dict с информацией:
@@ -154,8 +155,6 @@ class PaymentManager(BaseManager):
                 'payments': List[Dict],  # список платежей
                 'total_paid': int,  # общая сумма оплаченных
                 'last_payment': Optional[Dict],  # последний платёж
-                'can_refund': bool,  # можно ли вернуть (обёртка над can_refund)
-                'refund_reason': str  # причина если нельзя
             }
         """
         self._log_operation_start("get_booking_payments_info", booking_id=booking_id)
@@ -169,9 +168,7 @@ class PaymentManager(BaseManager):
                     'has_payments': False,
                     'payments': [],
                     'total_paid': 0,
-                    'last_payment': None,
-                    'can_refund': False,
-                    'refund_reason': 'Платежи отсутствуют'
+                    'last_payment': None
                 }
 
                 self._log_operation_end("get_booking_payments_info", success=True, has_payments=False)
@@ -201,24 +198,18 @@ class PaymentManager(BaseManager):
             # Последний платёж
             last_payment = payments_data[0] if payments_data else None
 
-            # Получаем бронирование для проверки возврата
-            # (нужен доступ к бронированию, возможно передавать его параметром)
-            # TODO Пока без проверки can_refund, так как нужен booking со slot
-
             result = {
                 'has_payments': True,
                 'payments': payments_data,
                 'total_paid': total_paid,
                 'last_payment': last_payment,
-                'can_refund': False,  # Будет заполнено отдельно
-                'refund_reason': 'Требуется проверка бронирования'
             }
 
             self._log_operation_end(
                 "get_booking_payments_info",
                 success=True,
                 payments_count=len(payments_data),
-                total_paid=total_paid
+                total_paid=total_paid,
             )
 
             return result
@@ -230,9 +221,7 @@ class PaymentManager(BaseManager):
                 'has_payments': False,
                 'payments': [],
                 'total_paid': 0,
-                'last_payment': None,
-                'can_refund': False,
-                'refund_reason': 'Ошибка получения данных'
+                'last_payment': None
             }
 
     async def calculate_refund_amount(self, booking: Booking) -> int:

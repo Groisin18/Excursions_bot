@@ -249,7 +249,6 @@ async def booking_detail(callback: CallbackQuery):
             if payments_info['has_payments']:
                 text += f"\nПлатежи:\n"
                 for payment in payments_info['payments']:
-                    payment_date = payment['created_at'].strftime("%d.%m.%Y %H:%M") if payment['created_at'] else "дата неизвестна"
                     text += f"- {payment['amount']} руб. ({payment['payment_method']}), статус: {payment['status'] or 'завершён'}\n"
 
             if booking.booking_status == BookingStatus.active and booking.payment_status == PaymentStatus.not_paid:
