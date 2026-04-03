@@ -242,20 +242,6 @@ async def auto_complete_excursions():
 
 async def notify_admins_about_slots_without_captain():
     """
-    Уведомление администраторов о слотах без капитана за 24 часа до начала
-    """
-    logger.info("Запуск проверки слотов без капитана")
-
-    lock_key = "scheduler:lock:no_captain_notify"
-    token = await redis_client.acquire_lock(lock_key, timeout=300)
-
-    if not token:
-        logger.warning("Не удалось получить блокировку для уведомлений о слотах без капитана")
-        return
-
-
-async def notify_admins_about_slots_without_captain():
-    """
     Уведомление администраторов о слотах без капитана за 48 часов до начала
     Запускается раз в 3 часа, блокировка повторной отправки на 12 часов
     """
@@ -389,7 +375,7 @@ async def check_pending_refunds():
     except Exception as e:
         logger.error(f"Ошибка в задаче проверки возвратов: {e}", exc_info=True)
 
-# TODO Разобраться, нужны ли две последних задачи
+
 async def retry_failed_refunds():
     """
     Повторная обработка возвратов, которые не удалось создать.
@@ -409,6 +395,8 @@ async def retry_failed_refunds():
                 return
 
             logger.info(f"Найдено {len(failed_refunds)} возвратов для повторной обработки")
+
+            bot = get_bot_instance()
 
             for refund in failed_refunds:
                 try:
@@ -439,14 +427,13 @@ async def retry_failed_refunds():
                         logger.error(f"Повторная попытка возврата #{refund.id} не удалась: {message}")
 
                         # Уведомляем админов
-                        bot = get_bot_instance()
                         if bot:
                             await notify_admins_about_refund_failure(
-                                bot,
-                                session,
-                                refund.id,
-                                refund.booking_id,
-                                message
+                                bot=bot,
+                                session=session,
+                                refund_id=refund.id,
+                                booking_id=refund.booking_id,
+                                error_message=message
                             )
 
                 except Exception as e:
