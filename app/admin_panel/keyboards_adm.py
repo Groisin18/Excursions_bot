@@ -215,6 +215,40 @@ def find_client_for_captains() -> InlineKeyboardMarkup:
     builder.button(text="Найти клиента", callback_data="new_client_search")
     return builder.as_markup()
 
+def captains_list_keyboard(captains: list) -> InlineKeyboardMarkup:
+    """Клавиатура со списком капитанов"""
+    builder = InlineKeyboardBuilder()
+
+    for captain in captains:
+        name = captain.full_name or captain.username or f"ID {captain.id}"
+        builder.button(
+            text=name,
+            callback_data=f"captain_schedule_menu:{captain.id}"
+        )
+
+    builder.button(text="Назад", callback_data="back_to_captains_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def captain_period_menu(captain_id: int, captain_name: str) -> InlineKeyboardMarkup:
+    """Меню выбора периода для капитана"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Прошлый месяц", callback_data=f"captain_schedule:{captain_id}:last_month")
+    builder.button(text="Текущий месяц", callback_data=f"captain_schedule:{captain_id}:current_month")
+    builder.button(text="Все назначенные экскурсии", callback_data=f"captain_schedule:{captain_id}:all_assigned")
+    builder.button(text="Назад к списку капитанов", callback_data="back_to_captains_list")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def back_to_captains_list_menu() -> InlineKeyboardMarkup:
+    """Кнопка возврата к списку капитанов"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад к списку капитанов", callback_data="back_to_captains_list")
+    builder.adjust(1)
+    return builder.as_markup()
+
 
 # ===== ДОБАВЛЕНИЕ КЛИЕНТА =====
 

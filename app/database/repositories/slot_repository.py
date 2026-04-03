@@ -174,6 +174,53 @@ class SlotRepository(BaseRepository):
         result = await self._execute_query(query)
         return list(result.scalars().all())
 
+    async def get_captain_slots_by_id(
+        self,
+        captain_id: int,
+        start_date: datetime,
+        end_date: datetime
+    ) -> List[ExcursionSlot]:
+        """Получить слоты капитана по ID за период"""
+        query = (
+            select(ExcursionSlot)
+            .options(
+                selectinload(ExcursionSlot.excursion),
+                selectinload(ExcursionSlot.bookings).selectinload(Booking.adult_user)
+            )
+            .where(
+                and_(
+                    ExcursionSlot.captain_id == captain_id,
+                    ExcursionSlot.start_datetime >= start_date,
+                    ExcursionSlot.start_datetime <= end_date
+                )
+            )
+            .order_by(ExcursionSlot.start_datetime)
+        )
+        result = await self._execute_query(query)
+        return list(result.scalars().all())
+
+
+    async def get_captain_upcoming_slots(self, captain_id: int) -> List[ExcursionSlot]:
+        """Получить предстоящие слоты капитана (которые еще не начались)"""
+        now = datetime.now()
+        query = (
+            select(ExcursionSlot)
+            .options(
+                selectinload(ExcursionSlot.excursion),
+                selectinload(ExcursionSlot.bookings).selectinload(Booking.adult_user)
+            )
+            .where(
+                and_(
+                    ExcursionSlot.captain_id == captain_id,
+                    ExcursionSlot.start_datetime > now,
+                    ExcursionSlot.status.in_([SlotStatus.scheduled, SlotStatus.confirmed])
+                )
+            )
+            .order_by(ExcursionSlot.start_datetime)
+        )
+        result = await self._execute_query(query)
+        return list(result.scalars().all())
+
     async def get_captain_completed_slots_for_period(
         self,
         captain_id: int,
