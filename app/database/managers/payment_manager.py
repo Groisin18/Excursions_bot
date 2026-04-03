@@ -699,11 +699,3 @@ class PaymentManager(BaseManager):
             self._log_operation_end("cancel_pending_payment", success=False)
             self.logger.error(f"Ошибка отмены платежа: {e}", exc_info=True)
             return False
-
-
-# TODO: Реализовать полноценную логику возврата:
-# - Интеграция с YooKassa API для создания возвратов
-# - Обработка вебхуков от YooKassa по статусам возвратов
-# - Частичные возвраты
-# - Логирование всех операций с возвратами
-# - Уведомления пользователям о статусе возврата

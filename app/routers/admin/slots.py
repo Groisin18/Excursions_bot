@@ -13,7 +13,8 @@ from app.database.unit_of_work import UnitOfWork
 from app.database.repositories import (
     UserRepository, SlotRepository, ExcursionRepository
 )
-from app.database.managers import SlotManager
+from app.database.managers import SlotManager, PaymentManager
+from app.database.models import PaymentStatus
 from app.database.session import async_session
 
 from app.admin_panel.states_adm import RescheduleSlot
@@ -28,6 +29,7 @@ from app.middlewares import AdminMiddleware
 from app.services.redis import redis_client
 from app.utils.logging_config import get_logger
 from app.utils.validation import validate_slot_date, validate_slot_time
+from app.utils.admin_notifications import notify_admins_about_refund_failure
 
 
 logger = get_logger(__name__)
@@ -79,8 +81,9 @@ async def confirm_cancel_slot_callback(callback: CallbackQuery):
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
                 slot_manager = SlotManager(uow.session)
+                payment_manager = PaymentManager(uow.session)
 
-                # Получаем полную информацию о слоте до отмены (чтобы были данные для уведомлений)
+                # Получаем полную информацию о слоте до отмены
                 slot_full_info = await slot_manager.get_slot_full_info(slot_id)
 
                 if not slot_full_info:
@@ -96,122 +99,169 @@ async def confirm_cancel_slot_callback(callback: CallbackQuery):
                     await callback.message.answer("Не удалось отменить слот.")
                     return
 
-                # Уведомляем клиентов о отмене
-                notified_count = 0
-                failed_notifications = []
-                no_telegram_clients = []
+                # Статистика по возвратам
+                refunded_count = 0
+                failed_refunds = []
+                pending_bookings = []
 
                 # Используем активные бронирования из slot_full_info
                 active_bookings = slot_full_info.get('active_bookings', [])
+                bot = callback.bot
+                slot_datetime = slot.start_datetime.strftime('%d.%m.%Y %H:%M')
+                excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
 
-                if active_bookings:
-                    logger.info(f"Слот {slot_id} отменен. Активных бронирований для уведомления: {len(active_bookings)}")
+                # Обрабатываем бронирования: возвраты для PAID, уведомления для PENDING
+                for booking in active_bookings:
+                    client = booking.adult_user
 
-                    bot = callback.bot
-                    slot_datetime = slot.start_datetime.strftime('%d.%m.%Y %H:%M')
-                    excursion_name = slot.excursion.name if slot.excursion else "Экскурсия"
+                    # Формируем базовое уведомление об отмене
+                    notification_text_lines = [
+                        "ОТМЕНА ЭКСКУРСИИ",
+                        "",
+                        f"Уважаемый клиент, сообщаем вам об отмене экскурсии:",
+                        f"",
+                        f"Экскурсия: {excursion_name}",
+                        f"Дата и время: {slot_datetime}",
+                    ]
 
-                    for booking in active_bookings:
-                        # Получаем клиента из бронирования
-                        client = booking.adult_user
+                    # Добавляем информацию о детях
+                    if booking.booking_children:
+                        children_names = []
+                        for bc in booking.booking_children:
+                            if bc.child and bc.child.full_name:
+                                children_names.append(bc.child.full_name)
 
-                        if client and client.telegram_id:
-                            try:
-                                # Проверяем, не отправляли ли уже уведомление для этого бронирования
-                                notification_key = f"notification:slot_cancel:{booking.id}"
-                                already_sent = await redis_client.client.get(notification_key)
+                        if children_names:
+                            notification_text_lines.insert(5, f"Дети: {', '.join(children_names)}")
 
-                                if already_sent:
-                                    logger.debug(f"Уведомление для брони #{booking.id} уже отправлено")
-                                    continue
+                    # Обрабатываем в зависимости от статуса оплаты
+                    if booking.payment_status == PaymentStatus.PAID:
+                        # Инициируем возврат
+                        try:
+                            success_refund, refund_message, refund_obj = await payment_manager.process_refund(
+                                booking_id=booking.id,
+                                reason=f"Отмена слота #{slot_id}"
+                            )
 
-                                # Формируем текст уведомления
-                                notification_text = [
-                                    "ОТМЕНА ЭКСКУРСИИ",
-                                    "",
-                                    f"Уважаемый клиент, сообщаем вам об отмене экскурсии:",
-                                    f"",
-                                    f"Экскурсия: {excursion_name}",
-                                    f"Дата и время: {slot_datetime}",
-                                    f"",
-                                    f"К сожалению, по техническим причинам мы вынуждены отменить данную экскурсию.",
-                                    f"",
-                                    f"Если вы производили оплату, средства будут возвращены в ближайшее время.",
-                                    f"",
-                                    f"Приносим извинения за доставленные неудобства.",
-                                    f"Для уточнения информации свяжитесь с администратором."
-                                ]
-                                # TODO Добавить отмену оплаты
-                                # Добавляем информацию о детях, если они есть
-                                if booking.booking_children:
-                                    children_names = []
-                                    for bc in booking.booking_children:
-                                        if bc.child and bc.child.full_name:
-                                            children_names.append(bc.child.full_name)
+                            if success_refund:
+                                refunded_count += 1
+                                logger.info(f"Возврат для брони #{booking.id} успешно создан")
 
-                                    if children_names:
-                                        # Вставляем после строки с датой
-                                        notification_text.insert(5, f"Дети: {', '.join(children_names)}")
+                                # Добавляем информацию о возврате в уведомление
+                                notification_text_lines.append(f"")
+                                notification_text_lines.append(f"Средства за оплаченную экскурсию будут возвращены на вашу карту в течение 5-10 рабочих дней.")
+                                if refund_obj:
+                                    notification_text_lines.append(f"Номер возврата: #{refund_obj.id}")
+                            else:
+                                failed_refunds.append({
+                                    'booking_id': booking.id,
+                                    'client': client.full_name if client else f"ID {booking.id}",
+                                    'error': refund_message
+                                })
+                                logger.error(f"Ошибка создания возврата для брони #{booking.id}: {refund_message}")
 
-                                await bot.send_message(
-                                    chat_id=client.telegram_id,
-                                    text="\n".join(notification_text)
+                                # Уведомляем администраторов о проблеме
+                                await notify_admins_about_refund_failure(
+                                    bot=bot,
+                                    booking_id=booking.id,
+                                    error_message=refund_message
                                 )
 
-                                # Сохраняем флаг отправки на 24 часа (86400 секунд)
-                                await redis_client.client.setex(notification_key, 86400, "1")
-                                notified_count += 1
-                                logger.info(f"Уведомление об отмене слота отправлено клиенту {client.telegram_id} (бронь #{booking.id})")
+                                # В уведомлении клиенту говорим обратиться к администратору
+                                notification_text_lines.append(f"")
+                                notification_text_lines.append(f"ПРОИЗОШЛА ТЕХНИЧЕСКАЯ ОШИБКА ПРИ ОБРАБОТКЕ ВОЗВРАТА.")
+                                notification_text_lines.append(f"Пожалуйста, свяжитесь с администратором для решения вопроса.")
 
-                            except Exception as e:
-                                error_msg = f"Ошибка отправки уведомления клиенту {client.telegram_id} (бронь #{booking.id}): {e}"
-                                logger.error(error_msg, exc_info=True)
-                                client_info = client.full_name or client.phone_number or f"ID {client.id}"
-                                failed_notifications.append(client_info)
-                        else:
-                            # Клиент без telegram_id
-                            if client:
-                                client_info = client.full_name or client.phone_number or f"ID {client.id}"
-                            else:
-                                client_info = "Клиент не найден"
-                            no_telegram_clients.append(client_info)
+                        except Exception as e:
+                            error_msg = str(e)
+                            logger.error(f"Исключение при возврате для брони #{booking.id}: {error_msg}", exc_info=True)
+                            failed_refunds.append({
+                                'booking_id': booking.id,
+                                'client': client.full_name if client else f"ID {booking.id}",
+                                'error': error_msg
+                            })
+
+                            await notify_admins_about_refund_failure(
+                                bot=bot,
+                                booking_id=booking.id,
+                                error_message=error_msg
+                            )
+
+                            notification_text_lines.append(f"")
+                            notification_text_lines.append(f"ПРОИЗОШЛА ТЕХНИЧЕСКАЯ ОШИБКА ПРИ ОБРАБОТКЕ ВОЗВРАТА.")
+                            notification_text_lines.append(f"Пожалуйста, свяжитесь с администратором для решения вопроса.")
+
+                    elif booking.payment_status == PaymentStatus.PENDING:
+                        pending_bookings.append({
+                            'booking_id': booking.id,
+                            'client': client.full_name if client else f"ID {booking.id}"
+                        })
+
+                        # Специальное уведомление для ожидающих оплату
+                        notification_text_lines.append(f"")
+                        notification_text_lines.append(f"ВНИМАНИЕ: Ваша оплата не была завершена.")
+                        notification_text_lines.append(f"Если с вашей карты все же произошло списание средств,")
+                        notification_text_lines.append(f"пожалуйста, свяжитесь с администратором для возврата денег.")
+
+                    # Отправляем уведомление клиенту (если есть telegram_id)
+                    if client and client.telegram_id:
+                        try:
+                            # Проверяем, не отправляли ли уже уведомление
+                            notification_key = f"notification:slot_cancel:{booking.id}"
+                            already_sent = await redis_client.client.get(notification_key)
+
+                            if already_sent:
+                                logger.debug(f"Уведомление для брони #{booking.id} уже отправлено")
+                                continue
+
+                            await bot.send_message(
+                                chat_id=client.telegram_id,
+                                text="\n".join(notification_text_lines)
+                            )
+
+                            # Сохраняем флаг отправки на 24 часа
+                            await redis_client.client.setex(notification_key, 86400, "1")
+                            logger.info(f"Уведомление об отмене слота отправлено клиенту {client.telegram_id} (бронь #{booking.id})")
+
+                        except Exception as e:
+                            logger.error(f"Ошибка отправки уведомления клиенту {client.telegram_id} (бронь #{booking.id}): {e}", exc_info=True)
 
                 # Формируем ответ администратору
                 response_parts = [
                     f"Слот #{slot_id} успешно отменен.",
-                    f"Все связанные бронирования отменены."
+                    f"Все связанные бронирования отменены.",
+                    f""
                 ]
 
-                if notified_count > 0:
-                    response_parts.append(f"")
-                    response_parts.append(f"Уведомления отправлены: {notified_count} клиентам")
+                if refunded_count > 0:
+                    response_parts.append(f"Возвраты созданы: {refunded_count}")
 
-                if failed_notifications:
-                    # Убираем дубликаты
-                    failed_unique = list(set(failed_notifications))
-                    response_parts.append(f"")
-                    response_parts.append(f"Не удалось отправить уведомления:")
-                    for client_info in failed_unique[:5]:
-                        response_parts.append(f"• {client_info}")
-                    if len(failed_unique) > 5:
-                        response_parts.append(f"• и еще {len(failed_unique) - 5}")
+                if pending_bookings:
+                    response_parts.append(f"Отменено бронирований в статусе ожидания оплаты: {len(pending_bookings)}")
+                    response_parts.append(f"(клиенты уведомлены о возможном списании)")
 
-                if no_telegram_clients:
-                    # Убираем дубликаты
-                    no_telegram_unique = list(set(no_telegram_clients))
+                if failed_refunds:
                     response_parts.append(f"")
-                    response_parts.append(f"Клиенты без Telegram ID (уведомления не отправлены):")
-                    for client_info in no_telegram_unique[:5]:
-                        response_parts.append(f"• {client_info}")
-                    if len(no_telegram_unique) > 5:
-                        response_parts.append(f"• и еще {len(no_telegram_unique) - 5}")
+                    response_parts.append(f"Ошибки при создании возвратов:")
+                    unique_failed = {}
+                    for refund in failed_refunds:
+                        key = refund['client']
+                        if key not in unique_failed:
+                            unique_failed[key] = refund['error']
+
+                    for idx, (client, error) in enumerate(list(unique_failed.items())[:5]):
+                        response_parts.append(f"- {client}: {error[:100]}")
+                    if len(unique_failed) > 5:
+                        response_parts.append(f"- и еще {len(unique_failed) - 5}")
+                    response_parts.append(f"")
+                    response_parts.append(f"Администраторы уведомлены о проблемах.")
 
                 await callback.message.answer("\n".join(response_parts))
 
                 logger.info(f"Слот {slot_id} отменен администратором {callback.from_user.id}. "
-                          f"Уведомлено клиентов: {notified_count}, "
-                          f"ошибок: {len(failed_notifications)}, "
-                          f"без Telegram ID: {len(no_telegram_clients)}")
+                          f"Возвратов: {refunded_count}, "
+                          f"Ошибок возврата: {len(failed_refunds)}, "
+                          f"Pending бронирований: {len(pending_bookings)}")
 
         await callback.message.answer(
             "Выберите действие:",
