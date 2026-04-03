@@ -1,7 +1,7 @@
 """
 Утилиты для отправки уведомлений администраторам
 """
-from typing import List, Optional
+from typing import List
 
 from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession

@@ -583,7 +583,8 @@ class BookingManager(BaseManager):
         self,
         booking_id: int,
         auto_refund: bool = True,
-        reason: str = None
+        reason: str = None,
+        force_refund: bool = False
     ) -> Tuple[bool, str, Optional[Dict]]:
         """
         Отменить бронирование.
@@ -592,6 +593,7 @@ class BookingManager(BaseManager):
             booking_id: ID бронирования
             auto_refund: Автоматически инициировать возврат если возможно
             reason: Причина отмены (будет передана в возврат)
+            force_refund: Принудительный возврат (игнорирует проверки can_refund)
 
         Returns:
             Tuple[bool, str, Optional[Dict]]: (успех, сообщение, данные о возврате)
@@ -600,7 +602,8 @@ class BookingManager(BaseManager):
             "cancel_booking",
             booking_id=booking_id,
             auto_refund=auto_refund,
-            reason=reason
+            reason=reason,
+            force_refund=force_refund
         )
 
         try:
@@ -635,7 +638,7 @@ class BookingManager(BaseManager):
             await self.booking_repo.update(
                 booking_id,
                 booking_status=BookingStatus.cancelled,
-                cancelled_at=cancelled_at  # сохраняем время отмены
+                cancelled_at=cancelled_at
             )
 
             self._log_business_event(
@@ -643,7 +646,8 @@ class BookingManager(BaseManager):
                 booking_id=booking_id,
                 slot_id=booking.slot_id,
                 was_paid=was_paid,
-                cancelled_at=cancelled_at
+                cancelled_at=cancelled_at,
+                force_refund=force_refund
             )
 
             # Инициализируем возврат если требуется
@@ -656,11 +660,18 @@ class BookingManager(BaseManager):
 
                 payment_manager = PaymentManager(self.session)
 
-                # Проверяем возможность возврата с учетом времени отмены
-                can_refund, refund_reason = await payment_manager.can_refund_with_cancel_time(
-                    booking=booking,
-                    cancelled_at=cancelled_at
-                )
+                # Проверяем возможность возврата
+                can_refund = False
+                refund_reason = ""
+
+                if force_refund:
+                    can_refund = True
+                    refund_reason = "Принудительный возврат администратором"
+                else:
+                    can_refund, refund_reason = await payment_manager.can_refund_with_cancel_time(
+                        booking=booking,
+                        cancelled_at=cancelled_at
+                    )
 
                 if can_refund:
                     success, refund_msg, refund = await payment_manager.process_refund(
@@ -677,7 +688,8 @@ class BookingManager(BaseManager):
                             "reason": reason or "user_cancelled",
                             "refund_id": refund.id if refund else None,
                             "status": refund.status.value if refund else None,
-                            "cancelled_at": cancelled_at.isoformat()
+                            "cancelled_at": cancelled_at.isoformat(),
+                            "force_refund": force_refund
                         }
                     else:
                         message_parts.append(f"Не удалось автоматически вернуть средства: {refund_msg}")
@@ -687,12 +699,12 @@ class BookingManager(BaseManager):
                             "reason": reason or "user_cancelled",
                             "error": refund_msg,
                             "needs_manual": True,
-                            "cancelled_at": cancelled_at.isoformat()
+                            "cancelled_at": cancelled_at.isoformat(),
+                            "force_refund": force_refund
                         }
 
                         # Уведомляем администраторов
                         try:
-
                             bot = get_bot_instance()
                             if bot:
                                 await notify_admins_about_refund_failure(
@@ -712,7 +724,8 @@ class BookingManager(BaseManager):
                         "reason": reason or "user_cancelled",
                         "can_refund": False,
                         "reason_not_refund": refund_reason,
-                        "cancelled_at": cancelled_at.isoformat()
+                        "cancelled_at": cancelled_at.isoformat(),
+                        "force_refund": force_refund
                     }
 
             result_message = "\n\n".join(message_parts)

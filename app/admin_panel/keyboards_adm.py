@@ -1923,7 +1923,6 @@ def refunds_admin_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-
 def refunds_list_keyboard(refunds: list) -> InlineKeyboardMarkup:
     """Клавиатура со списком возвратов"""
     builder = InlineKeyboardBuilder()
@@ -1938,7 +1937,6 @@ def refunds_list_keyboard(refunds: list) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-
 def refund_detail_actions(refund_id: int) -> InlineKeyboardMarkup:
     """Клавиатура для деталей возврата"""
     builder = InlineKeyboardBuilder()
@@ -1948,10 +1946,63 @@ def refund_detail_actions(refund_id: int) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-
 def back_to_admin_menu(back_callback: str) -> InlineKeyboardMarkup:
     """Кнопка возврата в админ-меню"""
     builder = InlineKeyboardBuilder()
     builder.button(text="Назад", callback_data=back_callback)
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_cancel_booking_with_refund_menu(booking_id: int) -> InlineKeyboardMarkup:
+    """Меню отмены бронирования с возвратом для администратора"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Отменить с обычным возвратом",
+        callback_data=f"admin_cancel_booking:{booking_id}:with_refund"
+    )
+    builder.button(
+        text="Отменить с принудительным возвратом",
+        callback_data=f"admin_cancel_booking:{booking_id}:with_force_refund"
+    )
+    builder.button(
+        text="Отменить без возврата",
+        callback_data=f"admin_cancel_booking:{booking_id}:without_refund"
+    )
+    builder.button(
+        text="Назад",
+        callback_data="admin_bookings_menu"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_cancel_booking_no_refund_menu(booking_id: int) -> InlineKeyboardMarkup:
+    """Меню отмены бронирования без возврата для администратора"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Подтвердить отмену",
+        callback_data=f"admin_cancel_booking:{booking_id}:without_refund"
+    )
+    builder.button(
+        text="Назад",
+        callback_data="admin_bookings_menu"
+    )
+    builder.adjust(1)
+    return builder.as_markup()
+
+def admin_force_refund_confirmation_menu(booking_id: int) -> InlineKeyboardMarkup:
+    """Меню подтверждения принудительного возврата"""
+    builder = InlineKeyboardBuilder()
+    builder.button(
+        text="Да, выполнить принудительный возврат",
+        callback_data=f"admin_cancel_booking:{booking_id}:with_force_refund"
+    )
+    builder.button(
+        text="Нет, отменить без возврата",
+        callback_data=f"admin_cancel_booking:{booking_id}:without_refund"
+    )
+    builder.button(
+        text="Назад",
+        callback_data="admin_bookings_menu"
+    )
     builder.adjust(1)
     return builder.as_markup()
