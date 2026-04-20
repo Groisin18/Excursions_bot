@@ -37,6 +37,33 @@ class BookingRepository(BaseRepository):
         result = await self._execute_query(query)
         return result.scalar_one_or_none()
 
+    async def get_by_status(self, status: BookingStatus) -> List[Booking]:
+        """
+        Получить все бронирования с указанным статусом
+
+        Args:
+            status: Статус бронирования (active, completed, cancelled)
+
+        Returns:
+            List[Booking]: Список бронирований
+        """
+        try:
+            query = (
+                select(Booking)
+                .options(
+                    selectinload(Booking.slot),
+                    selectinload(Booking.adult_user)
+                )
+                .where(Booking.booking_status == status)
+            )
+
+            result = await self._execute_query(query)
+            return list(result.scalars().all())
+
+        except Exception as e:
+            self.logger.error(f"Ошибка получения бронирований по статусу {status}: {e}", exc_info=True)
+            return []
+
     async def get_user_bookings(self, user_telegram_id: int) -> List[Booking]:
         """Получить бронирования пользователя"""
         query = (

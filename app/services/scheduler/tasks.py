@@ -7,8 +7,10 @@ from app.database.unit_of_work import UnitOfWork
 from app.database.managers import (
     BookingManager, SlotManager, UserManager, PaymentManager
 )
-from app.database.repositories.refund_repository import RefundRepository
-from app.database.models import SlotStatus
+from app.database.repositories import (
+    RefundRepository, BookingRepository, SlotRepository
+)
+from app.database.models import SlotStatus, BookingStatus
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.admin_notifications import notify_admins_about_refund_failure
@@ -443,3 +445,46 @@ async def retry_failed_refunds():
 
     except Exception as e:
         logger.error(f"Ошибка в задаче повторной обработки возвратов: {e}", exc_info=True)
+
+
+async def check_and_complete_active_bookings():
+    """
+    Проверяет активные бронирования и переводит в статус completed,
+    если экскурсия уже закончилась.
+    Запускается по расписанию (например, каждый час).
+    """
+    logger = get_logger(__name__)
+    logger.info("Запуск проверки завершенных экскурсий")
+
+    async with async_session() as session:
+        async with UnitOfWork(session) as uow:
+            booking_repo = BookingRepository(session)
+            slot_repo = SlotRepository(session)
+
+            # Получаем все активные бронирования
+            active_bookings = await booking_repo.get_by_status(BookingStatus.active)
+
+            if not active_bookings:
+                logger.info("Нет активных бронирований для проверки")
+                return
+
+            completed_count = 0
+            now = datetime.now()
+
+            for booking in active_bookings:
+                # Получаем слот бронирования
+                slot = await slot_repo.get_by_id(booking.slot_id)
+
+                if not slot:
+                    logger.warning(f"Слот {booking.slot_id} не найден для бронирования {booking.id}")
+                    continue
+
+                # Если экскурсия уже закончилась
+                if slot.end_datetime < now:
+                    # Обновляем статус бронирования
+                    await booking_repo.update(booking.id, status=BookingStatus.completed)
+                    completed_count += 1
+                    logger.info(f"Бронирование {booking.id} переведено в статус completed (слот {slot.id} закончился в {slot.end_datetime})")
+
+            await uow.commit()
+            logger.info(f"Проверка завершена. Переведено в completed: {completed_count} бронирований")

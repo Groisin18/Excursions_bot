@@ -21,7 +21,7 @@ from .tasks import (
     auto_cancel_unpaid_bookings, auto_complete_excursions,
     send_excursion_reminder, send_payment_reminder,
     notify_admins_about_slots_without_captain, check_pending_refunds,
-    retry_failed_refunds
+    retry_failed_refunds, check_and_complete_active_bookings
 )
 from .bot_instance import set_bot_instance
 
@@ -129,6 +129,15 @@ class SchedulerService:
             auto_complete_excursions,
             trigger=IntervalTrigger(minutes=5),
             id='auto_complete_excursions',
+            replace_existing=True,
+            next_run_time=datetime.now()
+        )
+
+        # Проверка активных бронирований и перевод в completed - каждые 60 минут
+        self.scheduler.add_job(
+            check_and_complete_active_bookings,
+            trigger=IntervalTrigger(minutes=60),
+            id='check_and_complete_active_bookings',
             replace_existing=True,
             next_run_time=datetime.now()
         )
