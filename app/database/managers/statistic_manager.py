@@ -10,7 +10,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseManager
 from ..models import (
-    Excursion, Booking, BookingStatus, ExcursionSlot, User, UserRole
+    Excursion, Booking, BookingStatus, ExcursionSlot, User, UserRole,
+    BookingChild
 )
 from ..repositories.statistic_repository import StatisticsRepository
 
@@ -108,15 +109,21 @@ class StatisticsManager(BaseManager):
         self._log_operation_start("get_daily_excursions_stats", date=date_val.date())
 
         try:
-            from app.database.models import Booking, ExcursionSlot, Excursion, BookingStatus
-            from sqlalchemy import select, func
-
+            # Подсчет: 1 взрослый + количество детей в бронировании
             query = await self.session.execute(
                 select(
                     Excursion.name,
                     func.count(Booking.id).label('total_bookings'),
-                    func.sum(Booking.people_count).label('total_people')
-                ).select_from(Booking)
+                    func.sum(
+                        1 + func.coalesce(
+                            select(func.count(BookingChild.id))
+                            .where(BookingChild.booking_id == Booking.id)
+                            .scalar_subquery(),
+                            0
+                        )
+                    ).label('total_people')
+                )
+                .select_from(Booking)
                 .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
                 .join(Excursion, ExcursionSlot.excursion_id == Excursion.id)
                 .where(func.date(Booking.created_at) == date_val.date())
@@ -130,7 +137,7 @@ class StatisticsManager(BaseManager):
 
         except Exception as e:
             self._log_operation_end("get_daily_excursions_stats", success=False)
-            self.logger.error(f"Ошибка получения статистики по экскурсиям: {e}")
+            self.logger.error(f"Ошибка получения статистики по экскурсиям: {e}", exc_info=True)
             return []
 
     async def get_daily_captains_stats(self, date_val: datetime):
@@ -138,9 +145,6 @@ class StatisticsManager(BaseManager):
         self._log_operation_start("get_daily_captains_stats", date=date_val.date())
 
         try:
-            from app.database.models import Booking, ExcursionSlot, User, BookingStatus
-            from sqlalchemy import select, func
-
             query = await self.session.execute(
                 select(
                     User.full_name,

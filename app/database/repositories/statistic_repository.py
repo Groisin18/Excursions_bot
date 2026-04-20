@@ -109,17 +109,31 @@ class StatisticsRepository(BaseRepository):
     async def get_period_total_people(self, start_date: datetime, end_date: datetime) -> int:
         """Общее количество участников экскурсий за период (взрослые + дети)"""
         try:
-            query = select(func.sum(Booking.people_count)).where(
+            from app.database.models import BookingChild
+
+            # Подсчет через подзапрос: 1 взрослый + количество детей в каждом бронировании
+            query = select(
+                func.sum(
+                    1 + func.coalesce(
+                        select(func.count(BookingChild.id))
+                        .where(BookingChild.booking_id == Booking.id)
+                        .scalar_subquery(),
+                        0
+                    )
+                )
+            ).where(
                 and_(
                     Booking.created_at >= start_date,
                     Booking.created_at <= end_date,
                     Booking.booking_status.in_(['active', 'confirmed', 'completed'])
                 )
             )
+
             result = await self._execute_query(query)
             return result.scalar() or 0
+
         except Exception as e:
-            self.logger.error(f"Ошибка получения общего количества людей: {e}")
+            self.logger.error(f"Ошибка получения общего количества людей: {e}", exc_info=True)
             return 0
 
     async def get_period_completed_excursions(self, start_date: datetime, end_date: datetime) -> int:

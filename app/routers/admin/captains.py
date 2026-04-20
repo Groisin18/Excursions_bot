@@ -117,7 +117,7 @@ async def back_to_captains_list(callback: CallbackQuery):
 async def back_to_captains_menu(callback: CallbackQuery):
     """Вернуться в меню капитанов"""
     await callback.answer()
-    await callback.message.edit_text(
+    await callback.message.answer(
         "Управление капитанами",
         reply_markup=captains_submenu()
     )
