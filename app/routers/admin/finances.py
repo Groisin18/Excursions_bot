@@ -8,7 +8,7 @@ from app.database.session import async_session
 
 from app.middlewares import AdminMiddleware
 from app.admin_panel.keyboards_adm import finances_submenu
-from app.routers.admin.refunds import show_refunds_menu, refunds_menu
+from app.routers.admin.refunds import refunds_menu, refunds_menu
 from app.utils.logging_config import get_logger
 
 
@@ -94,7 +94,7 @@ async def finances_refunds(message: Message):
     logger.info(f"Администратор {message.from_user.id} запросил управление возвратами")
 
     try:
-        await show_refunds_menu(message, is_callback=False)
+        await refunds_menu(message, is_callback=False)
 
     except Exception as e:
         logger.error(f"Ошибка при открытии меню возвратов: {e}", exc_info=True)

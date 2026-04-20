@@ -116,5 +116,5 @@ class AdminSettingsStates(StatesGroup):
 
 class RefundActions(StatesGroup):
     """Состояния для управления возвратами"""
-    waiting_for_refund_id = State()
-    waiting_for_manual_refund_amount = State()
+    waiting_for_booking_id = State()
+    waiting_for_amount = State()
