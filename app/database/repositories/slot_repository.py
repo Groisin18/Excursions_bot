@@ -213,7 +213,7 @@ class SlotRepository(BaseRepository):
                 and_(
                     ExcursionSlot.captain_id == captain_id,
                     ExcursionSlot.start_datetime > now,
-                    ExcursionSlot.status.in_([SlotStatus.scheduled, SlotStatus.confirmed])
+                    ExcursionSlot.status.in_([SlotStatus.scheduled])
                 )
             )
             .order_by(ExcursionSlot.start_datetime)

@@ -281,7 +281,7 @@ async def calculate_salaries(message: Message):
         await message.answer("Функция 'Расчет зарплаты капитанов' в разработке")
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
-
+# TODO Выводить список проведенных и запланированных на этот месяц экскурсий (название-длительность-кол-во людей)
 
 @router.message(F.text == "Добавить капитана")
 async def add_captain(message: Message):
