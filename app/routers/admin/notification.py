@@ -100,3 +100,5 @@ async def notifications_templates(message: Message):
         await message.answer("Функция 'Шаблоны сообщений' в разработке")
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
+
+# TODO Сделать систему отправки уведомлений

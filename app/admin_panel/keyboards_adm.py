@@ -246,6 +246,38 @@ def back_to_captains_list_menu() -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
+def captains_list_for_salary_keyboard(captains: list) -> InlineKeyboardMarkup:
+    """Клавиатура со списком капитанов для расчета зарплаты"""
+    builder = InlineKeyboardBuilder()
+
+    for captain in captains:
+        name = captain.full_name or captain.username or f"ID {captain.id}"
+        builder.button(
+            text=name,
+            callback_data=f"captain_salary_menu:{captain.id}"
+        )
+
+    builder.button(text="Назад", callback_data="back_to_captains_menu")
+    builder.adjust(1)
+    return builder.as_markup()
+
+
+def captain_salary_period_menu(captain_id: int, captain_name: str) -> InlineKeyboardMarkup:
+    """Меню выбора периода для расчета зарплаты капитана"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Прошлый месяц", callback_data=f"captain_salary:{captain_id}:last_month")
+    builder.button(text="Текущий месяц", callback_data=f"captain_salary:{captain_id}:current_month")
+    builder.button(text="Назад к списку капитанов", callback_data="back_to_captains_list_for_salary")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def back_to_captains_list_salary_menu() -> InlineKeyboardMarkup:
+    """Кнопка возврата к списку капитанов"""
+    builder = InlineKeyboardBuilder()
+    builder.button(text="Назад к списку капитанов", callback_data="back_to_captains_list_for_salary")
+    builder.adjust(1)
+    return builder.as_markup()
+
 
 # ===== ДОБАВЛЕНИЕ КЛИЕНТА =====
 

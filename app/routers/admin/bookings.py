@@ -102,7 +102,7 @@ async def show_unpaid_bookings(message: Message):
         await message.answer("Ошибка при получении списка неоплаченных записей", reply_markup=bookings_submenu())
 
 @router.message(F.text == "Отменить запись")
-async def cancel_booking(message: Message):
+async def cancel_booking(message: Message, state: FSMContext):
     """Отмена существующей записи - начало процесса"""
     logger.info(f"Администратор {message.from_user.id} хочет отменить запись")
 
@@ -112,7 +112,7 @@ async def cancel_booking(message: Message):
             "ID можно найти в деталях бронирования.",
             reply_markup=cancel_button()
         )
-        await AdminStates.waiting_for_booking_cancel.set()
+        await state.set_state(AdminStates.waiting_for_booking_cancel)
     except Exception as e:
         logger.error(f"Ошибка: {e}", exc_info=True)
         await message.answer("Произошла ошибка. Попробуйте позже.")
@@ -150,7 +150,7 @@ async def process_booking_cancel_id(message: Message, state: FSMContext):
                 f"Статус оплаты: {booking.payment_status.value}\n"
             )
 
-            if booking.payment_status == PaymentStatus.PAID:
+            if booking.payment_status == PaymentStatus.paid:
                 await message.answer(
                     info_text + "\nВыберите вариант отмены:",
                     reply_markup=admin_cancel_booking_with_refund_menu(booking_id)
@@ -287,7 +287,7 @@ async def admin_cancel_booking_from_list_callback(callback: CallbackQuery):
                 await callback.message.edit_text("Бронирование не найдено.")
                 return
 
-            if booking.payment_status == PaymentStatus.PAID:
+            if booking.payment_status == PaymentStatus.paid:
                 await callback.message.edit_text(
                     f"Бронирование #{booking_id}\n\n"
                     f"Сумма: {booking.total_price} руб.\n"

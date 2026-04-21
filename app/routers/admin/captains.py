@@ -10,9 +10,10 @@ from app.database.repositories import UserRepository, SlotRepository
 from app.database.models import UserRole, SlotStatus
 from app.utils.logging_config import get_logger
 from app.admin_panel.keyboards_adm import (
-    find_client_for_captains,
+    find_client_for_captains, captains_list_for_salary_keyboard,
     captains_submenu, captains_list_keyboard, captain_period_menu,
-    back_to_captains_list_menu
+    back_to_captains_list_menu, captain_salary_period_menu,
+    back_to_captains_list_salary_menu
 )
 
 logger = get_logger(__name__)
@@ -274,14 +275,265 @@ async def show_captain_schedule(callback: CallbackQuery):
 
 @router.message(F.text == "Расчет зарплаты")
 async def calculate_salaries(message: Message):
-    """Расчет зарплат капитанов"""
-    logger.info(f"Администратор {message.from_user.id} запросил расчет зарплат")
+    """Расчет зарплаты - показать список капитанов"""
+    logger.info(f"Администратор {message.from_user.id} запросил расчет зарплаты")
 
     try:
-        await message.answer("Функция 'Расчет зарплаты капитанов' в разработке")
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            captains = await user_repo.get_users_by_role(UserRole.captain)
+
+            if not captains:
+                await message.answer(
+                    "Нет зарегистрированных капитанов.",
+                    reply_markup=captains_submenu()
+                )
+                return
+
+            await message.answer(
+                "Выберите капитана для расчета зарплаты:",
+                reply_markup=captains_list_for_salary_keyboard(captains)
+            )
+
     except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
-# TODO Выводить список проведенных и запланированных на этот месяц экскурсий (название-длительность-кол-во людей)
+        logger.error(f"Ошибка получения списка капитанов: {e}", exc_info=True)
+        await message.answer("Произошла ошибка. Попробуйте позже.", reply_markup=captains_submenu())
+
+
+@router.callback_query(F.data.startswith("captain_salary_menu:"))
+async def captain_salary_menu(callback: CallbackQuery):
+    """Меню выбора периода для расчета зарплаты капитана"""
+    captain_id = int(callback.data.split(":")[1])
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            captain = await user_repo.get_by_id(captain_id)
+
+            if not captain:
+                await callback.message.edit_text("Капитан не найден.")
+                return
+
+            captain_name = captain.full_name or captain.username or f"ID {captain.id}"
+
+            await callback.message.edit_text(
+                f"Расчет зарплаты для капитана: {captain_name}\n\nВыберите период:",
+                reply_markup=captain_salary_period_menu(captain_id, captain_name)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка отображения меню зарплаты капитана: {e}", exc_info=True)
+        await callback.message.edit_text("Произошла ошибка.")
+
+
+@router.callback_query(F.data.startswith("captain_salary:"))
+async def show_captain_salary_report(callback: CallbackQuery):
+    """Показать отчет по экскурсиям капитана за выбранный период"""
+    parts = callback.data.split(":")
+    captain_id = int(parts[1])
+    period_type = parts[2]
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            slot_repo = SlotRepository(session)
+
+            captain = await user_repo.get_by_id(captain_id)
+            if not captain:
+                await callback.message.edit_text("Капитан не найден.")
+                return
+
+            captain_name = captain.full_name or captain.username or f"ID {captain.id}"
+            now = datetime.now()
+
+            if period_type == "last_month":
+                # Прошлый месяц
+                first_day_current_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                last_day_prev_month = first_day_current_month - timedelta(days=1)
+                first_day_prev_month = last_day_prev_month.replace(day=1)
+
+                start_date = first_day_prev_month
+                end_date = last_day_prev_month.replace(hour=23, minute=59, second=59)
+
+                period_name = f"прошлый месяц ({start_date.strftime('%d.%m.%Y')} - {end_date.strftime('%d.%m.%Y')})"
+
+            else:  # current_month
+                # Текущий месяц
+                first_day_current_month = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+                start_date = first_day_current_month
+                end_date = now
+
+                period_name = f"текущий месяц ({start_date.strftime('%d.%m.%Y')} - {now.strftime('%d.%m.%Y')})"
+
+            # Получаем слоты капитана за период
+            slots = await slot_repo.get_captain_slots_by_id(
+                captain_id, start_date, end_date
+            )
+
+            if not slots:
+                await callback.message.edit_text(
+                    f"Капитан {captain_name}\n\nЗа {period_name} нет экскурсий.",
+                    reply_markup=back_to_captains_list_salary_menu()
+                )
+                return
+
+            # Разделяем на проведенные и запланированные
+            completed_slots = []
+            planned_slots = []
+
+            for slot in slots:
+                if slot.status == SlotStatus.completed:
+                    completed_slots.append(slot)
+                elif slot.status in [SlotStatus.scheduled, SlotStatus.in_progress]:
+                    planned_slots.append(slot)
+
+            # Формируем текст отчета
+            text_lines = [
+                f"ОТЧЕТ ПО ЭКСКУРСИЯМ",
+                f"Капитан: {captain_name}",
+                f"Период: {period_name}",
+                "",
+                f"Всего экскурсий: {len(slots)}",
+                f"Проведено: {len(completed_slots)}",
+                f"Запланировано: {len(planned_slots)}",
+                "",
+                "=" * 40
+            ]
+
+            # Проведенные экскурсии
+            if completed_slots:
+                text_lines.append("ПРОВЕДЕННЫЕ ЭКСКУРСИИ:")
+                for slot in completed_slots:
+                    excursion_name = slot.excursion.name if slot.excursion else "Неизвестная"
+
+                    # Вычисляем длительность
+                    duration_str = "длительность неизвестна"
+                    if slot.end_datetime and slot.start_datetime:
+                        duration_minutes = int((slot.end_datetime - slot.start_datetime).total_seconds() / 60)
+                        if duration_minutes < 60:
+                            duration_str = f"{duration_minutes} мин"
+                        else:
+                            hours = duration_minutes // 60
+                            minutes = duration_minutes % 60
+                            if minutes > 0:
+                                duration_str = f"{hours} ч {minutes} мин"
+                            else:
+                                duration_str = f"{hours} ч"
+
+                    # Подсчитываем количество людей
+                    people_count = 0
+                    if slot.bookings:
+                        for booking in slot.bookings:
+                            if booking.booking_status.value == "active":
+                                people_count += booking.people_count
+
+                    date_str = slot.start_datetime.strftime("%d.%m.%Y")
+
+                    text_lines.append(
+                        f"\n  {excursion_name}"
+                        f"\n    Дата: {date_str}"
+                        f"\n    Длительность: {duration_str}"
+                        f"\n    Количество людей: {people_count}"
+                    )
+
+            # Запланированные экскурсии
+            if planned_slots:
+                text_lines.append("\n" + "=" * 40)
+                text_lines.append("ЗАПЛАНИРОВАННЫЕ ЭКСКУРСИИ:")
+                for slot in planned_slots:
+                    excursion_name = slot.excursion.name if slot.excursion else "Неизвестная"
+
+                    # Вычисляем длительность
+                    duration_str = "длительность неизвестна"
+                    if slot.end_datetime and slot.start_datetime:
+                        duration_minutes = int((slot.end_datetime - slot.start_datetime).total_seconds() / 60)
+                        if duration_minutes < 60:
+                            duration_str = f"{duration_minutes} мин"
+                        else:
+                            hours = duration_minutes // 60
+                            minutes = duration_minutes % 60
+                            if minutes > 0:
+                                duration_str = f"{hours} ч {minutes} мин"
+                            else:
+                                duration_str = f"{hours} ч"
+
+                    # Подсчитываем количество людей
+                    people_count = 0
+                    if slot.bookings:
+                        for booking in slot.bookings:
+                            if booking.booking_status.value == "active":
+                                people_count += booking.people_count
+
+                    date_str = slot.start_datetime.strftime("%d.%m.%Y")
+
+                    text_lines.append(
+                        f"\n  {excursion_name}"
+                        f"\n    Дата: {date_str}"
+                        f"\n    Длительность: {duration_str}"
+                        f"\n    Количество людей: {people_count}"
+                    )
+
+            full_text = "\n".join(text_lines)
+
+            # Проверяем длину сообщения
+            if len(full_text) > 4000:
+                # Отправляем частями
+                chunks = []
+                current_chunk = []
+                current_length = 0
+
+                for line in text_lines:
+                    if current_length + len(line) + 1 > 3500:
+                        chunks.append("\n".join(current_chunk))
+                        current_chunk = [line]
+                        current_length = len(line)
+                    else:
+                        current_chunk.append(line)
+                        current_length += len(line) + 1
+
+                if current_chunk:
+                    chunks.append("\n".join(current_chunk))
+
+                await callback.message.edit_text(chunks[0], reply_markup=back_to_captains_list_salary_menu())
+                for chunk in chunks[1:]:
+                    await callback.message.answer(chunk)
+            else:
+                await callback.message.edit_text(full_text, reply_markup=back_to_captains_list_salary_menu())
+
+            logger.info(f"Администратор {callback.from_user.id} запросил отчет по капитану {captain_id} за {period_type}")
+
+    except Exception as e:
+        logger.error(f"Ошибка получения отчета по капитану: {e}", exc_info=True)
+        await callback.message.edit_text("Произошла ошибка при загрузке отчета.")
+
+
+@router.callback_query(F.data == "back_to_captains_list_for_salary")
+async def back_to_captains_list_for_salary(callback: CallbackQuery):
+    """Вернуться к списку капитанов для расчета зарплаты"""
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            captains = await user_repo.get_users_by_role(UserRole.captain)
+
+            if not captains:
+                await callback.message.edit_text(
+                    "Нет зарегистрированных капитанов.",
+                    reply_markup=captains_submenu()
+                )
+                return
+
+            await callback.message.edit_text(
+                "Выберите капитана для расчета зарплаты:",
+                reply_markup=captains_list_for_salary_keyboard(captains)
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка возврата к списку капитанов: {e}", exc_info=True)
+        await callback.message.edit_text("Произошла ошибка.")
 
 @router.message(F.text == "Добавить капитана")
 async def add_captain(message: Message):
