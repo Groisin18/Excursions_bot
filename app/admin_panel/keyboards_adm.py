@@ -143,16 +143,15 @@ def finances_submenu():
 
     buttons = [
         "Сводка и текущие платежи",
-        "Аналитика и отчеты",
         "Возвраты и проблемные операции",
-        "Интеграция с Ю-кассой",
+        "ЮКасса: подключение и магазин",
         "Назад"
     ]
 
     for button in buttons:
         builder.add(KeyboardButton(text=button))
 
-    builder.adjust(2, 2, 1)
+    builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
 
 def notifications_submenu():
@@ -230,7 +229,6 @@ def captains_list_keyboard(captains: list) -> InlineKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup()
 
-
 def captain_period_menu(captain_id: int, captain_name: str) -> InlineKeyboardMarkup:
     """Меню выбора периода для капитана"""
     builder = InlineKeyboardBuilder()
@@ -240,7 +238,6 @@ def captain_period_menu(captain_id: int, captain_name: str) -> InlineKeyboardMar
     builder.button(text="Назад к списку капитанов", callback_data="back_to_captains_list")
     builder.adjust(1)
     return builder.as_markup()
-
 
 def back_to_captains_list_menu() -> InlineKeyboardMarkup:
     """Кнопка возврата к списку капитанов"""
@@ -2075,3 +2072,16 @@ def admin_force_refund_confirmation_menu(booking_id: int) -> InlineKeyboardMarku
     )
     builder.adjust(1)
     return builder.as_markup()
+
+
+# ===== ФИНАНСЫ =====
+
+def finances_summary_menu() -> ReplyKeyboardMarkup:
+    """Меню сводки по финансам"""
+    builder = ReplyKeyboardBuilder()
+    builder.add(KeyboardButton(text="Сегодняшние платежи"))
+    builder.add(KeyboardButton(text="Статистика платежей"))
+    builder.add(KeyboardButton(text="Платежи в статусе pending"))
+    builder.add(KeyboardButton(text="В меню финансов"))
+    builder.adjust(2, 2)
+    return builder.as_markup(resize_keyboard=True)

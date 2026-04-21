@@ -170,8 +170,7 @@ async def process_refund_amount(message: Message, state: FSMContext):
 
         async with async_session() as session:
             async with UnitOfWork(session) as uow:
-                payment_manager = PaymentManager(session)
-                booking_manager = BookingManager(session)
+                booking_manager = BookingManager(uow.session)
 
                 booking = await booking_manager.booking_repo.get_by_id(booking_id)
 

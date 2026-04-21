@@ -2,7 +2,7 @@
 
 from typing import Optional, List
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select, and_
+from sqlalchemy import select, and_, func
 from datetime import datetime
 
 from .base import BaseRepository
@@ -105,12 +105,13 @@ class PaymentRepository(BaseRepository):
 
     async def get_today_online_payments(self):
         """Получить сегодняшние онлайн-платежи"""
-
         today = datetime.now().date()
 
         result = await self.session.execute(
             select(Payment)
-            .options(selectinload(Payment.booking).selectinload(Booking.client))
+            .options(
+                selectinload(Payment.booking).selectinload(Booking.adult_user)
+            )
             .where(Payment.payment_method == PaymentMethod.online)
             .where(Payment.created_at >= today)
             .order_by(Payment.created_at.desc())
@@ -121,6 +122,7 @@ class PaymentRepository(BaseRepository):
         """Получить все pending платежи пользователя"""
         result = await self.session.execute(
             select(Payment)
+            .options(selectinload(Payment.booking))
             .join(Payment.booking)
             .where(Booking.adult_user_id == user_id)
             .where(Payment.status == YooKassaStatus.pending)
@@ -141,3 +143,42 @@ class PaymentRepository(BaseRepository):
             .order_by(Payment.created_at)
         )
         return list(result.scalars().all())
+
+    async def get_successful_payments_stats(self, start_date: datetime, end_date: datetime) -> dict:
+        """
+        Получить статистику по успешным платежам за период
+
+        Args:
+            start_date: начало периода
+            end_date: конец периода
+
+        Returns:
+            dict: {'total_amount': int, 'count': int}
+        """
+
+        result = await self.session.execute(
+            select(
+                func.coalesce(func.sum(Payment.amount), 0).label('total_amount'),
+                func.count(Payment.id).label('count')
+            )
+            .where(
+                Payment.created_at.between(start_date, end_date),
+                Payment.status == YooKassaStatus.succeeded
+            )
+        )
+        row = result.one()
+        return {
+            'total_amount': int(row.total_amount),
+            'count': row.count
+        }
+
+    async def get_payments_by_status(self, status) -> list:
+        """Получить платежи по статусу"""
+
+        result = await self.session.execute(
+            select(Payment)
+            .where(Payment.status == status)
+            .order_by(Payment.created_at.desc())
+            .limit(50)
+        )
+        return result.scalars().all()
