@@ -21,7 +21,8 @@ from .tasks import (
     auto_cancel_unpaid_bookings, auto_complete_excursions,
     send_excursion_reminder, send_payment_reminder,
     notify_admins_about_slots_without_captain, check_pending_refunds,
-    retry_failed_refunds, check_and_complete_active_bookings
+    retry_failed_refunds, check_and_complete_active_bookings,
+    process_pending_notifications
 )
 from .bot_instance import set_bot_instance
 
@@ -167,6 +168,15 @@ class SchedulerService:
             minutes=30,
             id='retry_failed_refunds',
             replace_existing=True
+        )
+
+        # Обработка массовых рассылок - каждую минуту
+        self.scheduler.add_job(
+            process_pending_notifications,
+            trigger=IntervalTrigger(minutes=1),
+            id='process_pending_notifications',
+            replace_existing=True,
+            next_run_time=datetime.now()
         )
 
         self.scheduler.start()

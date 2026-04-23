@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database.repositories.user_repository import UserRepository
 from app.database.models import UserRole
 from app.utils.logging_config import get_logger
+from app.admin_panel.keyboards_adm import admin_main_menu
 
 logger = get_logger(__name__)
 
@@ -49,7 +50,8 @@ async def notify_admins(
                     await bot.send_message(
                         chat_id=admin.telegram_id,
                         text=message,
-                        parse_mode=parse_mode
+                        parse_mode=parse_mode,
+                        reply_markup=admin_main_menu()
                     )
                     success_ids.append(admin.telegram_id)
                 except Exception as e:

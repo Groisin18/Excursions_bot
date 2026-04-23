@@ -4,6 +4,9 @@ from aiogram.filters import CommandStart, Command
 from aiogram.fsm.context import FSMContext
 from aiogram.enums import ChatAction
 
+from app.database.session import async_session
+from app.database.repositories.user_repository import UserRepository
+
 from app.user_panel.keyboards import (
     main_menu, feedback, about_us, questions
 )
@@ -44,7 +47,8 @@ async def help_command(message: Message):
         await message.reply(
             'Привет! Это команда /help.\n'
             '/admin - админ-панель\n'
-            '/adminhelp - список команд админа',
+            '/adminhelp - список команд админа\n'
+            '/stop - отписаться от рассылки',
             reply_markup=main_menu()
         )
         logger.debug(f"Справочное сообщение отправлено пользователю {message.from_user.id}")
@@ -71,7 +75,6 @@ async def back_to_main(callback: CallbackQuery, state: FSMContext):
         )
         logger.debug(f"Главное меню показано пользователю {callback.from_user.id}")
     except Exception as e:
-        await callback.answer()
         logger.error(f"Ошибка возврата в главное меню для пользователя {callback.from_user.id}: {e}", exc_info=True)
         await callback.message.answer(
             "Произошла ошибка. Попробуйте позже.",
@@ -94,6 +97,28 @@ async def back_to_main_menu(message: Message):
             "Произошла ошибка. Попробуйте позже.",
             reply_markup=main_menu()
         )
+
+@router.message(Command("stop"))
+async def stop_notifications(message: Message, state: FSMContext):
+    """Отписка от массовых рассылок"""
+    logger.info(f"Пользователь {message.from_user.id} отписывается от рассылок")
+
+    async with async_session() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.update_notification_subscription(
+            message.from_user.id,
+            receive_notifications=False
+        )
+
+        if user:
+            await message.answer(
+                "Вы отписаны от массовых рассылок.\n\n"
+                "Снова включить уведомления можно в личном кабинете"
+            )
+        else:
+            await message.answer(
+                "Не удалось отписаться. Пожалуйста, попробуйте позже."
+            )
 
 @router.message(F.text == 'Отзывы')
 async def reviews(message: Message):

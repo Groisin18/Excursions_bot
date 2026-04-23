@@ -14,6 +14,7 @@ from app.database.session import async_session
 from app.services.redis import redis_client, dumps, loads
 from app.services.scheduler.scheduler import scheduler_service
 from app.services.scheduler.bot_instance import set_bot_instance
+from app.services.notification_service import init_notification_service
 from app.utils.logging_config import setup_logging
 
 load_dotenv()
@@ -64,6 +65,8 @@ async def main():
 
     logger.debug("Настройка роутеров...")
     setup_routers(dp)
+
+    init_notification_service(bot)
 
     # Запускаем планировщик
     try:

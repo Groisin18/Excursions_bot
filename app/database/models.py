@@ -84,12 +84,6 @@ class SalaryStatus(enum.Enum):
     calculated = "calculated"
     paid = "paid"
 
-class NotificationType(enum.Enum):
-    """Типы уведомлений"""
-    new_booking = "new_booking"
-    cancellation = "cancellation"
-    reminder = "reminder"
-
 class RegistrationType(enum.Enum):
     """Типы регистрации пользователей"""
     SELF = "self"
@@ -108,6 +102,14 @@ class SchedulePeriod(Enum):
     WEEK = "week"
     MONTH = "month"
     PERIOD = "period"
+
+class NotificationStatus(enum.Enum):
+    """Статусы массовых рассылок"""
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
 
 # Логирование создания enum классов
 logger.debug("Созданы enum классы для статусов и типов")
@@ -134,6 +136,7 @@ class User(Base):
     created_by_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     linked_to_parent_id: Mapped[Optional[int]] = mapped_column(ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
     token_created_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
+    receive_mass_notifications: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, onupdate=datetime.now, nullable=False)
 
@@ -168,11 +171,6 @@ class User(Base):
     expenses: Mapped[List["Expense"]] = relationship(
         "Expense",
         back_populates="created_by",
-        cascade="all, delete-orphan"
-    )
-    notifications: Mapped[List["Notification"]] = relationship(
-        "Notification",
-        back_populates="user",
         cascade="all, delete-orphan"
     )
     creator: Mapped[Optional["User"]] = relationship(
@@ -652,43 +650,54 @@ class Expense(Base):
         }
 
 class Notification(Base):
-    """Модель уведомления"""
+    """Модель массового уведомления (рассылки)"""
     __tablename__ = 'notifications'
 
     id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    type: Mapped[NotificationType] = mapped_column(Enum(NotificationType), nullable=False, index=True)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    sent_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
-    is_delivered: Mapped[bool] = mapped_column(Boolean, default=False, index=True)
+    audience_type: Mapped[UserRole] = mapped_column(Enum(UserRole), nullable=False, index=True)
+    status: Mapped[NotificationStatus] = mapped_column(Enum(NotificationStatus), default=NotificationStatus.PENDING, nullable=False, index=True)
+    total_recipients: Mapped[int] = mapped_column(Integer, default=0)
+    sent_count: Mapped[int] = mapped_column(Integer, default=0)
+    failed_count: Mapped[int] = mapped_column(Integer, default=0)
+    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.now, index=True)
+    completed_at: Mapped[Optional[datetime]] = mapped_column(DateTime, nullable=True)
 
     # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="notifications")
+    created_by: Mapped["User"] = relationship("User", foreign_keys=[created_by_id])
 
     def __repr__(self) -> str:
-        """Строковое представление уведомления для отладки"""
-        return f"Notification(id={self.id}, user={self.user_id}, type={self.type.value}, delivered={self.is_delivered})"
+        return f"Notification(id={self.id}, audience={self.audience_type.value}, status={self.status.value})"
 
     def __str__(self) -> str:
-        """Человекочитаемое представление уведомления"""
-        return f"Уведомление #{self.id} ({self.type.value})"
+        return f"Рассылка #{self.id} для {self.audience_type.value}"
 
     @property
     def short_message(self) -> str:
-        """Краткое содержание сообщения"""
         if len(self.message) <= 50:
             return self.message
         return self.message[:47] + "..."
 
+    @property
+    def progress_percent(self) -> float:
+        """Процент выполнения"""
+        if self.total_recipients == 0:
+            return 0.0
+        return (self.sent_count + self.failed_count) / self.total_recipients * 100
+
     def to_dict(self) -> dict:
-        """Преобразование уведомления в словарь (для логирования)"""
         return {
             'id': self.id,
-            'user_id': self.user_id,
-            'type': self.type.value,
+            'audience_type': self.audience_type.value,
             'message_short': self.short_message,
-            'sent_at': self.sent_at.isoformat() if self.sent_at else None,
-            'is_delivered': self.is_delivered
+            'status': self.status.value,
+            'total': self.total_recipients,
+            'sent': self.sent_count,
+            'failed': self.failed_count,
+            'progress': self.progress_percent,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
+            'completed_at': self.completed_at.isoformat() if self.completed_at else None
         }
 
 class TelegramFile(Base):

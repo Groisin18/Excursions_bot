@@ -150,6 +150,29 @@ class UserRepository(BaseRepository):
 
 # ===== Особые методы =====
 
+    async def update_notification_subscription(
+        self,
+        telegram_id: int,
+        receive_notifications: bool
+    ) -> Optional[User]:
+        """Обновить подписку пользователя на массовые рассылки"""
+        try:
+            user = await self.get_by_telegram_id(telegram_id)
+            if not user:
+                self.logger.warning(f"Пользователь с telegram_id {telegram_id} не найден")
+                return None
+
+            user.receive_mass_notifications = receive_notifications
+            await self.session.commit()
+            await self.session.refresh(user)
+
+            self.logger.info(f"Подписка пользователя {telegram_id} изменена на {receive_notifications}")
+            return user
+
+        except Exception as e:
+            self.logger.error(f"Ошибка обновления подписки для {telegram_id}: {e}")
+            await self.session.rollback()
+            raise
 
     async def get_available_captains(self, start_datetime: datetime,
                                    end_datetime: datetime) -> List[User]:

@@ -159,16 +159,15 @@ def notifications_submenu():
     builder = ReplyKeyboardBuilder()
 
     buttons = [
-        "Отправить уведомление",
-        "Напоминания",
-        "Шаблоны сообщений",
+        "Отправить всем клиентам",
+        "Отправить всем капитанам",
         "Назад"
     ]
 
     for button in buttons:
         builder.add(KeyboardButton(text=button))
 
-    builder.adjust(2, 2)
+    builder.adjust(2, 1)
     return builder.as_markup(resize_keyboard=True)
 
 def settings_submenu():
@@ -260,7 +259,6 @@ def captains_list_for_salary_keyboard(captains: list) -> InlineKeyboardMarkup:
     builder.button(text="Назад", callback_data="back_to_captains_menu")
     builder.adjust(1)
     return builder.as_markup()
-
 
 def captain_salary_period_menu(captain_id: int, captain_name: str) -> InlineKeyboardMarkup:
     """Меню выбора периода для расчета зарплаты капитана"""
@@ -2117,3 +2115,15 @@ def finances_summary_menu() -> ReplyKeyboardMarkup:
     builder.add(KeyboardButton(text="В меню финансов"))
     builder.adjust(2, 2)
     return builder.as_markup(resize_keyboard=True)
+
+
+# ===== МЕНЮ УВЕДОМЛЕНИЙ =====
+
+
+def notification_confirmation_keyboard():
+    """Клавиатура подтверждения отправки рассылки"""
+    builder = InlineKeyboardBuilder()
+    builder.add(InlineKeyboardButton(text="Отправить", callback_data="confirm_send"))
+    builder.add(InlineKeyboardButton(text="Отмена", callback_data="cancel_send"))
+    builder.adjust(2)
+    return builder.as_markup()

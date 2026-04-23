@@ -6,8 +6,11 @@ from aiogram.types import Message, CallbackQuery, ReplyKeyboardRemove
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.fsm.context import FSMContext
 
+from sqlalchemy import select
+
 from app.user_panel.keyboards import (
-    main_menu, registration_data_menu, token_check
+    main_menu, registration_data_menu, token_check,
+    notification_settings_keyboard
 )
 from app.user_panel.states import Reg_user
 from app.database.repositories import UserRepository
@@ -196,3 +199,74 @@ async def back_to_cabinet(callback: CallbackQuery):
             "Произошла ошибка при возврате в личный кабинет. Попробуйте позже.",
             reply_markup=main_menu()
         )
+
+
+@router.callback_query(F.data == 'user_nots')
+async def notification_settings(callback: CallbackQuery):
+    """Настройки массовых рассылок"""
+    logger.info(f"Пользователь {callback.from_user.id} открыл настройки рассылки")
+
+    # Временное логирование для отладки
+    logger.info(f"Telegram ID из callback: {callback.from_user.id}")
+
+    async with async_session() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.get_by_telegram_id(callback.from_user.id)
+
+        if not user:
+            await callback.message.answer("Пользователь не найден")
+            return
+
+        status_text = "подписаны" if user.receive_mass_notifications else "не подписаны"
+
+        await callback.message.answer(
+            f"Настройки массовых рассылок\n\n"
+            f"Вы {status_text} на получение уведомлений о новых экскурсиях, "
+            f"акциях и важных событиях.\n\n"
+            f"Массовые рассылки отправляются не чаще 1 раза в день.",
+            reply_markup=notification_settings_keyboard(user.receive_mass_notifications)
+        )
+
+
+@router.callback_query(F.data == "unsubscribe_notifications")
+async def unsubscribe_handler(callback: CallbackQuery):
+    """Обработчик отписки"""
+    async with async_session() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.update_notification_subscription(
+            callback.from_user.id,
+            receive_notifications=False
+        )
+
+        if user:
+            await callback.message.edit_text(
+                "Вы отписаны от массовых рассылок.\n\n"
+                "Чтобы снова получать уведомления, нажмите кнопку ниже.",
+                reply_markup=notification_settings_keyboard(False)
+            )
+        else:
+            await callback.answer("Ошибка при отписке", show_alert=True)
+
+    await callback.answer()
+
+
+@router.callback_query(F.data == "subscribe_notifications")
+async def subscribe_handler(callback: CallbackQuery):
+    """Обработчик подписки"""
+    async with async_session() as session:
+        user_repo = UserRepository(session)
+        user = await user_repo.update_notification_subscription(
+            callback.from_user.id,
+            receive_notifications=True
+        )
+
+        if user:
+            await callback.message.edit_text(
+                "Вы подписаны на массовые рассылки!\n\n"
+                "Вы будете получать уведомления о новых экскурсиях и акциях.",
+                reply_markup=notification_settings_keyboard(True)
+            )
+        else:
+            await callback.answer("Ошибка при подписке", show_alert=True)
+
+    await callback.answer()

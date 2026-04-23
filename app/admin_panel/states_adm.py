@@ -118,3 +118,9 @@ class RefundActions(StatesGroup):
     """Состояния для управления возвратами"""
     waiting_for_booking_id = State()
     waiting_for_amount = State()
+
+class AdminMassNotification(StatesGroup):
+    """Состояния для массовых рассылок"""
+    waiting_for_audience_choice = State()  # Выбор аудитории (клиенты/капитаны)
+    waiting_for_message = State()          # Ввод текста сообщения
+    waiting_for_confirmation = State()     # Подтверждение отправки

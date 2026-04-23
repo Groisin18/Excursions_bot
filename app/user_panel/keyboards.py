@@ -2,7 +2,7 @@ from datetime import date
 from typing import List, Optional, Dict
 from aiogram.types import (
     ReplyKeyboardMarkup, KeyboardButton,
-    InlineKeyboardMarkup
+    InlineKeyboardMarkup, InlineKeyboardButton
 )
 from aiogram.utils.keyboard import InlineKeyboardBuilder, ReplyKeyboardBuilder
 
@@ -51,6 +51,7 @@ def registration_data_menu(has_children: bool = False) -> InlineKeyboardMarkup:
         builder.button(text='Данные детей', callback_data='child_choice')
     builder.button(text='Регистрация ребенка', callback_data='reg_child')
     builder.button(text='Мои бронирования', callback_data='user_booking')
+    builder.button(text='Рассылка', callback_data='user_nots')
     builder.button(text='В главное меню', callback_data='back_to_main')
 
     builder.adjust(1)
@@ -64,6 +65,27 @@ def error_registration_menu() -> ReplyKeyboardMarkup:
     builder.adjust(1)
     return builder.as_markup(resize_keyboard=True)
 
+def notification_settings_keyboard(is_subscribed: bool):
+    """Клавиатура настроек рассылки"""
+    builder = InlineKeyboardBuilder()
+
+    if is_subscribed:
+        builder.add(InlineKeyboardButton(
+            text="Отписаться от рассылки",
+            callback_data="unsubscribe_notifications"
+        ))
+    else:
+        builder.add(InlineKeyboardButton(
+            text="Подписаться на рассылку",
+            callback_data="subscribe_notifications"
+        ))
+
+    builder.add(InlineKeyboardButton(
+        text="Назад",
+        callback_data="back_to_cabinet"
+    ))
+
+    return builder.as_markup()
 
 # ===== КЛАВИАТУРЫ ДЛЯ БРОНИРОВАНИЙ ПОЛЬЗОВАТЕЛЯ =====
 

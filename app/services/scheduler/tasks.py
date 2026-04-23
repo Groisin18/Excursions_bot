@@ -8,12 +8,13 @@ from app.database.managers import (
     BookingManager, SlotManager, UserManager, PaymentManager
 )
 from app.database.repositories import (
-    RefundRepository, BookingRepository, SlotRepository
+    RefundRepository, BookingRepository, SlotRepository, NotificationRepository
 )
 from app.database.models import SlotStatus, BookingStatus
 from app.database.session import async_session
 from app.utils.logging_config import get_logger
 from app.utils.admin_notifications import notify_admins_about_refund_failure
+from app.services.notification_service import get_notification_service
 
 logger = get_logger(__name__)
 
@@ -488,3 +489,43 @@ async def check_and_complete_active_bookings():
 
             await uow.commit()
             logger.info(f"Проверка завершена. Переведено в completed: {completed_count} бронирований")
+
+
+async def process_pending_notifications():
+    """Обработка ожидающих массовых рассылок"""
+    logger.info("Запуск обработки ожидающих рассылок")
+
+    lock_key = "scheduler:lock:pending_notifications"
+    token = await redis_client.acquire_lock(lock_key, timeout=600)  # 10 минут на всю рассылку
+
+    if not token:
+        logger.warning("Не удалось получить блокировку для обработки рассылок")
+        return
+
+    async with async_session() as session:
+        try:
+            repo = NotificationRepository(session)
+            pending = await repo.get_pending_notifications()
+
+            if not pending:
+                logger.debug("Нет ожидающих рассылок")
+                return
+
+            logger.info(f"Найдено {len(pending)} ожидающих рассылок")
+
+            notification_service = get_notification_service()
+            if not notification_service:
+                logger.error("NotificationService не инициализирован")
+                return
+
+            for notification in pending:
+                logger.info(f"Запуск рассылки #{notification.id} для аудитории {notification.audience_type.value}")
+                await notification_service.send_mass_notification(
+                    notification_id=notification.id,
+                    audience_type=notification.audience_type
+                )
+
+        except Exception as e:
+            logger.error(f"Ошибка при обработке рассылок: {e}", exc_info=True)
+        finally:
+            await redis_client.release_lock(lock_key, token)
