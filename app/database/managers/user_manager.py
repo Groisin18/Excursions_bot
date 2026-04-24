@@ -64,6 +64,7 @@ class UserManager(BaseManager):
                 'verification_token': verification_token,
                 'registration_type': registration_type,
                 'created_by_id': created_by_id,
+                'receive_mass_notifications': True,
                 'linked_to_parent_id': linked_to_parent_id,
                 'token_created_at': datetime.now() if verification_token else None
             }
