@@ -787,3 +787,7 @@ class SlotManager(BaseManager):
             self._log_operation_end("get_slots_without_captain", success=False)
             self.logger.error(f"Ошибка при поиске слотов без капитана: {e}", exc_info=True)
             return []
+
+    async def get_empty_slots_to_cancel(self) -> List[ExcursionSlot]:
+        """Слоты в статусе in_progress без активных/завершённых бронирований, которые пора отменить"""
+        return await self.slot_repo.get_empty_slots_in_progress()

@@ -123,7 +123,7 @@ def statistics_submenu():
 
     buttons = [
         "Сегодня",
-        "За месяц",
+        "За текущий месяц",
         "За период",
         "По экскурсиям",
         "По капитанам (за месяц)",
@@ -1661,6 +1661,29 @@ def dashboard_quick_actions():
 
     builder.adjust(2)  # 2 кнопки в ряд
 
+    return builder.as_markup()
+
+def excursion_list_for_stats(excursions: list) -> InlineKeyboardMarkup:
+    """
+    Инлайн-клавиатура выбора экскурсии для просмотра статистики
+
+    Args:
+        excursions: Список объектов Excursion (только активные)
+    """
+    builder = InlineKeyboardBuilder()
+
+    for excursion in excursions:
+        builder.button(
+            text=excursion.name,
+            callback_data=f"excursion_stats:{excursion.id}"
+        )
+
+    builder.button(
+        text="Назад",
+        callback_data="back_to_statistics"
+    )
+
+    builder.adjust(1)
     return builder.as_markup()
 
 

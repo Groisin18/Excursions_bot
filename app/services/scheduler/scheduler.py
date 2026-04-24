@@ -22,7 +22,7 @@ from .tasks import (
     send_excursion_reminder, send_payment_reminder,
     notify_admins_about_slots_without_captain, check_pending_refunds,
     retry_failed_refunds, check_and_complete_active_bookings,
-    process_pending_notifications
+    process_pending_notifications, cancel_empty_slots
 )
 from .bot_instance import set_bot_instance
 
@@ -175,6 +175,15 @@ class SchedulerService:
             process_pending_notifications,
             trigger=IntervalTrigger(minutes=1),
             id='process_pending_notifications',
+            replace_existing=True,
+            next_run_time=datetime.now()
+        )
+
+        # Отмена пустых слотов - каждые 5 минут
+        self.scheduler.add_job(
+            cancel_empty_slots,
+            trigger=IntervalTrigger(minutes=5),
+            id='cancel_empty_slots',
             replace_existing=True,
             next_run_time=datetime.now()
         )

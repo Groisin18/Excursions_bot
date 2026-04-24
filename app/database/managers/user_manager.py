@@ -12,7 +12,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from .base import BaseManager
-from .salary_manager import SalaryManager
 from ..repositories.user_repository import UserRepository
 from ..models import User, UserRole, RegistrationType
 
@@ -435,53 +434,6 @@ class UserManager(BaseManager):
             self.logger.error(f"Ошибка получения токена пользователя {user_id}: {e}", exc_info=True)
             return None
 
-    async def get_captains_with_stats(self, period_start=None, period_end=None):
-        """Получить список капитанов со статистикой за период
-
-        Args:
-            period_start: Начало периода для статистики (по умолчанию - первый день текущего месяца)
-            period_end: Конец периода для статистики (по умолчанию - последний день текущего месяца)
-
-        Returns:
-            List[Dict]: Список словарей с ключами 'captain' (объект User) и 'stats' (словарь со статистикой)
-        """
-        if period_start is None:
-            period_start = date.today().replace(day=1)
-
-        if period_end is None:
-            # Последний день текущего месяца
-            next_month = period_start.replace(day=28) + timedelta(days=4)
-            period_end = next_month - timedelta(days=next_month.day)
-
-        # Получаем всех капитанов с активным Telegram ID
-        result = await self.session.execute(
-            select(User)
-            .where(User.role == UserRole.captain)
-            .where(User.telegram_id.isnot(None))
-            .order_by(User.full_name)
-        )
-        captains = result.scalars().all()
-
-        if not captains:
-            return []
-
-        # Добавляем статистику для каждого капитана
-        captains_with_stats = []
-        for captain in captains:
-            salary_manager = SalaryManager(self.session)
-            captain_stats = await salary_manager.calculate_captain_salary(
-                captain.id,
-                period_start,
-                period_end
-            )
-
-            captains_with_stats.append({
-                'captain': captain,
-                'stats': captain_stats
-            })
-
-        return captains_with_stats
-
     async def search_users(self, search_query: str, limit: int = 10):
         """
         Поиск пользователей по имени или телефону (все роли)
@@ -555,8 +507,6 @@ class UserManager(BaseManager):
             "age": child_user.age,
             "weight": child_user.weight
     }
-
-    # app/database/managers/user_manager.py
 
     async def get_all_admins(self) -> List[User]:
         """

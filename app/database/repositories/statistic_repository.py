@@ -6,8 +6,8 @@ from sqlalchemy import select, func, and_
 
 from .base import BaseRepository
 from app.database.models import (
-    Booking, Payment, YooKassaStatus,
-    User, Excursion, ExcursionSlot, SlotStatus
+    Booking, Refund, RefundStatus, User, Excursion, ExcursionSlot, SlotStatus,
+    BookingStatus, ClientStatus
 )
 
 
@@ -33,12 +33,12 @@ class StatisticsRepository(BaseRepository):
             return 0
 
     async def get_daily_revenue(self, date_val: date) -> int:
-        """Выручка за день"""
+        """Выручка за день (по активным и завершённым бронированиям)"""
         try:
-            query = select(func.sum(Payment.amount)).where(
+            query = select(func.sum(Booking.total_price)).where(
                 and_(
-                    func.date(Payment.created_at) == date_val,
-                    Payment.status == YooKassaStatus.succeeded
+                    func.date(Booking.created_at) == date_val,
+                    Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
                 )
             )
             result = await self._execute_query(query)
@@ -76,13 +76,13 @@ class StatisticsRepository(BaseRepository):
             return 0
 
     async def get_period_revenue(self, start_date: datetime, end_date: datetime) -> int:
-        """Выручка за период"""
+        """Выручка за период (по активным и завершённым бронированиям)"""
         try:
-            query = select(func.sum(Payment.amount)).where(
+            query = select(func.sum(Booking.total_price)).where(
                 and_(
-                    Payment.created_at >= start_date,
-                    Payment.created_at <= end_date,
-                    Payment.status == YooKassaStatus.succeeded
+                    Booking.created_at >= start_date,
+                    Booking.created_at <= end_date,
+                    Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
                 )
             )
             result = await self._execute_query(query)
@@ -181,3 +181,56 @@ class StatisticsRepository(BaseRepository):
         except Exception as e:
             self.logger.error(f"Ошибка получения популярной экскурсии: {e}")
             return ("Нет данных", 0)
+
+    async def get_cancelled_stats(self, start_date: datetime, end_date: datetime) -> dict:
+        """Статистика отказов и неявок за период"""
+        try:
+            # Отменённые бронирования
+            cancelled_query = await self.session.execute(
+                select(func.count(Booking.id))
+                .where(
+                    and_(
+                        Booking.created_at >= start_date,
+                        Booking.created_at <= end_date,
+                        Booking.booking_status == BookingStatus.cancelled
+                    )
+                )
+            )
+            cancelled_count = cancelled_query.scalar() or 0
+
+            # Сумма возвратов
+            refunds_query = await self.session.execute(
+                select(func.sum(Refund.amount))
+                .where(
+                    and_(
+                        Refund.created_at >= start_date,
+                        Refund.created_at <= end_date,
+                        Refund.status == RefundStatus.SUCCEEDED
+                    )
+                )
+            )
+            refunds_amount = refunds_query.scalar() or 0
+
+            # Неявки: завершённые бронирования, где клиент не пришёл
+            no_show_query = await self.session.execute(
+                select(func.count(Booking.id))
+                .where(
+                    and_(
+                        Booking.created_at >= start_date,
+                        Booking.created_at <= end_date,
+                        Booking.booking_status == BookingStatus.completed,
+                        Booking.client_status == ClientStatus.not_arrived
+                    )
+                )
+            )
+            no_show_count = no_show_query.scalar() or 0
+
+            return {
+                'cancelled': cancelled_count,
+                'refunds_amount': refunds_amount,
+                'not_arrived': no_show_count
+            }
+
+        except Exception as e:
+            self.logger.error(f"Ошибка получения статистики отказов и неявок: {e}")
+            return {'cancelled': 0, 'refunds_amount': 0, 'no_show': 0}

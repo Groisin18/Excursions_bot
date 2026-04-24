@@ -5,8 +5,6 @@ from .booking_repository import BookingRepository
 from .promocode_repository import PromoCodeRepository
 from .payment_repository import PaymentRepository
 from .notification_repository import NotificationRepository
-from .salary_repository import SalaryRepository
-from .expense_repository import ExpenseRepository
 from .file_repository import FileRepository
 from .statistic_repository import StatisticsRepository
 from .settings_repository import SettingsRepository
@@ -20,8 +18,6 @@ __all__ = [
     'PromoCodeRepository',
     'PaymentRepository',
     'NotificationRepository',
-    'SalaryRepository',
-    'ExpenseRepository',
     'FileRepository',
     'StatisticsRepository',
     'SettingsRepository',

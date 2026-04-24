@@ -5,7 +5,7 @@ from datetime import datetime, timedelta
 
 from app.middlewares import AdminMiddleware
 from app.database.session import async_session
-from app.database.managers import UserManager
+from app.database.managers import StatisticsManager
 from app.database.repositories import UserRepository, SlotRepository
 from app.database.models import UserRole, SlotStatus
 from app.utils.logging_config import get_logger
@@ -32,8 +32,8 @@ async def show_captains_list(message: Message):
 
     try:
         async with async_session() as session:
-            user_manager = UserManager(session)
-            captains_data = await user_manager.get_captains_with_stats()
+            stats_manager = StatisticsManager(session)
+            captains_data = await stats_manager.get_captains_with_stats()
 
             if not captains_data:
                 logger.debug("Капитаны не найдены")

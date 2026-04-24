@@ -9,7 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .base import BaseRepository
 from app.database.models import (
     ExcursionSlot, Excursion, SlotStatus, User,
-    Booking, BookingChild
+    Booking, BookingChild, BookingStatus
 )
 
 
@@ -199,7 +199,6 @@ class SlotRepository(BaseRepository):
         result = await self._execute_query(query)
         return list(result.scalars().all())
 
-
     async def get_captain_upcoming_slots(self, captain_id: int) -> List[ExcursionSlot]:
         """Получить предстоящие слоты капитана (которые еще не начались)"""
         now = datetime.now()
@@ -286,6 +285,33 @@ class SlotRepository(BaseRepository):
         query = select(ExcursionSlot).where(and_(*conditions))
         result = await self._execute_query(query)
         return result.scalar_one_or_none()
+
+    async def get_empty_slots_in_progress(self) -> List[ExcursionSlot]:
+        """Слоты в статусе in_progress без активных/завершённых бронирований, время начала которых уже прошло"""
+
+        now = datetime.now()
+
+        occupied_subquery = (
+            select(Booking.slot_id)
+            .where(
+                Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
+            )
+            .distinct()
+        )
+
+        query = (
+            select(ExcursionSlot)
+            .where(
+                and_(
+                    ExcursionSlot.start_datetime <= now,
+                    ExcursionSlot.status == SlotStatus.in_progress,
+                    ExcursionSlot.id.not_in(occupied_subquery)
+                )
+            )
+        )
+
+        result = await self._execute_query(query)
+        return list(result.scalars().all())
 
     async def create(
         self,

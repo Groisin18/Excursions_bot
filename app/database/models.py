@@ -40,7 +40,6 @@ class BookingStatus(enum.Enum):
     active = "active"
     cancelled = "cancelled"
     completed = "completed"
-    no_show = "no_show"
 
 class ClientStatus(enum.Enum):
     """Статусы присутствия клиентов"""
@@ -161,16 +160,6 @@ class User(Base):
     slots_as_captain: Mapped[List["ExcursionSlot"]] = relationship(
         "ExcursionSlot",
         back_populates="captain",
-        cascade="all, delete-orphan"
-    )
-    salaries: Mapped[List["Salary"]] = relationship(
-        "Salary",
-        back_populates="user",
-        cascade="all, delete-orphan"
-    )
-    expenses: Mapped[List["Expense"]] = relationship(
-        "Expense",
-        back_populates="created_by",
         cascade="all, delete-orphan"
     )
     creator: Mapped[Optional["User"]] = relationship(
@@ -573,80 +562,6 @@ class PromoCode(Base):
             'usage_limit': self.usage_limit,
             'is_valid': self.is_valid,
             'remaining_uses': self.remaining_uses
-        }
-
-class Salary(Base):
-    """Модель зарплаты"""
-    __tablename__ = 'salaries'
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-    period: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    base_salary: Mapped[int] = mapped_column(Integer, default=0)
-    bonus: Mapped[int] = mapped_column(Integer, default=0)
-    total_amount: Mapped[int] = mapped_column(Integer, nullable=False)
-    status: Mapped[SalaryStatus] = mapped_column(Enum(SalaryStatus), default=SalaryStatus.calculated, index=True)
-
-    # Relationships
-    user: Mapped["User"] = relationship("User", back_populates="salaries")
-
-    def __repr__(self) -> str:
-        """Строковое представление зарплаты для отладки"""
-        return f"Salary(id={self.id}, user={self.user_id}, period={self.period}, amount={self.total_amount})"
-
-    def __str__(self) -> str:
-        """Человекочитаемое представление зарплаты"""
-        return f"Зарплата за {self.period.strftime('%B %Y')}: {self.total_amount} руб."
-
-    @property
-    def is_paid(self) -> bool:
-        """Выплачена ли зарплата"""
-        return self.status == SalaryStatus.paid
-
-    def to_dict(self) -> dict:
-        """Преобразование зарплаты в словарь (для логирования)"""
-        return {
-            'id': self.id,
-            'user_id': self.user_id,
-            'period': self.period.isoformat() if self.period else None,
-            'base_salary': self.base_salary,
-            'bonus': self.bonus,
-            'total_amount': self.total_amount,
-            'status': self.status.value,
-            'is_paid': self.is_paid
-        }
-
-class Expense(Base):
-    """Модель расхода"""
-    __tablename__ = 'expenses'
-
-    id: Mapped[int] = mapped_column(primary_key=True)
-    category: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
-    amount: Mapped[int] = mapped_column(Integer, nullable=False)
-    description: Mapped[str] = mapped_column(Text, nullable=True)
-    expense_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
-    created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
-
-    # Relationships
-    created_by: Mapped["User"] = relationship("User", back_populates="expenses")
-
-    def __repr__(self) -> str:
-        """Строковое представление расхода для отладки"""
-        return f"Expense(id={self.id}, category='{self.category}', amount={self.amount}, date={self.expense_date})"
-
-    def __str__(self) -> str:
-        """Человекочитаемое представление расхода"""
-        return f"Расход: {self.category} ({self.amount} руб.)"
-
-    def to_dict(self) -> dict:
-        """Преобразование расхода в словарь (для логирования)"""
-        return {
-            'id': self.id,
-            'category': self.category,
-            'amount': self.amount,
-            'description': self.description,
-            'expense_date': self.expense_date.isoformat() if self.expense_date else None,
-            'created_by_id': self.created_by_id
         }
 
 class Notification(Base):

@@ -529,3 +529,39 @@ async def process_pending_notifications():
             logger.error(f"Ошибка при обработке рассылок: {e}", exc_info=True)
         finally:
             await redis_client.release_lock(lock_key, token)
+
+
+async def cancel_empty_slots():
+    """Отмена слотов без активных бронирований"""
+    logger.info("Запуск отмены пустых слотов")
+
+    lock_key = "scheduler:lock:cancel_empty_slots"
+    token = await redis_client.acquire_lock(lock_key, timeout=300)
+
+    if not token:
+        logger.warning("Не удалось получить блокировку для отмены пустых слотов")
+        return
+
+    async with async_session() as session:
+        async with UnitOfWork(session) as uow:
+            try:
+                slot_manager = SlotManager(session)
+                empty_slots = await slot_manager.get_empty_slots_to_cancel()
+
+                if not empty_slots:
+                    logger.debug("Нет пустых слотов для отмены")
+                    return
+
+                logger.info(f"Найдено пустых слотов для отмены: {len(empty_slots)}")
+
+                for slot in empty_slots:
+                    await slot_manager.slot_repo.update_status(slot.id, SlotStatus.cancelled)
+                    logger.info(f"Слот #{slot.id} ({slot.excursion.name}, {slot.start_datetime}) отменён: нет активных бронирований")
+
+                logger.info(f"Отмена пустых слотов завершена, обработано: {len(empty_slots)}")
+
+            except Exception as e:
+                logger.error(f"Ошибка при отмене пустых слотов: {e}", exc_info=True)
+                raise
+            finally:
+                await redis_client.release_lock(lock_key, token)

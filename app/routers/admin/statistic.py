@@ -7,10 +7,12 @@ from datetime import datetime, timedelta
 from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
     admin_main_menu, statistics_submenu, cancel_button,
-    dashboard_quick_actions
+    dashboard_quick_actions, excursion_list_for_stats
 )
-from app.database.repositories import UserRepository, SlotRepository
-from app.database.managers import StatisticsManager, UserManager
+from app.database.repositories import (
+    UserRepository, SlotRepository, ExcursionRepository
+)
+from app.database.managers import StatisticsManager
 from app.database.models import UserRole
 from app.database.session import async_session
 
@@ -30,8 +32,6 @@ router.callback_query.middleware(AdminMiddleware())
 
 
 # ===== СТАТИСТИКА =====
-
-# TODO Делаем статистику. Надо обрабатывать еще не написанные кнопки
 
 
 @router.message(Command("dashboard"))
@@ -104,7 +104,7 @@ async def dashboard_handler(message: Message):
             advice.append("Много свободных капитанов. Есть возможность добавить новые слоты.")
 
         if advice:
-            dashboard_text += "\Рекомендации:\n" + "\n".join(f"• {item}" for item in advice)
+            dashboard_text += "\nРекомендации:\n" + "\n".join(f"• {item}" for item in advice)
 
         await message.answer(dashboard_text, reply_markup=dashboard_quick_actions())
         logger.debug(f"Дашборд отправлен администратору {message.from_user.id}")
@@ -153,37 +153,6 @@ async def statistics_today(message: Message):
         logger.error(f"Ошибка получения статистики за сегодня: {e}", exc_info=True)
         await message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
 
-@router.message(F.text == "Общая статистика")
-async def general_statistics(message: Message):
-    """Общая статистика"""
-    logger.info(f"Администратор {message.from_user.id} запросил общую статистику")
-
-    try:
-        end_date = datetime.now()
-        start_date = end_date - timedelta(days=30)
-
-        async with async_session() as session:
-            stats_manager = StatisticsManager(session)
-            period_stats = await stats_manager.get_period_stats(start_date, end_date)
-
-        response = (
-            f"Общая статистика за 30 дней:\n\n"
-            f"Всего бронирований: {period_stats.get('total_bookings', 0)}\n"
-            f"Всего участников: {period_stats.get('total_people', 0)}\n"
-            f"Общая выручка: {period_stats.get('total_revenue', 0)} руб.\n"
-            f"Новых пользователей: {period_stats.get('new_users', 0)}\n"
-            f"Проведено экскурсий: {period_stats.get('completed_excursions', 0)}\n"
-            f"Средний чек: {period_stats.get('avg_check', 0)} руб.\n"
-            f"Конверсия: {period_stats.get('conversion_rate', 0)}%\n"
-            f"Самый популярный маршрут: {period_stats.get('popular_excursion', 'Нет данных')}"
-        )
-
-        await message.answer(response, reply_markup=statistics_submenu())
-
-    except Exception as e:
-        logger.error(f"Ошибка получения общей статистики: {e}", exc_info=True)
-        await message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
-
 @router.message(F.text == "За период")
 async def statistics_period_start(message: Message, state: FSMContext):
     """Начало выбора периода для статистики"""
@@ -214,6 +183,10 @@ async def statistics_period_process(message: Message, state: FSMContext):
 
         # Устанавливаем время для полного дня
         end_datetime = end_datetime.replace(hour=23, minute=59, second=59)
+
+        if start_datetime > end_datetime:
+            await message.answer("Дата начала не может быть позже даты окончания. Введите период заново.")
+            return
 
         logger.debug(f"Парсинг периода: {start_datetime.date()} - {end_datetime.date()}")
 
@@ -338,32 +311,119 @@ async def show_active_bookings_callback(callback: CallbackQuery):
     await callback.answer()
     await show_active_bookings(callback.message)
 
+@router.message(F.text == "За текущий месяц")
+async def statistics_current_month(message: Message):
+    """Статистика за текущий месяц"""
+    logger.info(f"Администратор {message.from_user.id} запросил статистику за текущий месяц")
 
+    try:
+        today = datetime.now()
+        start_datetime = today.replace(day=1, hour=0, minute=0, second=0)
 
+        # Последний день текущего месяца
+        if today.month == 12:
+            end_datetime = today.replace(year=today.year + 1, month=1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
+        else:
+            end_datetime = today.replace(month=today.month + 1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
 
+        logger.debug(f"Период для текущего месяца: {start_datetime.date()} - {end_datetime.date()}")
+
+        async with async_session() as session:
+            stats_manager = StatisticsManager(session)
+            report = await stats_manager.generate_period_report(start_datetime, end_datetime)
+            await message.answer(report, reply_markup=statistics_submenu())
+
+        logger.debug(f"Статистика за текущий месяц отправлена администратору {message.from_user.id}")
+
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики за текущий месяц: {e}", exc_info=True)
+        await message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
 
 @router.message(F.text == "По экскурсиям")
 async def statistics_by_excursions(message: Message):
-    """Статистика по экскурсиям"""
+    """Показать список экскурсий для выбора статистики"""
     logger.info(f"Администратор {message.from_user.id} запросил статистику по экскурсиям")
 
     try:
-        await message.answer("Функция 'Статистика по экскурсиям' в разработке")
+        today = datetime.now()
+        start_datetime = today.replace(day=1, hour=0, minute=0, second=0)
+        if today.month == 12:
+            end_datetime = today.replace(year=today.year + 1, month=1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
+        else:
+            end_datetime = today.replace(month=today.month + 1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
+
+        async with async_session() as session:
+            from app.database.repositories import ExcursionRepository
+            excursion_repo = ExcursionRepository(session)
+            excursions = await excursion_repo.get_all(active_only=True)
+
+            stats_manager = StatisticsManager(session)
+            popular_excursion, popular_count = await stats_manager.stats_repo.get_popular_excursion(start_datetime, end_datetime)
+
+        if not excursions:
+            await message.answer("Нет доступных экскурсий", reply_markup=statistics_submenu())
+            return
+
+        response = "Выберите экскурсию для просмотра статистики:\n\n"
+        response += f"Самая популярная за текущий месяц: {popular_excursion} ({popular_count} бронирований)"
+
+        await message.answer(
+            response,
+            reply_markup=excursion_list_for_stats(excursions)
+        )
+
     except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        logger.error(f"Ошибка получения списка экскурсий: {e}", exc_info=True)
+        await message.answer("Ошибка при получении данных", reply_markup=statistics_submenu())
 
+@router.callback_query(F.data.startswith("excursion_stats:"))
+async def excursion_stats_callback(callback: CallbackQuery):
+    """Детальная статистика по конкретной экскурсии за текущий месяц"""
+    excursion_id = int(callback.data.split(":")[1])
+    logger.info(f"Администратор {callback.from_user.id} запросил статистику экскурсии #{excursion_id}")
 
-@router.message(F.text == "По капитанам")
+    await callback.answer()
+
+    try:
+        today = datetime.now()
+        start_datetime = today.replace(day=1, hour=0, minute=0, second=0)
+        if today.month == 12:
+            end_datetime = today.replace(year=today.year + 1, month=1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
+        else:
+            end_datetime = today.replace(month=today.month + 1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
+
+        async with async_session() as session:
+            stats_manager = StatisticsManager(session)
+            stats = await stats_manager.get_single_excursion_stats(excursion_id, start_datetime, end_datetime)
+
+            excursion_repo = ExcursionRepository(session)
+            excursion = await excursion_repo.get_by_id(excursion_id)
+
+        excursion_name = excursion.name if excursion else f"Экскурсия #{excursion_id}"
+
+        response = (
+            f"Статистика: {excursion_name}\n"
+            f"Период: {start_datetime.strftime('%d.%m.%Y')} - {end_datetime.strftime('%d.%m.%Y')}\n\n"
+            f"Бронирований: {stats['total_bookings']}\n"
+            f"Участников: {stats['total_people']}\n"
+            f"Выручка: {stats['total_revenue']} руб."
+        )
+
+        await callback.message.edit_text(response)
+
+    except Exception as e:
+        logger.error(f"Ошибка получения статистики экскурсии #{excursion_id}: {e}", exc_info=True)
+        await callback.message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
+
+@router.message(F.text == "По капитанам (за месяц)")
 async def statistics_by_captains(message: Message):
     """Статистика по капитанам"""
     logger.info(f"Администратор {message.from_user.id} запросил статистику по капитанам")
 
     try:
         async with async_session() as session:
-            user_manager = UserManager(session)
-
-            # Получаем статистику за текущий месяц
-            captains_data = await user_manager.get_captains_with_stats()
+            stats_manager = StatisticsManager(session)
+            captains_data = await stats_manager.get_captains_with_stats()
 
             if not captains_data:
                 logger.debug("Нет данных для статистики по капитанам")
@@ -388,10 +448,11 @@ async def statistics_by_captains(message: Message):
 
                 response += (
                     f"{captain.full_name}:\n"
-                    f"  Рейсов: {stats.get('total_bookings', 0)}\n"
+                    f"  Рейсов всего: {stats.get('total_slots', 0)}\n"
+                    f"  Проведено: {stats.get('conducted_slots', 0)}\n"
+                    f"  Не проведено (никто не пришел): {stats.get('not_conducted_slots', 0)}\n"
                     f"  Людей: {stats.get('total_people', 0)}\n"
                     f"  Выручка: {stats.get('total_revenue', 0)} руб.\n"
-                    f"  Зарплата: {stats.get('total_amount', 0)} руб.\n"
                     f"---\n"
                 )
 
@@ -407,22 +468,37 @@ async def statistics_by_captains(message: Message):
 
 @router.message(F.text == "Отказы и неявки")
 async def statistics_cancellations(message: Message):
-    """Статистика отказов и неявок"""
+    """Статистика отказов и неявок за текущий месяц"""
     logger.info(f"Администратор {message.from_user.id} запросил статистику отказов и неявок")
 
     try:
-        await message.answer("Функция 'Отказы и неявки' в разработке")
-    except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        today = datetime.now()
+        start_datetime = today.replace(day=1, hour=0, minute=0, second=0)
+        if today.month == 12:
+            end_datetime = today.replace(year=today.year + 1, month=1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
+        else:
+            end_datetime = today.replace(month=today.month + 1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
 
-@router.callback_query(F.data.startswith("excursion_stats:"))
-async def excursion_stats_callback(callback: CallbackQuery):
-    """Статистика экскурсии (inline)"""
-    excursion_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} запросил статистику экскурсии {excursion_id}")
+        async with async_session() as session:
+            stats_manager = StatisticsManager(session)
+            stats = await stats_manager.get_cancelled_stats(start_datetime, end_datetime)
 
-    try:
-        await callback.answer("Функция в разработке")
-        await callback.message.edit_text(f"Статистика экскурсии #{excursion_id} в разработке")
+        response = (
+            f"Отказы и неявки за текущий месяц\n"
+            f"Период: {start_datetime.strftime('%d.%m.%Y')} - {end_datetime.strftime('%d.%m.%Y')}\n\n"
+            f"Отменённые бронирования: {stats['cancelled']}\n"
+            f"Сумма возвратов: {stats['refunds_amount']} руб.\n"
+            f"Неявки (не пришли): {stats['not_arrived']}"
+        )
+
+        await message.answer(response, reply_markup=statistics_submenu())
+
     except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        logger.error(f"Ошибка получения статистики отказов и неявок: {e}", exc_info=True)
+        await message.answer("Ошибка при получении статистики", reply_markup=statistics_submenu())
+
+@router.callback_query(F.data == "back_to_statistics")
+async def back_to_statistics_callback(callback: CallbackQuery):
+    """Вернуться к списку экскурсий"""
+    await callback.answer()
+    await statistics_by_excursions(callback.message)

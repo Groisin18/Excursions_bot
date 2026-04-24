@@ -3,7 +3,7 @@
 Использует репозитории для получения данных.
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from typing import Dict
 from sqlalchemy import select, func, and_, not_, exists
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -11,9 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from .base import BaseManager
 from ..models import (
     Excursion, Booking, BookingStatus, ExcursionSlot, User, UserRole,
-    BookingChild
+    BookingChild, Payment, YooKassaStatus, SlotStatus
 )
-from ..repositories.statistic_repository import StatisticsRepository
+from ..repositories import StatisticsRepository
 
 from app.utils.logging_config import get_logger
 
@@ -72,9 +72,6 @@ class StatisticsManager(BaseManager):
             # Бизнес-логика: расчет среднего чека
             avg_check = total_revenue / total_bookings if total_bookings > 0 else 0
 
-            # Бизнес-логика: расчет конверсии
-            conversion_rate = (total_bookings / new_users * 100) if new_users > 0 else 0
-
             stats = {
                 'total_bookings': total_bookings,
                 'total_revenue': total_revenue,
@@ -83,7 +80,6 @@ class StatisticsManager(BaseManager):
                 'popular_excursion': popular_excursion,
                 'popular_excursion_bookings': booking_count,
                 'avg_check': round(avg_check, 2),
-                'conversion_rate': round(conversion_rate, 2),
                 'total_people': total_people
             }
 
@@ -101,7 +97,6 @@ class StatisticsManager(BaseManager):
                 'popular_excursion': 'Нет данных',
                 'popular_excursion_bookings': 0,
                 'avg_check': 0,
-                'conversion_rate': 0
             }
 
     async def get_daily_excursions_stats(self, date_val: datetime):
@@ -224,6 +219,158 @@ class StatisticsManager(BaseManager):
             self.logger.error(f"Ошибка получения свободных капитанов: {e}")
             return 0
 
+    async def get_captains_with_stats(self, period_start=None, period_end=None):
+        """Получить список капитанов со статистикой за период"""
+
+        if period_start is None:
+            period_start = date.today().replace(day=1)
+
+        if period_end is None:
+            next_month = period_start.replace(day=28) + timedelta(days=4)
+            period_end = next_month - timedelta(days=next_month.day)
+
+        result = await self.session.execute(
+            select(User)
+            .where(User.role == UserRole.captain)
+            .where(User.telegram_id.isnot(None))
+            .order_by(User.full_name)
+        )
+        captains = result.scalars().all()
+
+        if not captains:
+            return []
+
+        captains_with_stats = []
+        for captain in captains:
+            # Всего завершённых слотов
+            total_slots_query = await self.session.execute(
+                select(func.count(ExcursionSlot.id))
+                .where(
+                    and_(
+                        ExcursionSlot.captain_id == captain.id,
+                        ExcursionSlot.start_datetime >= period_start,
+                        ExcursionSlot.start_datetime < period_end,
+                        ExcursionSlot.status == SlotStatus.completed
+                    )
+                )
+            )
+            total_slots = total_slots_query.scalar() or 0
+
+            # Статистика по активным/завершённым бронированиям
+            stats_query = await self.session.execute(
+                select(
+                    func.count(func.distinct(ExcursionSlot.id)).label('conducted_slots'),
+                    func.sum(
+                        1 + func.coalesce(
+                            select(func.count(BookingChild.id))
+                            .where(BookingChild.booking_id == Booking.id)
+                            .scalar_subquery(),
+                            0
+                        )
+                    ).label('total_people'),
+                    func.sum(Booking.total_price).label('total_revenue')
+                )
+                .select_from(Booking)
+                .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+                .where(
+                    and_(
+                        ExcursionSlot.captain_id == captain.id,
+                        ExcursionSlot.start_datetime >= period_start,
+                        ExcursionSlot.start_datetime < period_end,
+                        ExcursionSlot.status == SlotStatus.completed,
+                        Booking.booking_status.in_([
+                            BookingStatus.active,
+                            BookingStatus.completed
+                        ])
+                    )
+                )
+            )
+            row = stats_query.first()
+            conducted_slots = row.conducted_slots or 0
+
+            captains_with_stats.append({
+                'captain': captain,
+                'stats': {
+                    'period_start': period_start,
+                    'period_end': period_end,
+                    'total_slots': total_slots,
+                    'conducted_slots': conducted_slots,
+                    'not_conducted_slots': total_slots - conducted_slots,
+                    'total_people': row.total_people or 0,
+                    'total_revenue': row.total_revenue or 0
+                }
+            })
+
+        return captains_with_stats
+
+    async def get_single_excursion_stats(self, excursion_id: int, start_date: datetime, end_date: datetime) -> Dict:
+        """Статистика по одной экскурсии за период"""
+        self._log_operation_start("get_single_excursion_stats",
+                                  excursion_id=excursion_id,
+                                  start_date=start_date.date(),
+                                  end_date=end_date.date())
+
+        try:
+            query = await self.session.execute(
+                select(
+                    func.count(Booking.id).label('total_bookings'),
+                    func.sum(
+                        1 + func.coalesce(
+                            select(func.count(BookingChild.id))
+                            .where(BookingChild.booking_id == Booking.id)
+                            .scalar_subquery(),
+                            0
+                        )
+                    ).label('total_people'),
+                    func.sum(Payment.amount).label('total_revenue')
+                )
+                .select_from(Booking)
+                .join(ExcursionSlot, Booking.slot_id == ExcursionSlot.id)
+                .where(ExcursionSlot.excursion_id == excursion_id)
+                .where(
+                    and_(
+                        Booking.created_at >= start_date,
+                        Booking.created_at <= end_date,
+                        Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
+                    )
+                )
+                .outerjoin(Payment, and_(
+                    Payment.booking_id == Booking.id,
+                    Payment.status == YooKassaStatus.succeeded
+                ))
+            )
+
+            row = query.first()
+            stats = {
+                'total_bookings': row.total_bookings or 0,
+                'total_people': row.total_people or 0,
+                'total_revenue': row.total_revenue or 0
+            }
+
+            self._log_operation_end("get_single_excursion_stats", success=True, stats=stats)
+            return stats
+
+        except Exception as e:
+            self._log_operation_end("get_single_excursion_stats", success=False)
+            self.logger.error(f"Ошибка получения статистики по экскурсии {excursion_id}: {e}", exc_info=True)
+            return {'total_bookings': 0, 'total_people': 0, 'total_revenue': 0}
+
+    async def get_cancelled_stats(self, start_date: datetime, end_date: datetime) -> Dict:
+        """Статистика отказов и неявок за период"""
+        self._log_operation_start("get_cancelled_stats",
+                                  start_date=start_date.date(),
+                                  end_date=end_date.date())
+
+        try:
+            stats = await self.stats_repo.get_cancelled_stats(start_date, end_date)
+            self._log_operation_end("get_cancelled_stats", success=True, stats=stats)
+            return stats
+
+        except Exception as e:
+            self._log_operation_end("get_cancelled_stats", success=False)
+            self.logger.error(f"Ошибка получения статистики отказов: {e}", exc_info=True)
+            return {'cancelled': 0, 'refunds_amount': 0, 'not_arrived': 0}
+
     async def generate_period_report(self, start_date: datetime, end_date: datetime) -> str:
         """Генерация текстового отчета"""
         self._log_operation_start("generate_period_report",
@@ -245,7 +392,6 @@ class StatisticsManager(BaseManager):
 Активность:
 • Самый популярный маршрут: {stats.get('popular_excursion', 'Нет данных')} ({stats.get('popular_excursion_bookings', 0)} бронирований)
 • Средний чек: {stats.get('avg_check', 0)} руб.
-• Конверсия: {stats.get('conversion_rate', 0)}%
             """
 
             self._log_operation_end("generate_period_report", success=True)
