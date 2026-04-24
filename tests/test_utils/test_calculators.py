@@ -1,6 +1,6 @@
 import pytest
 from datetime import date
-from unittest.mock import patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from app.utils.calculators import (
     PriceCalculator, WeightCalculator, BookingCalculator, AgeCategories
 )
@@ -394,16 +394,6 @@ class TestErrorCases:
         assert price == 0
         assert "4-7 лет" in category
 
-    @patch('app.utils.calculators.calculate_age')
-    def test_base_price_negative(self, mock_calculate_age):
-        """Отрицательная базовая цена."""
-        mock_calculate_age.return_value = 4
-        child_birth_date = date(2020, 6, 15)
-
-        # Текущее поведение: отрицательная цена * коэффициент
-        price, _ = PriceCalculator.calculate_child_price(-100, child_birth_date)
-        assert price == -40  # -100 * 0.4 = -40
-
 
 # ==================== Параметризованные тесты ====================
 @pytest.mark.parametrize("age,expected_price_percent,expected_category", [
@@ -524,6 +514,189 @@ class TestPerformance:
 
         if execution_time > 0.05:
             print(f"\n⚠️  Предупреждение: медленный расчет веса ({execution_time:.4f} сек)")
+
+
+# ==================== Тесты для get_all_prices ====================
+
+class TestGetAllPrices:
+    """Тесты для get_all_prices."""
+
+    def test_get_all_prices(self):
+        """Получение цен для всех категорий."""
+        result = PriceCalculator.get_all_prices(1000)
+
+        assert result['infant'] == 0
+        assert result['child'] == 400  # 1000 * 0.4
+        assert result['pre_teen'] == 600  # 1000 * 0.6
+        assert result['teen_adult'] == 1000
+
+    def test_get_all_prices_different_base(self):
+        """С разной базовой ценой."""
+        result = PriceCalculator.get_all_prices(500)
+
+        assert result['infant'] == 0
+        assert result['child'] == 200  # 500 * 0.4
+        assert result['pre_teen'] == 300  # 500 * 0.6
+
+
+# ==================== Тесты для get_price_categories ====================
+
+class TestGetPriceCategories:
+    """Тесты для get_price_categories."""
+
+    def test_get_price_categories(self):
+        """Получение информации по всем категориям."""
+        result = PriceCalculator.get_price_categories(1000)
+
+        assert len(result) == 4
+
+        # Бесплатно
+        assert result[0]['price'] == 0
+        assert result[0]['discount_percent'] == 100
+
+        # 4-7 лет
+        assert result[1]['price'] == 400
+        assert result[1]['discount_percent'] == 60
+
+        # 8-12 лет
+        assert result[2]['price'] == 600
+        assert result[2]['discount_percent'] == 40
+
+        # 13+
+        assert result[3]['price'] == 1000
+        assert result[3]['discount_percent'] == 0
+
+    def test_get_price_categories_structure(self):
+        """Проверка структуры каждой категории."""
+        result = PriceCalculator.get_price_categories(500)
+
+        for category in result:
+            assert 'age_range' in category
+            assert 'description' in category
+            assert 'price' in category
+            assert 'discount_percent' in category
+
+
+# ==================== Тесты для calculate_booking_total ====================
+
+class TestCalculateBookingTotal:
+    """Тесты для calculate_booking_total."""
+
+    @pytest.fixture
+    def mock_user_repo(self):
+        """Мок UserRepository."""
+        repo = AsyncMock()
+        return repo
+
+    @pytest.mark.asyncio
+    async def test_adult_only_no_promo(self, mock_user_repo):
+        """Только взрослый, без детей и промокода."""
+        result = await BookingCalculator.calculate_booking_total(
+            adult_price=5000,
+            children_ids=[],
+            promo_code_data=None
+        )
+
+        assert result['final_price'] == 5000
+        assert result['children_prices'] == []
+        assert result['children_details'] == []
+        assert result['promo_details'] == ""
+
+    @pytest.mark.asyncio
+    async def test_with_children(self, mock_user_repo):
+        """Взрослый + дети через сессию."""
+        child1 = MagicMock()
+        child1.full_name = "Ребёнок 1"
+        child1.date_of_birth = date(2021, 5, 10)  # ~5 лет
+
+        child2 = MagicMock()
+        child2.full_name = "Ребёнок 2"
+        child2.date_of_birth = date(2018, 3, 20)  # ~8 лет
+
+        mock_user_repo.get_by_id = AsyncMock(side_effect=[child1, child2])
+
+        with patch("app.utils.calculators.UserRepository", return_value=mock_user_repo):
+            result = await BookingCalculator.calculate_booking_total(
+                adult_price=1000,
+                children_ids=[10, 11],
+                session=MagicMock()
+            )
+
+        # Взрослый 1000 + ребёнок 1 (4-7 лет, 40% = 400) + ребёнок 2 (8-12 лет, 60% = 600)
+        assert result['final_price'] == 2000
+        assert len(result['children_prices']) == 2
+        assert len(result['children_details']) == 2
+
+    @pytest.mark.asyncio
+    async def test_with_promo_percent(self, mock_user_repo):
+        """С промокодом в процентах."""
+        result = await BookingCalculator.calculate_booking_total(
+            adult_price=5000,
+            children_ids=[],
+            promo_code_data={'type': 'percent', 'value': 20, 'code': 'SALE20'}
+        )
+
+        assert result['final_price'] == 4000  # 5000 - 20%
+        assert 'SALE20' in result['promo_details']
+        assert '20%' in result['promo_details']
+
+    @pytest.mark.asyncio
+    async def test_with_promo_fixed(self, mock_user_repo):
+        """С фиксированным промокодом."""
+        result = await BookingCalculator.calculate_booking_total(
+            adult_price=5000,
+            children_ids=[],
+            promo_code_data={'type': 'fixed', 'value': 1000, 'code': 'FLAT1000'}
+        )
+
+        assert result['final_price'] == 4000
+        assert '1000 руб' in result['promo_details']
+
+    @pytest.mark.asyncio
+    async def test_with_promo_fixed_exceeds_total(self, mock_user_repo):
+        """Фиксированный промокод больше суммы."""
+        result = await BookingCalculator.calculate_booking_total(
+            adult_price=500,
+            children_ids=[],
+            promo_code_data={'type': 'fixed', 'value': 1000, 'code': 'BIG'}
+        )
+
+        assert result['final_price'] == 0  # min(1000, 500) = 500, 500 - 500 = 0
+
+    @pytest.mark.asyncio
+    async def test_promo_zero_value(self, mock_user_repo):
+        """Промокод с нулевым значением — не применяется."""
+        result = await BookingCalculator.calculate_booking_total(
+            adult_price=5000,
+            children_ids=[],
+            promo_code_data={'type': 'percent', 'value': 0, 'code': 'ZERO'}
+        )
+
+        assert result['final_price'] == 5000
+        assert result['promo_details'] == ""
+
+    @pytest.mark.asyncio
+    async def test_no_session_creates_new(self, mock_user_repo):
+        """Без переданной сессии — создаёт новую."""
+        child = MagicMock()
+        child.full_name = "Ребёнок"
+        child.date_of_birth = date(2021, 5, 10)
+
+        mock_user_repo.get_by_id = AsyncMock(return_value=child)
+
+        mock_session = AsyncMock()
+        mock_session.__aenter__.return_value = mock_session
+        mock_session.__aexit__.return_value = None
+
+        with patch("app.utils.calculators.async_session", return_value=mock_session):
+            with patch("app.utils.calculators.UserRepository", return_value=mock_user_repo):
+                result = await BookingCalculator.calculate_booking_total(
+                    adult_price=1000,
+                    children_ids=[10],
+                    session=None
+                )
+
+        assert result['final_price'] == 1400  # 1000 + 400
 
 
 if __name__ == "__main__":

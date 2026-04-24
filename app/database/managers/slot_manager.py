@@ -764,7 +764,7 @@ class SlotManager(BaseManager):
                     ExcursionSlot.captain_id.is_(None),
                     ExcursionSlot.start_datetime <= threshold_time,  # начало менее чем через threshold часов
                     ExcursionSlot.start_datetime >= now,  # не просроченные (начиная с текущего момента)
-                    ExcursionSlot.status.in_([SlotStatus.scheduled, SlotStatus.confirmed])
+                    ExcursionSlot.status.in_([SlotStatus.scheduled])
                 )
             ).options(
                 selectinload(ExcursionSlot.excursion)

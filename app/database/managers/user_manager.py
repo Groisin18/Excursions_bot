@@ -92,7 +92,7 @@ class UserManager(BaseManager):
 
         try:
             full_name = f"{user_data.surname} {user_data.name}"
-            date_of_birth = datetime.strptime(user_data.date_of_birth, "%d.%m.%Y").date()
+            date_of_birth = user_data.date_of_birth
 
             user = await self._create_user_internal(
                 telegram_id=telegram_id,
@@ -261,8 +261,7 @@ class UserManager(BaseManager):
 
             self.logger.debug(f"У родителя {parent_id} сейчас {len(children)} детей (лимит: 7)")
 
-            # Преобразование даты
-            date_of_birth = datetime.strptime(child_data.date_of_birth, "%d.%m.%Y").date()
+            date_of_birth = child_data.date_of_birth
 
             # Полное имя
             full_name = f"{child_data.surname} {child_data.name}"
@@ -520,7 +519,7 @@ class UserManager(BaseManager):
         try:
             from app.database.models import UserRole
 
-            query = select(User).where(User.role == UserRole.ADMIN)
+            query = select(User).where(User.role == UserRole.admin)
             result = await self.session.execute(query)
             admins = result.scalars().all()
 

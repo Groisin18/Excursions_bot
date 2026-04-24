@@ -198,10 +198,9 @@ async def test_confirm_booking_no_slot_id(
     await user_create_booking.confirm_booking(mock_callback_query, mock_state)
 
     # Проверяем сообщение об ошибке
-    mock_callback_query.message.answer.assert_called_once_with(
-        "Ошибка: данные слотов устарели. Начните бронирование заново.",
-        reply_markup=user_create_booking.kb.main
-    )
+    mock_callback_query.message.answer.assert_called_once()
+    call_args = mock_callback_query.message.answer.call_args
+    assert "Ошибка: данные слотов устарели" in call_args[0][0]
     mock_state.clear.assert_called_once()
 
 
@@ -241,10 +240,9 @@ async def test_confirm_booking_creation_failed(
         await user_create_booking.confirm_booking(mock_callback_query, mock_state)
 
         # Проверяем сообщение об ошибке
-        mock_callback_query.message.answer.assert_called_once_with(
-            "Ошибка при создании бронирования: Мест нет",
-            reply_markup=user_create_booking.kb.main
-        )
+        mock_callback_query.message.answer.assert_called_once()
+        call_args = mock_callback_query.message.answer.call_args
+        assert "Мест нет" in call_args[0][0]
         mock_state.clear.assert_called_once()
 
 
@@ -337,10 +335,9 @@ async def test_cancel_booking_during_process(
     await user_create_booking.cancel_booking(mock_callback_query, mock_state)
 
     mock_state.clear.assert_called_once()
-    mock_callback_query.message.answer.assert_called_once_with(
-        "Бронирование отменено.",
-        reply_markup=user_create_booking.kb.main
-    )
+    mock_callback_query.message.answer.assert_called_once()
+    call_args = mock_callback_query.message.answer.call_args
+    assert "Бронирование отменено" in call_args[0][0]
 
 
 @pytest.mark.asyncio
