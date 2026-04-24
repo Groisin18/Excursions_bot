@@ -353,24 +353,23 @@ async def statistics_by_excursions(message: Message):
             end_datetime = today.replace(month=today.month + 1, day=1, hour=0, minute=0, second=0) - timedelta(seconds=1)
 
         async with async_session() as session:
-            from app.database.repositories import ExcursionRepository
             excursion_repo = ExcursionRepository(session)
             excursions = await excursion_repo.get_all(active_only=True)
 
             stats_manager = StatisticsManager(session)
             popular_excursion, popular_count = await stats_manager.stats_repo.get_popular_excursion(start_datetime, end_datetime)
 
-        if not excursions:
-            await message.answer("Нет доступных экскурсий", reply_markup=statistics_submenu())
-            return
+            if not excursions:
+                await message.answer("Нет доступных экскурсий", reply_markup=statistics_submenu())
+                return
 
-        response = "Выберите экскурсию для просмотра статистики:\n\n"
-        response += f"Самая популярная за текущий месяц: {popular_excursion} ({popular_count} бронирований)"
+            response = "Выберите экскурсию для просмотра статистики:\n\n"
+            response += f"Самая популярная за текущий месяц: {popular_excursion} ({popular_count} бронирований)"
 
-        await message.answer(
-            response,
-            reply_markup=excursion_list_for_stats(excursions)
-        )
+            await message.answer(
+                response,
+                reply_markup=excursion_list_for_stats(excursions)
+            )
 
     except Exception as e:
         logger.error(f"Ошибка получения списка экскурсий: {e}", exc_info=True)

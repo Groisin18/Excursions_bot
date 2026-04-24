@@ -224,15 +224,14 @@ class User(Base):
         return calculate_age(self.date_of_birth)
 
     def to_dict(self) -> dict:
-        """Преобразование пользователя в словарь (для логирования)"""
         return {
             'id': self.id,
             'telegram_id': self.telegram_id,
-            'role': self.role.value,
+            'role': self.role.value if self.role else None,
             'full_name': self.full_name,
             'phone_number': self.phone_number[:3] + '***' + self.phone_number[-3:] if self.phone_number else None,
             'is_virtual': self.is_virtual,
-            'registration_type': self.registration_type.value,
+            'registration_type': self.registration_type.value if self.registration_type else None,
             'created_at': self.created_at.isoformat() if self.created_at else None
         }
 

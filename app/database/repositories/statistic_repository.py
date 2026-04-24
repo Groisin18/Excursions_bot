@@ -23,7 +23,7 @@ class StatisticsRepository(BaseRepository):
             query = select(func.count(Booking.id)).where(
                 and_(
                     func.date(Booking.created_at) == date_val,
-                    Booking.booking_status.in_(['active', 'confirmed', 'completed'])
+                    Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
                 )
             )
             result = await self._execute_query(query)
@@ -66,7 +66,7 @@ class StatisticsRepository(BaseRepository):
                 and_(
                     Booking.created_at >= start_date,
                     Booking.created_at <= end_date,
-                    Booking.booking_status.in_(['active', 'confirmed', 'completed'])
+                    Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
                 )
             )
             result = await self._execute_query(query)
@@ -125,7 +125,7 @@ class StatisticsRepository(BaseRepository):
                 and_(
                     Booking.created_at >= start_date,
                     Booking.created_at <= end_date,
-                    Booking.booking_status.in_(['active', 'confirmed', 'completed'])
+                    Booking.booking_status.in_([BookingStatus.active, BookingStatus.completed])
                 )
             )
 
@@ -233,4 +233,4 @@ class StatisticsRepository(BaseRepository):
 
         except Exception as e:
             self.logger.error(f"Ошибка получения статистики отказов и неявок: {e}")
-            return {'cancelled': 0, 'refunds_amount': 0, 'no_show': 0}
+            return {'cancelled': 0, 'refunds_amount': 0, 'not_arrived': 0}

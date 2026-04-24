@@ -41,5 +41,16 @@ def mock_redis_client():
 @pytest.fixture(autouse=True)
 def patch_redis(monkeypatch, mock_redis_client):
     """Автоматически подменяет реальный Redis на mock во всех тестах."""
-    monkeypatch.setattr("app.routers.user.user_create_booking.redis_client", mock_redis_client)
+    # Патчим redis_client в модулях, где он точно используется
+    modules_to_patch = [
+        "app.services.scheduler.tasks.redis_client",
+        "app.services.redis.client.redis_client",
+    ]
+
+    for module_path in modules_to_patch:
+        try:
+            monkeypatch.setattr(module_path, mock_redis_client)
+        except AttributeError:
+            pass  # Модуль ещё не импортирован — ок, пропускаем
+
     return mock_redis_client

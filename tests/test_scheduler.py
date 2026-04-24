@@ -10,7 +10,7 @@ from app.services.scheduler.tasks import (
     send_excursion_reminder,
     auto_complete_excursions
 )
-from app.database.models import  SlotStatus
+from app.database.models import  SlotStatus, BookingStatus
 
 
 # ========== ВСПОМОГАТЕЛЬНЫЕ ФУНКЦИИ ==========
@@ -877,3 +877,487 @@ async def test_notify_admins_about_slots_without_captain_lock_failed(mock_redis_
         from app.services.scheduler.tasks import notify_admins_about_slots_without_captain
         await notify_admins_about_slots_without_captain()
         mock_slot_manager.assert_not_called()
+
+
+# ========== ТЕСТЫ ДЛЯ cancel_empty_slots ==========
+
+@pytest.mark.asyncio
+async def test_cancel_empty_slots_success(mock_redis_client, monkeypatch):
+    """Тест успешной отмены пустых слотов."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+
+    mock_slot = MagicMock()
+    mock_slot.id = 1
+    mock_slot.excursion.name = "Тестовая экскурсия"
+    mock_slot.start_datetime = datetime.now()
+
+    mock_slot_manager.get_empty_slots_to_cancel.return_value = [mock_slot]
+
+    mock_slot_repo = AsyncMock()
+    mock_slot_manager.slot_repo = mock_slot_repo
+    mock_slot_repo.update_status = AsyncMock(return_value=True)
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+
+    from app.services.scheduler.tasks import cancel_empty_slots
+
+    await cancel_empty_slots()
+
+    mock_slot_manager.get_empty_slots_to_cancel.assert_called_once()
+    mock_slot_repo.update_status.assert_called_once_with(1, SlotStatus.cancelled)
+
+
+@pytest.mark.asyncio
+async def test_cancel_empty_slots_no_slots(mock_redis_client, monkeypatch):
+    """Тест когда нет пустых слотов."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+    mock_slot_manager.get_empty_slots_to_cancel.return_value = []
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+
+    from app.services.scheduler.tasks import cancel_empty_slots
+
+    await cancel_empty_slots()
+
+    mock_slot_manager.get_empty_slots_to_cancel.assert_called_once()
+    # slot_repo не должен вызываться
+    mock_slot_manager.slot_repo.update_status.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_cancel_empty_slots_multiple(mock_redis_client, monkeypatch):
+    """Тест отмены нескольких пустых слотов."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    mock_slot_manager = AsyncMock()
+
+    mock_slot1 = MagicMock()
+    mock_slot1.id = 1
+    mock_slot1.excursion.name = "Экскурсия 1"
+    mock_slot1.start_datetime = datetime.now()
+
+    mock_slot2 = MagicMock()
+    mock_slot2.id = 2
+    mock_slot2.excursion.name = "Экскурсия 2"
+    mock_slot2.start_datetime = datetime.now()
+
+    mock_slot_manager.get_empty_slots_to_cancel.return_value = [mock_slot1, mock_slot2]
+
+    mock_slot_repo = AsyncMock()
+    mock_slot_manager.slot_repo = mock_slot_repo
+    mock_slot_repo.update_status = AsyncMock(return_value=True)
+
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotManager", lambda s: mock_slot_manager)
+
+    from app.services.scheduler.tasks import cancel_empty_slots
+
+    await cancel_empty_slots()
+
+    assert mock_slot_repo.update_status.call_count == 2
+    mock_slot_repo.update_status.assert_any_call(1, SlotStatus.cancelled)
+    mock_slot_repo.update_status.assert_any_call(2, SlotStatus.cancelled)
+
+
+@pytest.mark.asyncio
+async def test_cancel_empty_slots_lock_failed(mock_redis_client, monkeypatch):
+    """Тест когда не удалось получить блокировку."""
+    mock_acquire_lock = AsyncMock(return_value=None)
+    mock_redis_client.acquire_lock = mock_acquire_lock
+    monkeypatch.setattr("app.services.scheduler.tasks.redis_client", mock_redis_client)
+
+    with patch("app.services.scheduler.tasks.SlotManager") as mock_slot_manager:
+        from app.services.scheduler.tasks import cancel_empty_slots
+        await cancel_empty_slots()
+        mock_slot_manager.assert_not_called()
+
+
+# ========== ТЕСТЫ ДЛЯ check_and_complete_active_bookings ==========
+
+@pytest.mark.asyncio
+async def test_check_and_complete_active_bookings_success(mock_redis_client, monkeypatch):
+    """Тест успешного завершения активных бронирований."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_booking_repo = AsyncMock()
+    mock_slot_repo = AsyncMock()
+
+    now = datetime.now()
+
+    mock_booking = MagicMock()
+    mock_booking.id = 1
+    mock_booking.slot_id = 10
+
+    mock_booking_repo.get_by_status.return_value = [mock_booking]
+
+    mock_slot = MagicMock()
+    mock_slot.id = 10
+    mock_slot.end_datetime = now - timedelta(hours=1)  # Уже закончился
+
+    mock_slot_repo.get_by_id.return_value = mock_slot
+
+    monkeypatch.setattr("app.services.scheduler.tasks.BookingRepository", lambda s: mock_booking_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotRepository", lambda s: mock_slot_repo)
+
+    from app.services.scheduler.tasks import check_and_complete_active_bookings
+
+    await check_and_complete_active_bookings()
+
+    mock_booking_repo.get_by_status.assert_called_once_with(BookingStatus.active)
+    mock_slot_repo.get_by_id.assert_called_once_with(10)
+    mock_booking_repo.update.assert_called_once_with(1, status=BookingStatus.completed)
+    mock_uow.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_check_and_complete_active_bookings_no_active(mock_redis_client, monkeypatch):
+    """Тест когда нет активных бронирований."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_booking_repo = AsyncMock()
+    mock_booking_repo.get_by_status.return_value = []
+
+    monkeypatch.setattr("app.services.scheduler.tasks.BookingRepository", lambda s: mock_booking_repo)
+
+    from app.services.scheduler.tasks import check_and_complete_active_bookings
+
+    await check_and_complete_active_bookings()
+
+    mock_booking_repo.get_by_status.assert_called_once()
+    mock_uow.commit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_check_and_complete_active_bookings_not_ended(mock_redis_client, monkeypatch):
+    """Тест когда экскурсия ещё не закончилась."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_booking_repo = AsyncMock()
+    mock_slot_repo = AsyncMock()
+
+    now = datetime.now()
+
+    mock_booking = MagicMock()
+    mock_booking.id = 1
+    mock_booking.slot_id = 10
+
+    mock_booking_repo.get_by_status.return_value = [mock_booking]
+
+    mock_slot = MagicMock()
+    mock_slot.id = 10
+    mock_slot.end_datetime = now + timedelta(hours=1)  # Ещё не закончился
+
+    mock_slot_repo.get_by_id.return_value = mock_slot
+
+    monkeypatch.setattr("app.services.scheduler.tasks.BookingRepository", lambda s: mock_booking_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotRepository", lambda s: mock_slot_repo)
+
+    from app.services.scheduler.tasks import check_and_complete_active_bookings
+
+    await check_and_complete_active_bookings()
+
+    mock_booking_repo.update.assert_not_called()
+    mock_uow.commit.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_check_and_complete_active_bookings_slot_not_found(mock_redis_client, monkeypatch):
+    """Тест когда слот не найден."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_booking_repo = AsyncMock()
+    mock_slot_repo = AsyncMock()
+
+    mock_booking = MagicMock()
+    mock_booking.id = 1
+    mock_booking.slot_id = 999
+
+    mock_booking_repo.get_by_status.return_value = [mock_booking]
+    mock_slot_repo.get_by_id.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.BookingRepository", lambda s: mock_booking_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.SlotRepository", lambda s: mock_slot_repo)
+
+    from app.services.scheduler.tasks import check_and_complete_active_bookings
+
+    await check_and_complete_active_bookings()
+
+    mock_booking_repo.update.assert_not_called()
+
+
+# ========== ТЕСТЫ ДЛЯ check_pending_refunds ==========
+
+@pytest.mark.asyncio
+async def test_check_pending_refunds_success(mock_redis_client, monkeypatch):
+    """Тест успешной проверки возвратов."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_payment_manager = AsyncMock()
+    mock_refund_repo = AsyncMock()
+
+    mock_refund = MagicMock()
+    mock_refund.id = 1
+
+    mock_refund_repo.get_processing_refunds.return_value = [mock_refund]
+    mock_payment_manager.check_refund_status.return_value = (True, "OK")
+
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+
+    from app.services.scheduler.tasks import check_pending_refunds
+
+    await check_pending_refunds()
+
+    mock_refund_repo.get_processing_refunds.assert_called_once()
+    mock_payment_manager.check_refund_status.assert_called_once_with(1)
+
+
+@pytest.mark.asyncio
+async def test_check_pending_refunds_failed_check(mock_redis_client, monkeypatch):
+    """Тест когда проверка возврата не удалась."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_payment_manager = AsyncMock()
+    mock_refund_repo = AsyncMock()
+
+    mock_refund = MagicMock()
+    mock_refund.id = 1
+
+    mock_refund_repo.get_processing_refunds.return_value = [mock_refund]
+    mock_payment_manager.check_refund_status.return_value = (False, "Ошибка")
+
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+
+    from app.services.scheduler.tasks import check_pending_refunds
+
+    # Не должно выбрасывать исключение
+    await check_pending_refunds()
+
+    mock_payment_manager.check_refund_status.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_check_pending_refunds_no_processing(mock_redis_client, monkeypatch):
+    """Тест когда нет возвратов для проверки."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_refund_repo = AsyncMock()
+    mock_refund_repo.get_processing_refunds.return_value = []
+
+    mock_payment_manager = AsyncMock()
+
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+
+    from app.services.scheduler.tasks import check_pending_refunds
+    await check_pending_refunds()
+
+    mock_refund_repo.get_processing_refunds.assert_called_once()
+    mock_payment_manager.check_refund_status.assert_not_called()
+
+
+# ========== ТЕСТЫ ДЛЯ retry_failed_refunds ==========
+
+@pytest.mark.asyncio
+async def test_retry_failed_refunds_success(mock_redis_client, monkeypatch):
+    """Тест успешной повторной обработки возвратов."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_payment_manager = AsyncMock()
+    mock_refund_repo = AsyncMock()
+
+    mock_refund = MagicMock()
+    mock_refund.id = 1
+    mock_refund.payment_id = 10
+    mock_refund.amount = 100
+    mock_refund.booking_id = 5
+
+    mock_payment = MagicMock()
+    mock_payment.yookassa_payment_id = "test-payment-id"
+
+    mock_refund_repo.get_refunds_for_retry.return_value = [mock_refund]
+    mock_payment_manager.payment_repo = AsyncMock()
+    mock_payment_manager.payment_repo.get_payment_by_id.return_value = mock_payment
+    mock_payment_manager._execute_refund_with_retry.return_value = (True, "OK")
+
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+
+    from app.services.scheduler.tasks import retry_failed_refunds
+
+    await retry_failed_refunds()
+
+    mock_refund_repo.get_refunds_for_retry.assert_called_once_with(max_retries=1)
+    mock_payment_manager._execute_refund_with_retry.assert_called_once()
+    # При успехе notify_admins_about_refund_failure не вызывается
+    mock_bot.send_message.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_refunds_no_payment(mock_redis_client, monkeypatch):
+    """Тест когда платёж не найден."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_payment_manager = AsyncMock()
+    mock_refund_repo = AsyncMock()
+
+    mock_refund = MagicMock()
+    mock_refund.id = 1
+    mock_refund.payment_id = 10
+
+    mock_refund_repo.get_refunds_for_retry.return_value = [mock_refund]
+    mock_payment_manager.payment_repo = AsyncMock()
+    mock_payment_manager.payment_repo.get_payment_by_id.return_value = None
+
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+
+    from app.services.scheduler.tasks import retry_failed_refunds
+
+    await retry_failed_refunds()
+
+    mock_payment_manager._execute_refund_with_retry.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_refunds_retry_fails(mock_redis_client, monkeypatch):
+    """Тест когда повторная попытка не удалась."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_bot = mock_bot_for_tasks(monkeypatch)
+
+    mock_payment_manager = AsyncMock()
+    mock_refund_repo = AsyncMock()
+
+    mock_refund = MagicMock()
+    mock_refund.id = 1
+    mock_refund.payment_id = 10
+    mock_refund.amount = 100
+    mock_refund.booking_id = 5
+
+    mock_payment = MagicMock()
+    mock_payment.yookassa_payment_id = "test-payment-id"
+
+    mock_refund_repo.get_refunds_for_retry.return_value = [mock_refund]
+    mock_payment_manager.payment_repo = AsyncMock()
+    mock_payment_manager.payment_repo.get_payment_by_id.return_value = mock_payment
+    mock_payment_manager._execute_refund_with_retry.return_value = (False, "Retry error")
+
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+
+    from app.services.scheduler.tasks import retry_failed_refunds
+
+    await retry_failed_refunds()
+
+    mock_payment_manager._execute_refund_with_retry.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_retry_failed_refunds_no_failed(mock_redis_client, monkeypatch):
+    """Тест когда нет возвратов для повторной обработки."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+
+    mock_refund_repo = AsyncMock()
+    mock_refund_repo.get_refunds_for_retry.return_value = []
+
+    mock_payment_manager = AsyncMock()
+
+    monkeypatch.setattr("app.services.scheduler.tasks.RefundRepository", lambda s: mock_refund_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.PaymentManager", lambda s: mock_payment_manager)
+
+    from app.services.scheduler.tasks import retry_failed_refunds
+    await retry_failed_refunds()
+
+    mock_refund_repo.get_refunds_for_retry.assert_called_once_with(max_retries=1)
+    mock_payment_manager._execute_refund_with_retry.assert_not_called()
+
+
+# ========== ТЕСТЫ ДЛЯ process_pending_notifications ==========
+
+@pytest.mark.asyncio
+async def test_process_pending_notifications_success(mock_redis_client, monkeypatch):
+    """Тест успешной обработки рассылок."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    mock_repo = AsyncMock()
+    mock_notification = MagicMock()
+    mock_notification.id = 1
+    mock_notification.audience_type.value = "clients"
+
+    mock_repo.get_pending_notifications.return_value = [mock_notification]
+
+    mock_notification_service = AsyncMock()
+
+    monkeypatch.setattr("app.services.scheduler.tasks.NotificationRepository", lambda s: mock_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.get_notification_service", lambda: mock_notification_service)
+
+    from app.services.scheduler.tasks import process_pending_notifications
+
+    await process_pending_notifications()
+
+    mock_repo.get_pending_notifications.assert_called_once()
+    mock_notification_service.send_mass_notification.assert_called_once_with(
+        notification_id=1,
+        audience_type=mock_notification.audience_type
+    )
+
+
+@pytest.mark.asyncio
+async def test_process_pending_notifications_no_pending(mock_redis_client, monkeypatch):
+    """Тест когда нет ожидающих рассылок."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    mock_repo = AsyncMock()
+    mock_repo.get_pending_notifications.return_value = []
+
+    monkeypatch.setattr("app.services.scheduler.tasks.NotificationRepository", lambda s: mock_repo)
+
+    with patch("app.services.scheduler.tasks.get_notification_service") as mock_service:
+        from app.services.scheduler.tasks import process_pending_notifications
+        await process_pending_notifications()
+        mock_service.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_process_pending_notifications_service_unavailable(mock_redis_client, monkeypatch):
+    """Тест когда NotificationService не инициализирован."""
+    mock_session, mock_uow = setup_mocks(monkeypatch)
+    mock_redis_for_tasks(mock_redis_client, monkeypatch)
+
+    mock_repo = AsyncMock()
+    mock_notification = MagicMock()
+    mock_notification.id = 1
+
+    mock_repo.get_pending_notifications.return_value = [mock_notification]
+
+    monkeypatch.setattr("app.services.scheduler.tasks.NotificationRepository", lambda s: mock_repo)
+    monkeypatch.setattr("app.services.scheduler.tasks.get_notification_service", lambda: None)
+
+    from app.services.scheduler.tasks import process_pending_notifications
+
+    await process_pending_notifications()
+
+    mock_repo.get_pending_notifications.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_process_pending_notifications_lock_failed(mock_redis_client, monkeypatch):
+    """Тест когда не удалось получить блокировку."""
+    mock_acquire_lock = AsyncMock(return_value=None)
+    mock_redis_client.acquire_lock = mock_acquire_lock
+    monkeypatch.setattr("app.services.scheduler.tasks.redis_client", mock_redis_client)
+
+    with patch("app.services.scheduler.tasks.NotificationRepository") as mock_repo:
+        from app.services.scheduler.tasks import process_pending_notifications
+        await process_pending_notifications()
+        mock_repo.assert_not_called()

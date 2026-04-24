@@ -155,22 +155,25 @@ class PaymentRepository(BaseRepository):
         Returns:
             dict: {'total_amount': int, 'count': int}
         """
-
-        result = await self.session.execute(
-            select(
-                func.coalesce(func.sum(Payment.amount), 0).label('total_amount'),
-                func.count(Payment.id).label('count')
+        try:
+            result = await self.session.execute(
+                select(
+                    func.coalesce(func.sum(Payment.amount), 0).label('total_amount'),
+                    func.count(Payment.id).label('count')
+                )
+                .where(
+                    Payment.created_at.between(start_date, end_date),
+                    Payment.status == YooKassaStatus.succeeded
+                )
             )
-            .where(
-                Payment.created_at.between(start_date, end_date),
-                Payment.status == YooKassaStatus.succeeded
-            )
-        )
-        row = result.one()
-        return {
-            'total_amount': int(row.total_amount),
-            'count': row.count
-        }
+            row = result.one()
+            return {
+                'total_amount': int(row.total_amount),
+                'count': row.count
+            }
+        except Exception as e:
+            self.logger.error(f"Ошибка получения статистики платежей: {e}")
+            return {'total_amount': 0, 'count': 0}
 
     async def get_payments_by_status(self, status) -> list:
         """Получить платежи по статусу"""
