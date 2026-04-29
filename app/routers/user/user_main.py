@@ -6,10 +6,12 @@ from aiogram.enums import ChatAction
 
 from app.database.session import async_session
 from app.database.repositories.user_repository import UserRepository
+from app.database.models import UserRole
 
 from app.user_panel.keyboards import (
     main_menu, feedback, about_us, questions
 )
+from app.admin_panel.keyboards_adm import admin_main_menu
 from app.utils.logging_config import get_logger
 
 ADMIN_LOGIN = '@EkaterinkaMinyaylova'
@@ -47,6 +49,7 @@ async def help_command(message: Message):
         await message.reply(
             'Привет! Это команда /help.\n'
             '/admin - админ-панель\n'
+            '/captain - капитан-панель'
             '/adminhelp - список команд админа\n'
             '/stop - отписаться от рассылки',
             reply_markup=main_menu()
@@ -56,6 +59,61 @@ async def help_command(message: Message):
         logger.error(f"Ошибка при отправке справки пользователю {message.from_user.id}: {e}", exc_info=True)
         await message.answer(
             "Произошла ошибка. Попробуйте позже.",
+            reply_markup=main_menu()
+        )
+
+@router.message(Command("first_admin"))
+async def first_admin_command(message: Message):
+    """Сделать первого пользователя администратором (только если админов ещё нет)"""
+    logger.info(f"Пользователь {message.from_user.id} ({message.from_user.username}) использует команду /first_admin")
+
+    try:
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+
+            # Проверяем, есть ли уже администраторы в системе
+            admins = await user_repo.get_users_by_role(UserRole.admin)
+
+            if admins:
+                logger.warning(f"Пользователь {message.from_user.id} попытался стать первым админом, но админы уже есть")
+                await message.answer(
+                    "В системе уже есть администраторы. Обратитесь к действующему администратору "
+                    "для повышения прав через команду /promote."
+                )
+                return
+
+            # Проверяем, зарегистрирован ли пользователь
+            user = await user_repo.get_by_telegram_id(message.from_user.id)
+
+            if not user:
+                logger.warning(f"Пользователь {message.from_user.id} не зарегистрирован, не может стать админом")
+                await message.answer(
+                    "Вы не зарегистрированы в системе. Сначала зарегистрируйтесь, затем повторите команду.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            # Повышаем до админа
+            success = await user_repo.promote_to_admin(message.from_user.id)
+
+            if success:
+                logger.info(f"Пользователь {message.from_user.id} ({user.full_name}) стал первым администратором")
+                await message.answer(
+                    f"Поздравляем, {user.full_name}! Вы назначены первым администратором системы.\n\n"
+                    f"Теперь вам доступна админ-панель по команде /admin.",
+                    reply_markup=admin_main_menu()
+                )
+            else:
+                logger.error(f"Не удалось повысить пользователя {message.from_user.id} до админа")
+                await message.answer(
+                    "Произошла ошибка при назначении прав администратора. Попробуйте позже.",
+                    reply_markup=main_menu()
+                )
+
+    except Exception as e:
+        logger.error(f"Ошибка в команде /first_admin: {e}", exc_info=True)
+        await message.answer(
+            "Произошла ошибка. Попробуйте позже или обратитесь к разработчику.",
             reply_markup=main_menu()
         )
 

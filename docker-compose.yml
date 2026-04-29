@@ -1,0 +1,21 @@
+version: '3.8'
+
+services:
+  bot:
+    build: .
+    container_name: excursions_bot
+    restart: unless-stopped
+    depends_on:
+      - redis
+    env_file:
+      - .env
+    volumes:
+      - ./logs:/app/logs
+      - ./database.db:/app/database.db
+
+  redis:
+    image: redis:7-alpine
+    container_name: excursions_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
