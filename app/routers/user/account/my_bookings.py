@@ -11,7 +11,9 @@ from app.database.managers import BookingManager, PaymentManager
 from app.database.repositories import (
     UserRepository, BookingRepository, RefundRepository
 )
-from app.database.models import BookingStatus, PaymentStatus
+from app.database.models import (
+    BookingStatus, PaymentStatus, PaymentMethod, YooKassaStatus
+)
 from app.utils.logging_config import get_logger
 from app.user_panel.keyboards import (
     main_menu, bookings_main_menu, empty_bookings, back_to_booking,
@@ -531,12 +533,97 @@ async def back_to_cabinet_from_bookings(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith('payment_history:'))
 async def payment_history(callback: CallbackQuery):
-    """История платежей по бронированию (в разработке)"""
-    await callback.answer()
-    await callback.message.answer(
-        "Функция просмотра истории платежей находится в разработке.",
-        reply_markup=main_menu()
-    )
+    """История платежей по бронированию"""
+    user_telegram_id = callback.from_user.id
+
+    try:
+        booking_id = int(callback.data.split(':')[1])
+        logger.info(f"Пользователь {user_telegram_id} запросил историю платежей по бронированию {booking_id}")
+
+        await callback.answer()
+
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            user = await user_repo.get_by_telegram_id(user_telegram_id)
+
+            if not user:
+                await callback.message.edit_text(
+                    "Пользователь не найден. Пожалуйста, зарегистрируйтесь.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            booking_repo = BookingRepository(session)
+            booking = await booking_repo.get_by_id(booking_id)
+
+            if not booking or booking.adult_user_id != user.id:
+                logger.warning(f"Пользователь {user_telegram_id} пытается посмотреть чужие платежи для бронирования {booking_id}")
+                await callback.message.edit_text(
+                    "У вас нет доступа к этому бронированию.",
+                    reply_markup=main_menu()
+                )
+                return
+
+            from app.database.repositories import PaymentRepository
+            payment_repo = PaymentRepository(session)
+            payments = await payment_repo.get_payments_by_booking(booking_id)
+
+            if not payments:
+                await callback.message.edit_text(
+                    "По данному бронированию нет платежей.",
+                    reply_markup=back_to_booking(booking_id)
+                )
+                return
+
+            slot = booking.slot
+            excursion = slot.excursion if slot else None
+            excursion_name = excursion.name if excursion else "Экскурсия"
+
+            text = (
+                f"История платежей\n"
+                f"Бронирование #{booking_id}\n"
+                f"{excursion_name}\n\n"
+            )
+
+            for payment in payments:
+                payment_date = payment.created_at.strftime("%d.%m.%Y %H:%M") if payment.created_at else "неизвестно"
+
+                method_map = {
+                    PaymentMethod.online: "Онлайн (YooKassa)",
+                    PaymentMethod.cash: "Наличные",
+                    PaymentMethod.terminal: "Терминал"
+                }
+                method_str = method_map.get(payment.payment_method, str(payment.payment_method))
+
+                status_map = {
+                    YooKassaStatus.pending: "Ожидает подтверждения",
+                    YooKassaStatus.succeeded: "Успешно",
+                    YooKassaStatus.canceled: "Отменен"
+                }
+                status_str = status_map.get(payment.status, str(payment.status)) if payment.status else "не применимо"
+
+                text += (
+                    f"Платеж #{payment.id}\n"
+                    f"Сумма: {payment.amount // 100} руб.\n"
+                    f"Способ: {method_str}\n"
+                    f"Статус: {status_str}\n"
+                    f"Дата: {payment_date}\n\n"
+                )
+
+            await callback.message.edit_text(
+                text,
+                reply_markup=back_to_booking(booking_id)
+            )
+
+    except ValueError:
+        logger.error(f"Ошибка парсинга booking_id для пользователя {user_telegram_id}")
+        await callback.message.answer("Ошибка: некорректный идентификатор бронирования")
+    except Exception as e:
+        logger.error(f"Ошибка получения истории платежей: {e}", exc_info=True)
+        await callback.message.answer(
+            "Произошла ошибка при загрузке истории платежей.",
+            reply_markup=main_menu()
+        )
 
 @router.callback_query(F.data == "my_cancelled_paid_bookings")
 async def cancelled_paid_bookings_list(callback: CallbackQuery):
