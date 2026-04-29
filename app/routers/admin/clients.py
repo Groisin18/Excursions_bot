@@ -498,14 +498,103 @@ async def set_client_role(callback: CallbackQuery):
 
 @router.callback_query(F.data.startswith("send_message_to_client:"))
 async def send_message_to_client_start(callback: CallbackQuery, state: FSMContext):
-    """Начало отправки сообщения клиенту (заглушка)"""
+    """Начало отправки сообщения клиенту"""
     client_id = int(callback.data.split(":")[1])
-    await callback.answer("Функция в разработке")
+    logger.info(f"Администратор {callback.from_user.id} начинает отправку сообщения клиенту {client_id}")
 
-    # Здесь можно будет потом реализовать отправку сообщений
-    # await callback.message.answer("Введите сообщение для клиента...")
-    # await state.set_state(AdminStates.waiting_for_client_message)
-    # await state.update_data(target_client_id=client_id)
+    await callback.answer()
+
+    try:
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            client = await user_repo.get_by_id(client_id)
+
+            if not client:
+                await callback.message.edit_text("Клиент не найден")
+                return
+
+            if not client.telegram_id:
+                await callback.message.edit_text(
+                    f"У клиента {client.full_name} не привязан Telegram. Отправка сообщения невозможна.",
+                    reply_markup=back_to_client_actions(client_id)
+                )
+                return
+
+            await state.update_data(target_client_id=client_id)
+            await state.set_state(AdminStates.waiting_for_client_message)
+
+            await callback.message.edit_text(
+                f"Введите текст сообщения для клиента {client.full_name}:\n\n"
+                f"Важно: если вы хотите, чтобы клиент мог вам ответить, укажите в сообщении "
+                f"способ связи с вами (телефон, username или другие контакты).\n\n"
+                f"Для отмены нажмите кнопку Отмена.",
+                reply_markup=cancel_button()
+            )
+
+    except Exception as e:
+        logger.error(f"Ошибка начала отправки сообщения клиенту {client_id}: {e}", exc_info=True)
+        await callback.message.answer("Ошибка при загрузке данных клиента", reply_markup=clients_submenu())
+        await state.clear()
+
+
+@router.message(AdminStates.waiting_for_client_message)
+async def process_client_message(message: Message, state: FSMContext):
+    """Обработка текста сообщения и отправка клиенту"""
+    logger.info(f"Администратор {message.from_user.id} отправляет сообщение клиенту")
+
+    if message.text == "Отмена":
+        await state.clear()
+        await message.answer("Отправка сообщения отменена", reply_markup=clients_submenu())
+        return
+
+    try:
+        data = await state.get_data()
+        client_id = data.get("target_client_id")
+
+        if not client_id:
+            await message.answer("Ошибка: данные клиента утеряны", reply_markup=clients_submenu())
+            await state.clear()
+            return
+
+        async with async_session() as session:
+            user_repo = UserRepository(session)
+            client = await user_repo.get_by_id(client_id)
+
+            if not client or not client.telegram_id:
+                await message.answer("Клиент не найден или не привязан к Telegram", reply_markup=clients_submenu())
+                await state.clear()
+                return
+
+            # Формируем сообщение клиенту
+            client_message = (
+                f"Сообщение от администратора:\n\n"
+                f"{message.text}"
+            )
+
+            # Отправляем сообщение клиенту
+            bot = message.bot
+            try:
+                await bot.send_message(chat_id=client.telegram_id, text=client_message)
+                logger.info(f"Сообщение успешно отправлено клиенту {client_id} (telegram_id: {client.telegram_id})")
+
+                await message.answer(
+                    f"Сообщение успешно отправлено клиенту {client.full_name}.",
+                    reply_markup=clients_submenu()
+                )
+            except Exception as send_error:
+                logger.error(f"Ошибка отправки сообщения клиенту {client_id}: {send_error}", exc_info=True)
+                await message.answer(
+                    f"Не удалось отправить сообщение клиенту {client.full_name}. "
+                    f"Возможно, клиент заблокировал бота.",
+                    reply_markup=clients_submenu()
+                )
+
+            await state.clear()
+
+    except Exception as e:
+        logger.error(f"Ошибка при отправке сообщения клиенту: {e}", exc_info=True)
+        await message.answer("Произошла ошибка при отправке сообщения", reply_markup=clients_submenu())
+        await state.clear()
 
 @router.callback_query(F.data.startswith("show_client_children:"))
 async def show_client_children(callback: CallbackQuery):
