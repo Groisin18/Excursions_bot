@@ -5,7 +5,7 @@ from aiogram.types import (
 from aiogram.fsm.context import FSMContext
 from datetime import datetime, timedelta
 
-from app.database.repositories import SlotRepository
+from app.database.repositories import SlotRepository, ExcursionRepository
 from app.database.managers import SlotManager
 from app.database.models import SlotStatus
 from app.database.session import async_session
@@ -14,7 +14,7 @@ from app.admin_panel.states_adm import AdminStates
 from app.admin_panel.keyboards_adm import (
     schedule_exc_management_menu, schedule_view_options,
     schedule_date_management_menu, schedule_month_management_menu,
-    schedule_week_management_menu, excursions_submenu
+    schedule_week_management_menu, excursions_submenu, excursion_actions_menu
 )
 from app.middlewares import AdminMiddleware
 from app.utils.validation import validate_slot_date
@@ -48,15 +48,41 @@ async def back_to_schedule_menu(callback: CallbackQuery, state: FSMContext):
 
 @router.callback_query(F.data.startswith("toggle_excursion:"))
 async def toggle_excursion_callback(callback: CallbackQuery):
-    """Изменение статуса экскурсии (inline)"""
+    """Изменение статуса экскурсии (активна/неактивна)"""
     excursion_id = int(callback.data.split(":")[1])
-    logger.info(f"Администратор {callback.from_user.id} хочет изменить статус экскурсии {excursion_id}")
+    logger.info(f"Администратор {callback.from_user.id} меняет статус экскурсии {excursion_id}")
+
+    await callback.answer()
 
     try:
-        await callback.answer("Функция в разработке")
-        await callback.message.edit_text(f"Изменение статуса экскурсии #{excursion_id} в разработке")
+        async with async_session() as session:
+            excursion_repo = ExcursionRepository(session)
+            excursion = await excursion_repo.get_by_id(excursion_id)
+
+            if not excursion:
+                await callback.message.edit_text("Экскурсия не найдена")
+                return
+
+            if excursion.is_active:
+                await excursion_repo.deactivate(excursion_id)
+                new_status = "деактивирована"
+                logger.info(f"Экскурсия {excursion_id} ({excursion.name}) деактивирована")
+            else:
+                await excursion_repo.activate(excursion_id)
+                new_status = "активирована"
+                logger.info(f"Экскурсия {excursion_id} ({excursion.name}) активирована")
+
+            await callback.message.edit_text(
+                f"Экскурсия '{excursion.name}' {new_status}.",
+                reply_markup=excursion_actions_menu(excursion_id)
+            )
+
     except Exception as e:
-        logger.error(f"Ошибка: {e}", exc_info=True)
+        logger.error(f"Ошибка изменения статуса экскурсии {excursion_id}: {e}", exc_info=True)
+        await callback.message.edit_text(
+            "Произошла ошибка при изменении статуса экскурсии",
+            reply_markup=schedule_exc_management_menu()
+        )
 
 
 # ===== ПРОСМОТР РАСПИСАНИЯ =====
