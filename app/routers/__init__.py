@@ -21,6 +21,8 @@ from .admin.settings import router as admin_settings_router
 from .admin.slots import router as admin_slots_router
 from .admin.statistic import router as admin_statistic_router
 
+from .captain.captain_main import router as captain_main_router
+
 from .user.account.main_router import router as account_main_router
 from .user.user_create_booking import router as user_create_booking_router
 from .user.user_excursions import router as user_excursions_router
@@ -49,6 +51,8 @@ __all__ = [
     'admin_notification_router',
     'admin_settings_router',
     'admin_refunds_router',
+
+    'captain_main_router',
 
     'user_main_router',
     'user_excursions_router',
@@ -94,6 +98,9 @@ def setup_routers(dp):
     dp.include_router(admin_settings_router)
 
     dp.include_router(admin_main_router)
+
+    # Роутер капитана
+    dp.include_router(captain_main_router)
 
     # Пользовательские роутеры
     dp.include_router(user_excursions_router)
